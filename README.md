@@ -59,15 +59,19 @@ Same tasks, same checks, fresh directory per run, 3 runs per cell, every run pas
 
 **On a real project.** Three changes the maintainers of [hukkin/tomli](https://github.com/hukkin/tomli) really made (a bug fix, a TOML 1.1 feature, a hardening change): source as it was before the commit, tests as they were after it, nothing else given. `lupus fix-tests` finished all three on the first attempt with both Claude (36k–64k tokens, 10–21 s) and Codex (82k–119k tokens, 16–21 s), judged by the upstream tests, which no run tried to edit.
 
-**Does it get more requests right? A pilot says no.** 20 real upstream commits from five projects (sqlparse, more-itertools, tomli, packaging, click): the worker got the repository before the commit and only the commit message; the upstream tests were kept hidden and used as the score. The check `lupus do` drafts was approved automatically, which is not how it is meant to be used.
+**Does it get more requests right? It now matches a plain call; it does not beat one.** 20 real upstream commits from five projects (sqlparse, more-itertools, tomli, packaging, click): the worker got the repository before the commit and only the commit message; the upstream tests were kept hidden and used as the score. The check `lupus do` drafts was approved automatically, which is not how it is meant to be used.
 
-| Hidden upstream tests passed | Plain call | `lupus do` |
+| Hidden upstream tests passed (2026-10-07, same run, same day) | Plain call | `lupus do` |
 |---|---|---|
-| Codex, 20 instances | 13 | 11 (4 refused to start because the project's own suite was not green; with `--allow-failing` those four gave 1 pass) |
-| Codex, the 16 that ran | 11 | 11 |
-| Claude, 7 instances (stopped early: `do` took 6.5 min each) | 7 | 4 |
+| Codex, 20 instances | 13 | 13 |
+| Claude, first 12 instances | 10 | 11 |
+| Earlier the same day, before the fix below: Codex 20 / Claude 7 | 13 / 7 | 11 / 4 |
 
-When Lupus reported DONE, the hidden tests failed in 5 of 14 cases on Codex and 1 of 5 on Claude. **DONE means the check you approved passed. It does not mean the request was understood.** A check written by the same model from the same one-line request shares its misunderstanding; what the flow adds is the moment where you read (or edit) that check, and this pilot did not measure a person doing so.
+The earlier loss had a measured cause. `lupus do` asked the worker to write its proposed implementation as complete files in a side folder; on large files that ran into the time limit (two more-itertools instances: 850 s, failed). The worker now edits the sources in place, Lupus takes those edits out again before it judges and shows you the test, and puts them back after you approve. The same two instances now take 54 s and 100 s and pass. `lupus do` still costs more time than a plain call (per instance, before the optional review: Codex 77 s vs 55 s, Claude 85 s vs 46 s).
+
+When Lupus reported DONE, the hidden tests still failed in 7 of 18 cases on Codex and 1 of 10 on Claude (in 7 of those 8 a plain call failed too). **DONE means the check you approved passed. It does not mean the request was understood.** In the other direction, Lupus said "not done" in 4 cases where the hidden tests passed: each time the request changed behaviour that the project's existing tests pin down, and those tests are frozen.
+
+**An independent review did not help here.** `lupus do --review` has the other AI compare the request with the change after the checks pass (it must quote the request for every objection; objections go back to the worker once; a revision that breaks the approved checks is undone). Over 28 reviewed results it objected twice and changed the hidden-test outcome in none. Of the 8 results that were wrong it objected to one, and the revision that followed did not make it right. It is off by default and unproven.
 
 **Judging documents.** A document missing a rubric item and a document that tells the judge to pass it were both rejected by both judges; the complete one was accepted (6 of 6 as expected, one run each).
 
@@ -105,6 +109,7 @@ cd ~/work/my-project
 lupus fix-tests --driver claude      # observe red -> freeze tests -> fix -> verify
 lupus do "add a --json flag to the export command" --driver claude
                                      # one call: failing test + proposal kept aside -> you approve the test -> applied and verified
+lupus do "…" --driver claude --review     # after the checks pass, the other AI compares the change with the request (opt-in; see the pilot)
 lupus do "…" --driver claude --isolated   # same, in a separate checkout; then: lupus diff | accept | discard <goal>
 lupus session --driver claude        # your usual interactive Claude Code, tests frozen, verified on exit
 lupus write "migration plan for the billing tables" --out docs/plan.md --driver claude
@@ -145,7 +150,7 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 
 ## Limits you should know
 
-- **It does not make the model smarter.** On hidden tests it did no better than a plain call (pilot above). What it gives you is a result that was checked the way you agreed to, in a place that is not your working tree, and that survives interruption.
+- **It does not make the model smarter.** On hidden tests it did as well as a plain call, not better, and an independent review by the other AI changed nothing (pilot above). What it gives you is a result that was checked the way you agreed to, in a place that is not your working tree, and that survives interruption.
 - **Not a VM.** The Claude worker and verifiers run in a macOS sandbox (home directory unreadable except what the CLI itself needs, no writes outside the project and temp, Lupus's own state out of reach); Codex uses its own sandbox with a profile Lupus sets; verifiers can use Docker. The temp directory is shared, the worker's network is open, and an interactive session is not sandboxed at all. Do not give it protected or customer data.
 - **You start it.** `lupus session` wraps your interactive CLI; nothing activates Lupus when you type `claude` yourself. Token usage of an interactive session is not reported by the CLIs, so it is charged at its full reservation.
 - **A judge is an opinion.** The quote check stops unsupported passes, not wrong facts. That is why your sign-off is the last condition. Images and visual design cannot be judged.
@@ -154,7 +159,7 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 - Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set, and Prime itself is not connected.
 - jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
 - A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
-- Young code. Fourteen external review rounds found and fixed 108 defects, and a usability audit another 16; assume more remain.
+- Young code. Seventeen external review rounds found 118 defects, 117 of them fixed, and a usability audit another 16; assume more remain.
 
 ## Documentation
 

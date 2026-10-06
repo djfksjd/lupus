@@ -1,0 +1,842 @@
+{
+ "driver": "native_codex",
+ "reviewer": "native_claude",
+ "arms": [
+  "plain",
+  "do"
+ ],
+ "date": "2026-10-07",
+ "rows": [
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "plain",
+   "seconds": 41.5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 160679,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 41.5,
+   "tokens_before_review": 143302,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 5726
+   },
+   "seconds": 46.7,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 143302,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "plain",
+   "seconds": 34.5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 135452,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 37.5,
+   "tokens_before_review": 98613,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6291
+   },
+   "seconds": 44.2,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 98613,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "plain",
+   "seconds": 32.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 117230,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 63.2,
+   "tokens_before_review": 218219,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6382
+   },
+   "seconds": 78.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 218219,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "plain",
+   "seconds": 95.5,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 259493,
+   "errors": [],
+   "hidden_detail": "st_split_for_update_in_begin_end - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 45 passed in 0.06s"
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": false,
+   "seconds_before_review": 102.3,
+   "tokens_before_review": 334341,
+   "review": {
+    "skipped": null,
+    "objections": [
+     {
+      "request_quote": "Refactor statement splitter to a simplified stack-based architecture",
+      "problem": "리팩터링인데 CREATE가 아닌 BEGIN...END 블록의 분할 결과가 달라진다. 기존에는 IF/FOR/WHILE을 `_is_create`일 때만 셌으나 변경 후에는 스택에 BEGIN만 있으면 push한다. 입력 `BEGIN\\n SELECT * FROM t FOR UPDATE;\\nEND;\\nSELECT 1;`에서 FOR가 push되고 END가 FOR만 pop해 BEGIN이 남아 문장이 1개로 합쳐진다(기존 2개). T-SQL `BEGIN IF @a=1 SELECT 1; END; SELECT 2;`도 동일."
+     }
+    ],
+    "dropped": 0,
+    "revised": true,
+    "revision_done": true,
+    "remaining": [],
+    "not_put_back": [],
+    "reviewer_tokens": 27658
+   },
+   "seconds": 269.0,
+   "hidden_tests_pass": false,
+   "calls": 2,
+   "tokens": 444383,
+   "errors": [],
+   "hidden_detail": "st_split_anonymous_begin_end_for - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 43 passed in 0.06s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "plain",
+   "seconds": 42.0,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 153652,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 58.3,
+   "tokens_before_review": 108464,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 5733
+   },
+   "seconds": 67.2,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 108464,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "plain",
+   "seconds": 65.5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 249557,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 87.0,
+   "tokens_before_review": 168885,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 5620
+   },
+   "seconds": 93.8,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 168885,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "plain",
+   "seconds": 48.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 225203,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 59.9,
+   "tokens_before_review": 136382,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6213
+   },
+   "seconds": 67.4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 136382,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "plain",
+   "seconds": 47.4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 172566,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 71.6,
+   "tokens_before_review": 180785,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6142
+   },
+   "seconds": 74.2,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 180785,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "1e6e869a",
+   "arm": "plain",
+   "seconds": 56.3,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 179021,
+   "errors": [],
+   "hidden_detail": "estMiscellaneous::test_inline_array_recursion_limit\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed in 0.48s"
+  },
+  {
+   "repo": "tomli",
+   "commit": "1e6e869a",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": false,
+   "seconds_before_review": 67.3,
+   "tokens_before_review": 158114,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6584
+   },
+   "seconds": 73.7,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 158114,
+   "errors": [],
+   "hidden_detail": "estMiscellaneous::test_inline_array_recursion_limit\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed in 0.02s"
+  },
+  {
+   "repo": "tomli",
+   "commit": "e1fdb94b",
+   "arm": "plain",
+   "seconds": 38.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 133423,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "e1fdb94b",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 44.2,
+   "tokens_before_review": 125242,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6821
+   },
+   "seconds": 50.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 125242,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "9eb2125e",
+   "arm": "plain",
+   "seconds": 52.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 186862,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "9eb2125e",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 107.5,
+   "hidden_tests_pass": true,
+   "calls": 3,
+   "tokens": 373203,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "2a2aa62f",
+   "arm": "plain",
+   "seconds": 51.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 181627,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "2a2aa62f",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 80.3,
+   "hidden_tests_pass": true,
+   "calls": 2,
+   "tokens": 282897,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "2c87a33f",
+   "arm": "plain",
+   "seconds": 53.5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 181899,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "2c87a33f",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 49.6,
+   "tokens_before_review": 133704,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6282
+   },
+   "seconds": 59.5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 133704,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "959bb79c",
+   "arm": "plain",
+   "seconds": 66.4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 275349,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "959bb79c",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": false,
+   "seconds_before_review": 76.2,
+   "tokens_before_review": 217420,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 8878
+   },
+   "seconds": 96.9,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 217420,
+   "errors": [],
+   "hidden_detail": "t_expand_contract_model_only_does_inner_lookup_once\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed in 0.06s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "d17cfaf0",
+   "arm": "plain",
+   "seconds": 47.4,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 223876,
+   "errors": [],
+   "hidden_detail": "n_str_uses_literal_eval_for_complex_string[\"a\\tb\"]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 23 passed in 0.11s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "d17cfaf0",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": false,
+   "seconds_before_review": 72.8,
+   "tokens_before_review": 178403,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 5636
+   },
+   "seconds": 80.5,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 178403,
+   "errors": [],
+   "hidden_detail": "n_str_uses_literal_eval_for_complex_string[\"a\\tb\"]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 23 passed in 0.10s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "23669b1b",
+   "arm": "plain",
+   "seconds": 58.6,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 248711,
+   "errors": [],
+   "hidden_detail": "t.py::test_unknown_extras - AssertionError: Reg...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 29 passed in 0.06s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "23669b1b",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": false,
+   "seconds_before_review": 57.9,
+   "tokens_before_review": 156839,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6252
+   },
+   "seconds": 64.0,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 156839,
+   "errors": [],
+   "hidden_detail": "t.py::test_unknown_extras - AssertionError: Reg...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 29 passed in 0.06s"
+  },
+  {
+   "repo": "click",
+   "commit": "b90faad1",
+   "arm": "plain",
+   "seconds": 71.4,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 299436,
+   "errors": [],
+   "hidden_detail": "ts.py::test_argument_normalizes_an_identifier_decl\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 15 passed in 0.34s"
+  },
+  {
+   "repo": "click",
+   "commit": "b90faad1",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": false,
+   "seconds_before_review": 101.9,
+   "tokens_before_review": 383906,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 6679
+   },
+   "seconds": 117.9,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 383906,
+   "errors": [],
+   "hidden_detail": "ts.py::test_argument_normalizes_an_identifier_decl\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 15 passed in 0.19s"
+  },
+  {
+   "repo": "click",
+   "commit": "f67c2bb6",
+   "arm": "plain",
+   "seconds": 101.1,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 335674,
+   "errors": [],
+   "hidden_detail": "e_default_short_help[-abbreviation inside sentence]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 8 passed in 0.02s"
+  },
+  {
+   "repo": "click",
+   "commit": "f67c2bb6",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "hidden_before_review": false,
+   "seconds_before_review": 74.8,
+   "tokens_before_review": 215549,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 5521
+   },
+   "seconds": 83.8,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 215549,
+   "errors": [],
+   "hidden_detail": "e_default_short_help[-abbreviation inside sentence]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 8 passed in 0.02s"
+  },
+  {
+   "repo": "click",
+   "commit": "05f6fd0d",
+   "arm": "plain",
+   "seconds": 32.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 134218,
+   "errors": []
+  },
+  {
+   "repo": "click",
+   "commit": "05f6fd0d",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 154.1,
+   "tokens_before_review": 648366,
+   "review": {
+    "skipped": null,
+    "objections": [],
+    "dropped": 0,
+    "revised": false,
+    "revision_done": null,
+    "remaining": null,
+    "not_put_back": [],
+    "reviewer_tokens": 7423
+   },
+   "seconds": 162.4,
+   "hidden_tests_pass": true,
+   "calls": 2,
+   "tokens": 648366,
+   "errors": []
+  },
+  {
+   "repo": "click",
+   "commit": "f25f697a",
+   "arm": "plain",
+   "seconds": 73.2,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 379783,
+   "errors": [],
+   "hidden_detail": "gument_help_undocumented_arguments_only_no_section\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 39 passed in 0.07s"
+  },
+  {
+   "repo": "click",
+   "commit": "f25f697a",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "hidden_before_review": true,
+   "seconds_before_review": 121.9,
+   "tokens_before_review": 468410,
+   "review": {
+    "skipped": null,
+    "objections": [
+     {
+      "request_quote": "List every argument in the `Positional arguments` help section",
+      "problem": "`@click.argument` 데코레이터로 만든 인자가 모두 `help` 없이 선언되면 `format_arguments`가 조기 반환하여 섹션 자체가 출력되지 않는다. 예: `@click.command()` + `@click.argument(\"src\")` + `@click.argument(\"dst\")`에서 `--help`를 실행하면 `Positional arguments` 섹션에 SRC, DST가 나열되어야 하지만 섹션이 아예 없다. 가장 흔한 선언 방식에서 기존 동작이 그대로 유지된다."
+     }
+    ],
+    "dropped": 0,
+    "revised": true,
+    "revision_done": false,
+    "remaining": [
+     {
+      "request_quote": "List every argument in the `Positional arguments` help section",
+      "problem": "`@click.argument` 데코레이터로 만든 인자가 모두 `help` 없이 선언되면 `format_arguments`가 조기 반환하여 섹션 자체가 출력되지 않는다. 예: `@click.command()` + `@click.argument(\"src\")` + `@click.argument(\"dst\")`에서 `--help`를 실행하면 `Positional arguments` 섹션에 SRC, DST가 나열되어야 하지만 섹션이 아예 없다. 가장 흔한 선언 방식에서 기존 동작이 그대로 유지된다."
+     }
+    ],
+    "not_put_back": [],
+    "reviewer_tokens": 7961
+   },
+   "seconds": 229.7,
+   "hidden_tests_pass": true,
+   "calls": 4,
+   "tokens": 1014928,
+   "errors": []
+  }
+ ],
+ "summary": {
+  "plain": {
+   "n": 20,
+   "hidden_pass": 13,
+   "tokens_mean": 211686,
+   "seconds_mean": 55.4
+  },
+  "do": {
+   "n": 20,
+   "hidden_pass": 13,
+   "tokens_mean": 269380,
+   "seconds_mean": 97.4,
+   "lupus_said_done": 18,
+   "said_done_but_hidden_fail": 7,
+   "review": {
+    "reviewed": 18,
+    "hidden_pass_before": 11,
+    "hidden_pass_after": 11,
+    "objected": 2,
+    "ended_clean": 17,
+    "clean_but_hidden_fail": 7,
+    "objections_left_and_hidden_fail": 0,
+    "reviewer_tokens_mean": 7656
+   }
+  }
+ }
+}

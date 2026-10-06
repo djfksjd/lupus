@@ -14,13 +14,14 @@ import hashlib
 import json
 import os
 import shlex
+import shutil
 import signal
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
 
-from . import adapters, alpha, author, budget, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, session, supervisor, vault
+from . import adapters, alpha, author, budget, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, review, session, supervisor, vault
 from .kernel import Kernel
 from .util import LupusError
 
@@ -44,7 +45,7 @@ def _summary(report: dict) -> str:
     done = report.get("done")
     lines = ["✔ 완료: 모든 완료 조건을 Lupus가 직접 검증했습니다" if done else
              f"✘ 미완료 (목표 상태: {report.get('goal_status', '?')})"]
-    for key, label in (("result", ""), ("check", "승인한 검사"), ("implementation", "구현"), ("out", "결과물"), ("tests", "테스트")):
+    for key, label in (("result", ""), ("check", "승인한 검사"), ("implementation", "구현"), ("review", "리뷰"), ("out", "결과물"), ("tests", "테스트")):
         if report.get(key):
             lines.append(f"  {label + ': ' if label else ''}{report[key]}")
     for check in report.get("checks") or []:
@@ -124,6 +125,56 @@ def _isolate(k: Kernel, project: dict, args: argparse.Namespace) -> dict:
     print(f"격리된 체크아웃에서 작업합니다(커밋 {isolated['base'][:8]} 기준). 지금 작업 폴더의 파일은 건드리지 않습니다."
           + (" 커밋하지 않은 변경은 이 작업에 포함되지 않습니다." if isolated["origin_has_uncommitted_changes"] else ""), file=sys.stderr)
     return isolated
+
+
+def _reviewed(k: Kernel, args: argparse.Namespace, report: dict, draft: dict, build: dict) -> dict:
+    """`lupus do --review`: the independent read, one round of answers, and what is left."""
+    reviewer = args.review if args.review != "other" else ("codex" if args.driver == "claude" else "claude")
+    if "review_base" not in build:
+        report["review"] = f"리뷰하지 못했습니다: {build.get('review_unavailable', '기준 상태를 보관하지 못함')}"
+        return report
+    print(f"검사가 통과했습니다. 구현을 쓰지 않은 AI({reviewer})가 요청과 변경을 대조합니다…", file=sys.stderr)
+
+    def run(goal_id: str) -> dict:
+        args.goal_id = goal_id
+        return _run(k, args)
+
+    outcome = review.cycle(k, report["goal_id"], draft["request"], DRIVER[reviewer], Path(build["review_base"]), run,
+                           quick.DEFAULT_CAPS, skip={draft["test_path"]})
+    said = lambda items: "; ".join(f"「{o['request_quote'][:60]}」 {o['problem'][:160]}" for o in items)
+    if "skipped" in outcome:
+        report["review"] = f"리뷰하지 못했습니다({reviewer}): {outcome['skipped']}"
+    elif not outcome.get("objections"):
+        report["review"] = f"독립 리뷰({reviewer}): 요청과 어긋나는 점을 찾지 못했습니다 (의견이며 증명이 아닙니다)"
+    elif not outcome["revised"]:
+        report["review"] = (f"독립 리뷰({reviewer}): 이의 {len(outcome['objections'])}건. 되돌아갈 백업을 만들 수 없어 worker에게 "
+                            f"돌려보내지 않았습니다({outcome.get('not_revised')}). 이의: {said(outcome['objections'])}")
+    else:
+        revised = outcome["revision_report"]
+        report["model_calls"] += len(revised["steps"])
+        for key, value in revised["usage"]["totals"].items():
+            report["usage"]["totals"][key] = report["usage"]["totals"].get(key, 0) + value
+        if outcome["revision_done"]:
+            report.update(goal_id=outcome["goal_id"], checks=revised["checks"])
+            report["steps"] = report["steps"] + revised["steps"]
+            left = outcome["remaining"]
+            report["review"] = (f"독립 리뷰({reviewer}): 이의 {len(outcome['objections'])}건을 worker에게 돌려보냈고 검사는 다시 통과했습니다. "
+                                + (f"다시 리뷰하지는 못했습니다({outcome['second_review_skipped']}): 이의가 해소됐는지는 확인되지 않았습니다"
+                                   if left is None else
+                                   f"리뷰어가 여전히 지적하는 것 {len(left)}건: {said(left)}" if left else "남은 이의 없음"))
+        else:
+            report["review"] = (f"독립 리뷰({reviewer}): 이의 {len(outcome['objections'])}건을 반영하려던 수정이 승인된 검사를 통과하지 못해 "
+                                f"통과했던 상태로 되돌렸습니다(밀려난 파일은 {outcome['displaced_kept_in']} 에 보관). "
+                                f"반영되지 않은 이의: {said(outcome['objections'])}")
+            if outcome["not_put_back"]:
+                # The project is not the state the checks passed on: this is no longer a verified result.
+                report["done"] = False
+                report["review"] += (f" ⚠ 되돌리지 못한 파일이 있어 검증된 상태가 아닙니다: {', '.join(outcome['not_put_back'][:10])}. "
+                                     f"통과했던 상태의 사본: {outcome['backup_kept_in']} (`lupus prune`이 오래된 사본을 지우기 전에 확인하세요)")
+    report["review_detail"] = {key: outcome[key] for key in (
+        "reviewer", "objections", "remaining", "dropped", "revised", "revision_done", "skipped", "files",
+        "second_review_skipped", "not_revised", "not_put_back", "displaced_kept_in", "backup_kept_in") if key in outcome}
+    return report
 
 
 def _after_isolated(k: Kernel, report: dict) -> None:
@@ -243,6 +294,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--shell", action="store_true", help="let the worker run commands to check its own work (inside the sandbox)")
     p.add_argument("--allow-failing", action="store_true",
                    help="start even though some existing tests fail now; those same tests may keep failing, no others")
+    p.add_argument("--review", nargs="?", const="other", choices=("other", "claude", "codex"),
+                   help="when the checks pass, have an AI that did not write the change compare it with the request; "
+                        "objections go back to the worker once (default reviewer: the other AI)")
     p.add_argument("--two-step", action="store_true",
                    help="write the implementation in a separate call after you approved the test (default: proposed "
                         "in the same call, kept aside until you approve)")
@@ -750,7 +804,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 return 1
             try:
                 build = quick.approve_check(k, project, draft["goal_id"], draft["request"],
-                                            hashlib.sha256(content).hexdigest(), "user")
+                                            hashlib.sha256(content).hexdigest(), "user", keep_base=bool(args.review))
             except LupusError:
                 quick.discard_draft(k, project, draft["goal_id"], "user")      # nothing half-approved stays behind
                 raise
@@ -762,6 +816,12 @@ def _dispatch(args: argparse.Namespace) -> int:
             for key, value in first["usage"]["totals"].items():      # the request cost both steps
                 report["usage"]["totals"][key] = report["usage"]["totals"].get(key, 0) + value
             report["model_calls"] = len(first["steps"]) + sum(s.get("outcome") != "ALREADY_SATISFIED" for s in report["steps"])
+            if args.review and report["done"]:
+                report = _reviewed(k, args, report, draft, build)
+            elif args.review:
+                report["review"] = "검사가 통과하지 않아 리뷰하지 않았습니다"
+            if build.get("review_base"):      # the copy of the project kept for the reviewer
+                shutil.rmtree(build["review_base"], ignore_errors=True)
             _after_isolated(k, report)
             report["vault"] = vault.sync(k)
             _out(report)

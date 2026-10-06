@@ -14,7 +14,7 @@ Lupus의 supervisor 코어. 목표·예산·시도·checkpoint·인계 상태와
 | Claude | 토큰 −91%, 시간 −67% | 토큰 −33%, 시간 −46% |
 | Codex | 토큰 −56%, 시간 −51% | 토큰 −47%, 시간 −44% |
 
-`lupus do`는 한 번의 호출로 동작하며 평범한 한 번 호출 대비 Claude에서 토큰 0.89배·시간 1.5배, Codex에서 토큰 0.52배·시간 1.0배다(2026-10-07, 3회씩, holdout은 모두 통과). 실제 프로젝트(tomli)의 upstream 변경 3건은 두 CLI 모두 첫 시도에 끝냈다. 조건·원자료·한계는 [../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) 1.13절과 `docs/*.json`. 재현: `PYTHONPATH=src python3 evaluations/compare.py simple out.json 3`, `evaluations/request.py`, `evaluations/real.py`, `evaluations/write.py`.
+`lupus do`는 한 번의 호출로 동작하며 평범한 한 번 호출 대비 Claude에서 토큰 0.89배·시간 1.5배, Codex에서 토큰 0.52배·시간 1.0배다(2026-10-07, 3회씩, holdout은 모두 통과). 실제 프로젝트(tomli)의 upstream 변경 3건은 두 CLI 모두 첫 시도에 끝냈다. 실제 upstream 커밋 20건을 숨긴 테스트로 채점하면 `lupus do`는 평범한 호출과 같은 수준이다(Codex 13 대 13, Claude 12건 중 11 대 10). 더 낫지는 않고 `--review`도 결과를 바꾸지 못했다. 조건·원자료·한계는 [../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) 1.13절과 `docs/*.json`. 재현: `PYTHONPATH=src python3 evaluations/compare.py simple out.json 3`, `evaluations/request.py`, `evaluations/real.py`, `evaluations/write.py`.
 
 ## 시험
 
@@ -44,6 +44,7 @@ lupus fix-tests --driver claude                      # 실패하는 테스트를
 lupus fix-tests --driver codex --check "make test" --protect tests   # 알아보지 못하는 프로젝트: 테스트 명령을 직접 지정
 lupus fix-tests --driver claude --container node:24  # 테스트를 호스트 샌드박스 대신 Docker 컨테이너에서(네트워크 없음)
 lupus do "<요청>" --driver claude [--two-step]       # 한 번 호출로 실패하는 테스트 + 따로 둔 구현안 -> 승인 -> 적용·검증
+lupus do "<요청>" --driver claude --review [codex]   # 검사 통과 뒤 구현을 쓰지 않은 AI가 요청과 변경을 대조(이의는 요청 인용 필수, 한 번 돌려보냄)
                                                      # 승인 때 edit 입력: 테스트를 직접 고쳐서 승인. --allow-failing: 지금 실패하는 기존 테스트는 그대로 둠
 lupus do "<요청>" --driver claude --isolated          # 커밋된 HEAD의 별도 체크아웃에서 작업 (fix-tests도 가능). --shell: worker가 명령 실행 가능
 lupus diff <goal_id> | lupus accept <goal_id> | lupus discard <goal_id>   # 결과 보기 / 커밋 하나로 가져오기 / 버리기

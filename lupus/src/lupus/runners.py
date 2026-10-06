@@ -398,7 +398,12 @@ def judge_red(runner: str, test_path: str, output: str) -> str | None:
         return load_hint        # Node reports a missing export as a SyntaxError; it is a load failure
     broken = _BROKEN.get(language)
     if broken is not None and broken.search(output):
-        return "the test file does not parse"
+        # Python names the error class in any traceback. When the file loaded and its tests ran and
+        # failed, a SyntaxError in the output was raised INSIDE a test (one that compiles generated
+        # code, say), which is an ordinary red.
+        ran = language == "python" and _FAILED[runner].search(output) and not _NOT_LOADED[runner].search(output)
+        if not ran:
+            return "the test file does not parse"
     build = _BUILD_FAILED.get(language)
     if build is not None and build.search(output):
         if _only_missing_names(language, test_path, output):

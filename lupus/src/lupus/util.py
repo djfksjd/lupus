@@ -173,9 +173,6 @@ def scrubbed_env(extra: dict[str, str] | None = None, passthrough: list[str] | t
 # ---------------------------------------------------------------- verifier sandbox (macOS)
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
-# Where a worker may leave a proposed implementation that is not yet part of the project (`lupus
-# do`). No verifier can read it: a check must describe the code as it is, not as proposed.
-STAGE_DIR = ".lupus-staged"
 # Read-only parts of language toolchains that commonly live in the home directory. Only the
 # directories that hold programs and packages: NOT ~/.cargo, ~/.gradle or ~/.m2 as a whole, which
 # also hold registry tokens and repository passwords.
@@ -246,7 +243,7 @@ def sandbox_profile(project: Path, executable: str | None = None, extra_read: tu
         f"(deny file-read* (subpath {_sb(home)}))",
         f"(allow file-read-metadata (subpath {_sb(home)}))",
         "(allow file-read* " + " ".join(f"(subpath {_sb(p)})" for p in readable) + ")",
-        *[f"(deny file-read* file-write* (subpath {_sb(p)}))" for p in [*state, os.path.join(root, STAGE_DIR)]],
+        *[f"(deny file-read* file-write* (subpath {_sb(p)}))" for p in state],
         # Git metadata can make git run things (hooks, config). Code under test does not get to write it.
         f"(deny file-write* (subpath {_sb(os.path.join(root, '.git'))}))",
     ])

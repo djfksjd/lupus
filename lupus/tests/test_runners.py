@@ -85,6 +85,15 @@ class ReadingTests(unittest.TestCase):
         self.assertIsNone(runners.judge_red("go", "lupus_x_test.go",
                           "# demo [demo.test]\n./lupus_x_test.go:7:7: c.Mul undefined (type Calculator has no field or method Mul)\nFAIL\tdemo [build failed]\n"))
         self.assertIsNone(runners.judge_red("go", "x_test.go", "=== RUN   TestLupusMul\n--- FAIL: TestLupusMul (0.00s)\nFAIL\n"))
+        # measured 2026-10-07: a test that compiles generated code fails with a SyntaxError of its own
+        inside = ("    exec(out)\nE     File \"<string>\", line 1\nE   SyntaxError: unterminated string literal\n"
+                  "FAILED tests/test_lupus_x.py::test_roundtrip - SyntaxError: unterminated\n2 failed, 1 passed in 0.04s\n")
+        self.assertIsNone(runners.judge_red("pytest", "tests/test_lupus_x.py", inside))
+        self.assertIn("does not parse", runners.judge_red(
+            "pytest", "tests/test_lupus_x.py", "ERROR collecting tests/test_lupus_x.py\nE   SyntaxError: invalid syntax\n1 error in 0.02s\n"))
+        self.assertIsNone(runners.judge_red("unittest", "test_lupus_x.py", "SyntaxError: bad\n\nRan 2 tests in 0.001s\n\nFAILED (errors=1)\n"))
+        self.assertIn("does not parse", runners.judge_red(
+            "unittest", "test_lupus_x.py", "ERROR: test_lupus_x (unittest.loader._FailedTest)\nSyntaxError: bad\nRan 1 test in 0.000s\n"))
         self.assertIn("no test", runners.judge_red("jest", "a.test.js", "Tests:       2 passed, 2 total\n"))
         self.assertIn("failed to load", runners.judge_red("jest", "a.test.js", "FAIL ./a.test.js\n  ● Test suite failed to run\n"))
 

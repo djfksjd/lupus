@@ -8,6 +8,7 @@ supervisor to stop; it empties its worker's process group on the way out.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -133,17 +134,26 @@ def prune(k: Kernel, days: float) -> dict:
     records of finished background jobs, session scratch files — older than `days`. Goals, evidence
     and the audit trail are history and are not touched."""
     cutoff = time.time() - days * 86_400
-    removed = {"displaced": 0, "logs": 0, "session_files": 0, "jobs": 0}
+    removed = {"displaced": 0, "logs": 0, "session_files": 0, "jobs": 0, "snapshots": 0}
     live = {row["goal_id"] for row in k.q("SELECT goal_id FROM goal WHERE status NOT IN ('DONE','CANCELLED')")}
-    for name, key in (("displaced", "displaced"), ("sessions", "session_files")):
-        base = k.runtime / name
-        for entry in (sorted(base.iterdir()) if base.is_dir() else []):
-            owner = entry.name.removesuffix(".json")
-            if entry.is_symlink() or owner in live or any(owner == r["run_id"] for r in k.q(
-                    "SELECT run_id FROM run WHERE status <> 'STOPPED'")) or entry.stat().st_mtime > cutoff:
-                continue
-            shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
-            removed[key] += 1
+    with contextlib.ExitStack() as stack:
+        # Set-aside files and review backups are what a running supervisor returns to. They are
+        # pruned only while no supervisor runs; otherwise they wait for the next prune.
+        try:
+            stack.enter_context(k.supervisor_lock())
+            idle = True
+        except LupusError:
+            idle = False
+            removed["skipped_while_a_supervisor_runs"] = ["displaced", "snapshots"]
+        for name, key in (("displaced", "displaced"), ("sessions", "session_files"), ("base", "snapshots")):
+            base = k.runtime / name
+            for entry in (sorted(base.iterdir()) if base.is_dir() and (idle or name == "sessions") else []):
+                owner = entry.name.removesuffix(".json").removesuffix("-verified")
+                if entry.is_symlink() or owner in live or any(owner == r["run_id"] for r in k.q(
+                        "SELECT run_id FROM run WHERE status <> 'STOPPED'")) or entry.stat().st_mtime > cutoff:
+                    continue
+                shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
+                removed[key] += 1
     listing(k)      # close records of jobs that are gone
     with k.tx():
         for row in k.q("SELECT job_id, log_path FROM job WHERE status = 'EXITED' AND coalesce(ended_at, started_at) < ?",
