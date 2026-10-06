@@ -14,7 +14,7 @@
 ![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-275%20passing-2ea043?style=flat-square)
+![Tests](https://img.shields.io/badge/offline%20tests-299%20passing-2ea043?style=flat-square)
 
 </div>
 
@@ -29,7 +29,7 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 | **증거로만 완료** | 현재 완료 조건에 묶인 검사가 통과해야 DONE입니다. worker의 "고쳤습니다"는 증거가 아닙니다. |
 | **테스트 고정** | worker가 시작하기 전에 테스트 파일과 러너 설정을 고정합니다. 수정·삭제·건너뛰기는 검증 전에 되돌립니다. |
 | **Python, Node, Go, Rust, 그리고 임의의 명령** | unittest, pytest, node:test, jest, vitest, `go test`, `cargo test`를 프로젝트 파일만 보고 알아봅니다. 그 밖에는 `--check "<테스트 명령>"`. |
-| **어떤 요청이든 한 줄** | `lupus fix-tests`는 직접 관측한 실패를 목표로 삼습니다. `lupus do "<요청>"`은 실패하는 테스트를 먼저 쓰고, 승인을 받은 뒤 구현합니다. |
+| **어떤 요청이든 한 줄** | `lupus fix-tests`는 직접 관측한 실패를 목표로 삼습니다. `lupus do "<요청>"`은 한 번의 호출로 실패하는 테스트와 (따로 보관하는) 구현안을 만들고, 테스트를 승인받은 뒤 구현안을 적용해 검증합니다. |
 | **문서·기획·조사** | `lupus write`: 먼저 판정 기준을 승인받고, 작성자와 다른 AI가 평가하되 충족이라고 볼 때마다 문서를 인용해야 하며, 마지막에 그 판본을 사용자가 승인합니다. |
 | **평소의 대화형 세션** | `lupus session`은 평소 쓰던 `claude`/`codex` 화면을 사용자 설정 그대로 띄우고, 테스트를 고정한 뒤, 종료하면 직접 검증합니다. |
 | **Claude ↔ Codex 인계** | 한쪽이 멈추면(한도, 중단, 선택) 다른 쪽이 검증된 checkpoint에서 이어갑니다. 끝난 단계는 다시 하지 않고 예산과 시도 횟수도 초기화되지 않습니다. |
@@ -53,8 +53,8 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 | 4단계 프로젝트, Claude (1~2회, 2026-10-05) | 298,327 토큰 · 52.0 s | 70,768 · 42.5 s |
 | 같은 프로젝트 중단 후 다른 AI가 인계 (2026-10-05) | 337,133 토큰 · 82.0 s · 재설명 1,139자 | 138,989 · 64.1 s · 없음 |
 | 4단계 프로젝트, Codex, 단계마다 호출 대 묶음 호출 | 185,278 토큰 · 89.0 s | 122,595 · 53.1 s |
-| `lupus do` 대 평범한 한 번 호출, Claude (3회) | 17,497 토큰 · 9.5 s | 28,852 · 17.4 s |
-| 같은 비교, Codex (3회) | 72,117 토큰 · 18.6 s | 74,212 · 27.1 s |
+| `lupus do` 대 평범한 한 번 호출, Claude (3회, 2026-10-07) | 17,493 토큰 · 10.1 s | **15,629 · 15.1 s** |
+| 같은 비교, Codex (3회, 2026-10-07) | 72,083 토큰 · 24.4 s | **37,502 · 24.8 s** |
 
 **실제 프로젝트에서.** [hukkin/tomli](https://github.com/hukkin/tomli)의 관리자가 실제로 만든 변경 3건(버그 수정, TOML 1.1 기능, 보안 강화)을 골라, 소스는 그 커밋 직전 상태로, 테스트는 커밋 직후 상태로 두고 폴더만 줬습니다. `lupus fix-tests`는 3건 모두 첫 시도에 끝냈습니다(Claude 36k~64k 토큰·10~21초, Codex 82k~119k 토큰·16~21초). 판정은 upstream의 테스트로 했고, 어떤 실행도 그 테스트를 고치려 하지 않았습니다.
 
@@ -63,7 +63,7 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 정직하게 읽어야 할 점:
 
 - **"평소 설정의 CLI" 대비 절감의 대부분은 플러그인·MCP·스킬 설명을 싣지 않는 데서 나옵니다.** 이것은 Lupus 없이도 얻을 수 있습니다(가운데 열). Lupus가 그 위에 더하는 것은 prompt 기법과 검증입니다.
-- **`lupus do`는 평범한 호출보다 비쌉니다**(Claude에서 토큰 1.65배, Codex에서는 비슷, 시간 1.5~1.8배). holdout 테스트는 양쪽 모두 전부 통과했습니다. 얻는 것은 사용자가 승인한 검사이지, 이 작업들에서의 더 나은 결과가 아닙니다. 테스트 초안을 가벼운 모델로 쓰는 방법도 시험했지만 더 비쌌기 때문에 쓰지 않습니다.
+- **`lupus do`는 이제 모델을 두 번이 아니라 한 번 부릅니다.** 테스트와 구현안이 같은 호출에서 나오고, 구현안은 따로 보관됩니다. 테스트는 지금의 코드를 기준으로 확인해 보여 드리고, 승인한 뒤에야 구현안을 적용해 검증합니다. Claude에서 29,104 → 15,629 토큰, Codex에서 74,245 → 37,502 토큰으로 줄어 토큰은 평범한 호출보다 적습니다. 다만 Claude에서는 여전히 평범한 호출보다 느리고(15.1초 대 10.1초), 출력 토큰 비중이 커서 정가 환산 추정액은 약 1.6배입니다(구독은 토큰당 과금되지 않습니다). holdout 테스트는 모든 조건에서 통과했습니다. `--two-step`을 주면 예전 방식으로 동작합니다.
 - 이 측정에서 `--cheap-first`는 Claude에서 토큰을 줄이지 못했습니다(107,738 대 37,216).
 - 칸당 3회, 한 대의 기기, 작은 작업입니다. 첫 표의 시간은 다른 CLI 호출이 돌고 있는 동안 잰 값입니다.
 - 숨긴 holdout 검사가 있는 더 어려운 작업 3종(2026-10-05)에서는 Lupus 유무와 관계없이 36회 모두 통과했습니다. 그래서 그 benchmark로는 테스트 고정이 잘못된 완료를 줄인다는 것을 보이지 못했습니다.
@@ -91,7 +91,7 @@ lupus probe --live                   # 설치된 CLI가 지원하는 범위 측�
 cd ~/work/my-project
 lupus fix-tests --driver claude      # 실패 관측 -> 테스트 고정 -> 수정 -> 검증
 lupus do "export 명령에 --json 옵션 추가" --driver claude
-                                     # 실패하는 테스트 초안 -> 승인 -> 구현
+                                     # 한 번 호출: 실패하는 테스트 + 따로 보관한 구현안 -> 테스트 승인 -> 적용·검증
 lupus session --driver claude        # 평소의 대화형 Claude Code, 테스트 고정, 종료 시 검증
 lupus write "결제 테이블 이전 계획" --out docs/plan.md --driver claude
                                      # 기준 승인 -> 작성 -> 다른 AI가 평가 -> 최종 승인
@@ -138,7 +138,8 @@ lupus learn --driver claude                                    # 기록된 실�
 - **한 번에 worker 하나.** `alpha-run`은 목표를 차례로 진행하며 프로젝트를 병렬로 실행하지 않습니다.
 - 학습은 후보를 제안하고 이후의 검증 결과에 판단을 맡깁니다. 고정 평가셋은 없으며 Prime 자체는 연결하지 않았습니다.
 - jest와 vitest는 실제 설치본으로, Go와 Rust는 확인을 위해 임시로 설치한 도구로 검증했습니다. Linux와 Windows에서는 OS 샌드박스를 지원하지 않습니다.
-- 코드가 젊습니다. 외부 리뷰 11회에서 결함 83건을 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
+- 대기 상태에는 항상 빠져나올 명령이 있습니다. `lupus status <goal>`이 이유를 알려 주고 `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise`로 이어갑니다. `lupus prune`은 오래된 잔여 파일을 지웁니다.
+- 코드가 젊습니다. 외부 리뷰 12회에서 결함 90건을, 사용성 점검에서 16건을 더 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
 
 ## 문서
 

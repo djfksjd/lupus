@@ -14,7 +14,7 @@ Lupus의 supervisor 코어. 목표·예산·시도·checkpoint·인계 상태와
 | Claude | 토큰 −91%, 시간 −67% | 토큰 −33%, 시간 −46% |
 | Codex | 토큰 −56%, 시간 −51% | 토큰 −47%, 시간 −44% |
 
-`lupus do`는 평범한 한 번 호출보다 Claude에서 토큰 1.65배·시간 1.8배, Codex에서 토큰 1.03배·시간 1.5배다(3회씩, holdout은 모두 통과). 실제 프로젝트(tomli)의 upstream 변경 3건은 두 CLI 모두 첫 시도에 끝냈다. 조건·원자료·한계는 [../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) 1.13절과 `docs/*.json`. 재현: `PYTHONPATH=src python3 evaluations/compare.py simple out.json 3`, `evaluations/request.py`, `evaluations/real.py`, `evaluations/write.py`.
+`lupus do`는 한 번의 호출로 동작하며 평범한 한 번 호출 대비 Claude에서 토큰 0.89배·시간 1.5배, Codex에서 토큰 0.52배·시간 1.0배다(2026-10-07, 3회씩, holdout은 모두 통과). 실제 프로젝트(tomli)의 upstream 변경 3건은 두 CLI 모두 첫 시도에 끝냈다. 조건·원자료·한계는 [../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) 1.13절과 `docs/*.json`. 재현: `PYTHONPATH=src python3 evaluations/compare.py simple out.json 3`, `evaluations/request.py`, `evaluations/real.py`, `evaluations/write.py`.
 
 ## 시험
 
@@ -43,7 +43,7 @@ python3 -m lupus vault-sync                   # 전용 Vault(<home>/vault) 갱�
 lupus fix-tests --driver claude                      # 실패하는 테스트를 관측해 목표로 삼는다 (Python·Node·Go·Rust)
 lupus fix-tests --driver codex --check "make test" --protect tests   # 알아보지 못하는 프로젝트: 테스트 명령을 직접 지정
 lupus fix-tests --driver claude --container node:24  # 테스트를 호스트 샌드박스 대신 Docker 컨테이너에서(네트워크 없음)
-lupus do "<요청>" --driver claude                    # 실패하는 테스트 초안 -> 승인 -> 구현
+lupus do "<요청>" --driver claude [--two-step]       # 한 번 호출로 실패하는 테스트 + 따로 둔 구현안 -> 승인 -> 적용·검증
 lupus write "<요청>" --out docs/plan.md --driver claude [--judge codex] [--must "<기준>"] [--web]
                                                      # 문서: 기준 승인 -> 작성 -> 다른 AI가 인용하며 평가 -> 판본 승인
 lupus session --driver claude [-- <CLI 인자>]        # 평소의 대화형 CLI. 테스트 고정, 종료 시 Lupus가 검증
@@ -59,6 +59,10 @@ lupus alpha-run --drivers claude,codex [--background]   # 열린 목표를 차�
 lupus run <goal_id> --driver claude --background     # 터미널을 닫아도 계속
 lupus jobs | lupus logs <job_id> | lupus stop <job_id>
 lupus learn --driver claude                          # 기록된 실패에서 절차 후보 생성(사건이 없으면 호출하지 않음)
+lupus approve <goal_id> | lupus revise <goal_id> "<의견>" --driver claude   # 문서 목표의 승인·수정
+lupus revalidate <goal_id> --note "…"                # 권한 철회 뒤 계속 허용
+lupus project-remove <project_id> | lupus prune --days 30
+lupus --json <명령>                                  # 터미널에서도 전체 JSON 출력(기본은 요약)
 ```
 
 지식 그래프:

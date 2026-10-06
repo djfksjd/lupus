@@ -1,0 +1,238 @@
+{
+ "date": "2026-10-06",
+ "approval": "simulated",
+ "driver": "native_codex",
+ "repeats": 3,
+ "rows": [
+  {
+   "run": 0,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 6699,
+   "cached_input": 64768,
+   "output": 601,
+   "turns": 1,
+   "seconds": 24.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 7,
+   "staged_applied": [],
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 12914,
+   "cached_input": 60544,
+   "output": 896,
+   "turns": 2,
+   "seconds": 34.3,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "F_lupus_do_one_call",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 6,
+   "staged_applied": [
+    "inventory.py"
+   ],
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "lupus_done": true,
+   "attempts": 1,
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 6714,
+   "cached_input": 30080,
+   "output": 747,
+   "turns": 1,
+   "seconds": 23.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 12058,
+   "cached_input": 59392,
+   "output": 609,
+   "turns": 1,
+   "seconds": 21.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 6,
+   "staged_applied": [],
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 18316,
+   "cached_input": 55040,
+   "output": 882,
+   "turns": 2,
+   "seconds": 37.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "F_lupus_do_one_call",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 6,
+   "staged_applied": [
+    "inventory.py"
+   ],
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "lupus_done": true,
+   "attempts": 1,
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 6679,
+   "cached_input": 30080,
+   "output": 678,
+   "turns": 1,
+   "seconds": 23.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 6740,
+   "cached_input": 64768,
+   "output": 613,
+   "turns": 1,
+   "seconds": 27.5,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 6,
+   "staged_applied": [],
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 12866,
+   "cached_input": 60416,
+   "output": 862,
+   "turns": 2,
+   "seconds": 31.9,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "F_lupus_do_one_call",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 7,
+   "staged_applied": [
+    "inventory.py"
+   ],
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "lupus_done": true,
+   "attempts": 1,
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 6722,
+   "cached_input": 30080,
+   "output": 726,
+   "turns": 1,
+   "seconds": 27.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  }
+ ],
+ "summary": {
+  "A_plain_cli": {
+   "n": 3,
+   "holdout_pass": 3,
+   "calls_mean": 1.0,
+   "tokens_mean": 72083,
+   "tokens_min": 72059,
+   "tokens_max": 72121,
+   "seconds_mean": 24.4,
+   "list_cost_usd_mean": null
+  },
+  "D_lupus_do": {
+   "n": 3,
+   "holdout_pass": 3,
+   "calls_mean": 2.0,
+   "tokens_mean": 74245,
+   "tokens_min": 74144,
+   "tokens_max": 74354,
+   "seconds_mean": 34.6,
+   "list_cost_usd_mean": null
+  },
+  "F_lupus_do_one_call": {
+   "n": 3,
+   "holdout_pass": 3,
+   "calls_mean": 1.0,
+   "tokens_mean": 37502,
+   "tokens_min": 37437,
+   "tokens_max": 37541,
+   "seconds_mean": 24.8,
+   "list_cost_usd_mean": null
+  }
+ }
+}

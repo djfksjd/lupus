@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import signal
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -26,8 +27,57 @@ def _home(args: argparse.Namespace) -> Path:
     return Path(args.home or os.environ.get("LUPUS_HOME") or Path.home() / ".lupus")
 
 
+JSON_OUTPUT = False
+
+
 def _out(data) -> None:
+    """A person at a terminal gets a few lines; a pipe, a log file or `--json` gets everything."""
+    if isinstance(data, dict) and "steps" in data and sys.stdout.isatty() and not JSON_OUTPUT:
+        print(_summary(data))
+        return
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def _summary(report: dict) -> str:
+    done = report.get("done")
+    lines = ["✔ 완료: 모든 완료 조건을 Lupus가 직접 검증했습니다" if done else
+             f"✘ 미완료 (목표 상태: {report.get('goal_status', '?')})"]
+    for key, label in (("result", ""), ("check", "승인한 검사"), ("implementation", "구현"), ("out", "결과물"), ("tests", "테스트")):
+        if report.get(key):
+            lines.append(f"  {label + ': ' if label else ''}{report[key]}")
+    for i, step in enumerate(report["steps"], 1):
+        verdicts = " ".join(f"{cid}={v}" for cid, v in (step.get("verdicts") or {}).items())
+        why = step.get("reason") or step.get("blockers") or ""
+        lines.append(f"  단계 {i}: {step.get('outcome') or step.get('status')}"
+                     + (f" · {step['variant']}" if step.get("variant") else "") + (f" · {verdicts}" if verdicts else "")
+                     + (f" · {why}" if why else ""))
+    used = (report.get("budget") or {})
+    totals = ((report.get("usage") or {}).get("totals") or {}) if isinstance(report.get("usage"), dict) else {}
+    tokens = sum(totals.get(key, 0) for key in ("tokens_in", "tokens_cached", "tokens_out"))
+    parts = []
+    if "attempts" in used:
+        parts.append(f"시도 {used['attempts']['used']}/{used['attempts']['cap']}")
+    if tokens:
+        parts.append(f"토큰 {tokens:,}")
+    elif isinstance(report.get("usage"), str):
+        parts.append(f"사용량: {report['usage']}")
+    if "active_ms" in used:
+        parts.append(f"{used['active_ms']['used'] / 1000:.1f}초")
+    if parts:
+        lines.append("  " + " · ".join(parts))
+    if report.get("detail"):
+        lines.append("  " + str(report["detail"])[-600:])
+    if not done:
+        for wait in report.get("waiting") or []:
+            lines.append(f"  대기: {wait.get('status', '')} {str(wait.get('reason', ''))[:200]}")
+        blockers = report.get("completion_blockers") or []
+        if blockers:
+            lines.append("  남은 것: " + ", ".join(blockers[:6]))
+        goal_id = report.get("goal_id")
+        lines.append(f"  다음: {report['next']}" if report.get("next") else
+                     f"  다음: lupus status {goal_id}   (원인 확인 후 lupus run {goal_id} --driver <claude|codex>)")
+    lines.append("  (전체 내용: 같은 명령에 --json)")
+    return "\n".join(lines)
 
 
 def _confirm_user(what: str) -> None:
@@ -44,6 +94,7 @@ def _adapter(name: str, model: str | None) -> adapters.Adapter:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="lupus", description="Lupus supervisor")
     parser.add_argument("--home", help="runtime directory (default: $LUPUS_HOME or ~/.lupus)")
+    parser.add_argument("--json", action="store_true", help="print full reports as JSON even at a terminal")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init", help="create the runtime directory and database")
@@ -138,10 +189,29 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("do", help="one line, any request: draft a failing test, you approve it, then implement")
     p.add_argument("request")
+    p.add_argument("--two-step", action="store_true",
+                   help="write the implementation in a separate call after you approved the test (default: proposed "
+                        "in the same call, kept aside until you approve)")
     p.add_argument("--driver", choices=("claude", "codex"), required=True)
     p.add_argument("--model")
     p.add_argument("--timeout", type=float, default=600)
     p.set_defaults(goal_id=None, max_steps=6, stop_stale_writer=False, cheap_first=False)
+
+    p = sub.add_parser("approve", help="read and sign off the document of a `write` goal that is waiting for you")
+    p.add_argument("goal_id")
+    p = sub.add_parser("revise", help="send the document of a `write` goal back with your feedback")
+    p.add_argument("goal_id")
+    p.add_argument("feedback")
+    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--model")
+    p.add_argument("--timeout", type=float, default=900)
+    p.set_defaults(max_steps=4, stop_stale_writer=False, cheap_first=False)
+    p = sub.add_parser("revalidate", help="after `revoke`: confirm that a goal may continue with what is left of its scope")
+    p.add_argument("goal_id")
+    p.add_argument("--note", required=True)
+    sub.add_parser("project-remove", help="take back a registration that has no goals").add_argument("project_id")
+    p = sub.add_parser("prune", help="delete old set-aside files, job logs and session scratch files")
+    p.add_argument("--days", type=float, default=30)
 
     p = sub.add_parser("recover", help="close runs left by a crash and reconcile recovery objects")
     p.add_argument("--stop-stale-writer", action="store_true")
@@ -190,13 +260,64 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--live", action="store_true", help="make one small subscription call per CLI")
 
     args = parser.parse_args(argv)
+    global JSON_OUTPUT
+    JSON_OUTPUT = args.json
     try:
         if args.cmd == "job-run":
             return _job_run(_home(args), args.job_id)
         return _dispatch(args)
     except LupusError as exc:
-        print(json.dumps({"error": exc.code, "detail": exc.detail}, ensure_ascii=False), file=sys.stderr)
+        _forget_fresh(args)
+        hint = NEXT_STEP.get(exc.code)
+        print(json.dumps({"error": exc.code, "detail": exc.detail, **({"next": hint} if hint else {})}, ensure_ascii=False),
+              file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        _forget_fresh(args)
+        print(json.dumps({"error": "INTERRUPTED", "next": "lupus recover"}), file=sys.stderr)
+        return 130
+    except (KeyError, TypeError, ValueError, OSError, sqlite3.Error) as exc:
+        if os.environ.get("LUPUS_DEBUG"):
+            raise
+        # A program error, not something the user did wrong: say so plainly instead of a traceback.
+        print(json.dumps({"error": "INTERNAL_ERROR", "detail": f"{type(exc).__name__}: {exc}"[:300],
+                          "next": "state on disk is transactional; run `lupus recover`. Set LUPUS_DEBUG=1 for the traceback"},
+                         ensure_ascii=False), file=sys.stderr)
+        return 3
+
+
+# What to do about a refusal, for the ones where it is not obvious.
+NEXT_STEP = {
+    "CAPABILITY_STALE": "lupus probe --live",
+    "CAPABILITY_UNVERIFIED": "lupus probe --live",
+    "WRITER_NOT_STOPPED": "lupus recover --stop-stale-writer   (after checking that nothing of yours is still running)",
+    "SUPERVISOR_BUSY": "lupus jobs   (another lupus is running; `lupus stop <job>` or wait)",
+    "NO_TESTS_FOUND": "name your test command: --check \"<command>\"",
+    "TEST_RUNNER_UNKNOWN": "name your test command: --check \"<command>\"",
+    "TEST_RUNNER_UNAVAILABLE": "install the test runner, or name your test command with --check, or run it in a container with --container <image>",
+    "BASELINE_RED": "lupus fix-tests --driver <claude|codex>",
+    "PROJECT_ROOT_OVERLAP": "lupus project-list, then `lupus project-remove <id>` for a registration made by mistake",
+    "UNCONFINED_READS_NOT_ALLOWED": "lupus probe --live, or `lupus project-allow-unconfined <project_id>`",
+    "PROVIDER_NOT_APPROVED": "register the project with that provider: lupus project-add <root> --name <n> --providers anthropic,openai",
+    "CHECK_EXISTS": "remove the leftover file or folder named in the detail",
+    "VERIFIER_SANDBOX_UNAVAILABLE": "run the checks in a container: --container <image>",
+}
+
+
+def _forget_fresh(args: argparse.Namespace) -> None:
+    """A folder registered by this very command, which then did nothing with it: do not leave the
+    registration behind (it would block registering the right folder later)."""
+    project_id = getattr(args, "fresh_project", None)
+    if not project_id:
+        return
+    try:
+        k = Kernel(_home(args))
+        try:
+            projects.remove(k, project_id, "user")
+        finally:
+            k.close()
+    except (LupusError, OSError, sqlite3.Error):
+        pass
 
 
 def _job_run(home: Path, job_id: str) -> int:
@@ -249,22 +370,106 @@ def _run(k: Kernel, args: argparse.Namespace) -> dict:
 DRIVER = {"claude": "native_claude", "codex": "native_codex"}
 
 
-def _project_here(k: Kernel, what: str) -> dict:
+def _repo_root(cwd: str) -> str:
+    """The folder to register: the enclosing git work tree if there is one (so that running from a
+    subfolder does not register the subfolder), otherwise the current folder."""
+    here = Path(os.path.realpath(cwd))
+    for folder in (here, *here.parents):
+        if (folder / ".git").exists():
+            return str(folder) if folder != Path(os.path.realpath(Path.home())) else str(here)
+    return str(here)
+
+
+def _project_here(k: Kernel, what: str, args: argparse.Namespace | None = None) -> dict:
     cwd = os.getcwd()
     project = projects.resolve(k, cwd)
     if project is None:
-        _confirm_user(f"이 폴더를 프로젝트로 등록합니다: {os.path.realpath(cwd)} ({what})")
-        project = projects.register(k, cwd, os.path.basename(os.path.realpath(cwd)), ["anthropic", "openai"])
+        root = _repo_root(cwd)
+        _confirm_user(f"이 폴더를 프로젝트로 등록합니다: {root} ({what})")
+        project = projects.register(k, root, os.path.basename(root), ["anthropic", "openai"])
+        if args is not None:
+            args.fresh_project = project["project_id"]
     return project
 
 
+def _started(args: argparse.Namespace) -> None:
+    """Work exists under the project now; the registration stays whatever happens next."""
+    args.fresh_project = None
+
+
+def _goal_file(path: str) -> dict:
+    """Read and check a goal file before anything is created from it."""
+    try:
+        spec = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise LupusError("GOAL_FILE_INVALID", f"{path}: {exc}") from exc
+    bad = lambda why: LupusError("GOAL_FILE_INVALID", f"{path}: {why}")
+    if not isinstance(spec, dict):
+        raise bad("the file must hold one JSON object")
+    if not isinstance(spec.get("objective"), str) or not spec["objective"].strip():
+        raise bad("`objective` (text) is missing")
+    budget_ = spec.get("budget")
+    if not isinstance(budget_, dict) or any(isinstance(v, bool) or not isinstance(v, int) or v <= 0 for v in budget_.values()):
+        raise bad("`budget` must map calls / attempts / active_ms (and optionally tokens) to positive whole numbers")
+    if not isinstance(spec.get("criteria"), list):
+        raise bad("`criteria` (a list) is missing")
+    tasks = spec.get("tasks", [])
+    if not isinstance(tasks, list):
+        raise bad("`tasks` must be a list")
+    for i, task in enumerate(tasks):
+        if not isinstance(task, dict) or not all(isinstance(task.get(key), str) and task[key].strip() for key in ("title", "prompt")):
+            raise bad(f"tasks[{i}] needs `title` and `prompt`")
+        if not isinstance(task.get("criteria"), list) or not task["criteria"]:
+            raise bad(f"tasks[{i}] needs `criteria`: the ids of the criteria it works towards")
+        deps = task.get("depends_on", [])
+        if not isinstance(deps, list) or any(isinstance(d, bool) or not isinstance(d, int) or not 0 <= d < i for d in deps):
+            raise bad(f"tasks[{i}].depends_on must list positions of EARLIER tasks (0..{i - 1})")
+    return spec
+
+
+def _approve(k: Kernel, goal_id: str) -> int:
+    """Final sign-off of a document goal, whenever the user gets to it."""
+    criterion = next((c for c in goals.criteria(k, goal_id) if c["verifier"]["kind"] == "user_approval"), None)
+    if criterion is None:
+        raise LupusError("NOT_A_DOCUMENT_GOAL", goal_id)
+    state = supervisor.finish(k, goal_id)       # brings the mechanical check and the judge up to date first
+    if state["done"]:
+        _out(state)
+        return 0
+    if state["completion_blockers"] != [f"EVIDENCE_FAIL:{criterion['id']}"]:
+        _out({"result": "아직 승인할 단계가 아닙니다(작성이나 평가가 끝나지 않았습니다)", **state,
+              "next": f"lupus run {goal_id} --driver <claude|codex>"})
+        return 1
+    target = goals.project_root(k, goal_id) / criterion["verifier"]["path"]
+    data = target.read_bytes()
+    print(f"\n----- {criterion['verifier']['path']} ({len(data.decode('utf-8', errors='replace'))}자): 평가자가 모든 기준 충족으로 판정 -----\n"
+          f"파일을 직접 읽어 보십시오: {target}")
+    try:
+        _confirm_user("이 판본을 완료로 승인하시겠습니까?")
+    except LupusError:
+        _out({"result": "승인하지 않았습니다. 목표는 완료되지 않은 채로 남습니다", "goal_id": goal_id,
+              "next": f"lupus revise {goal_id} \"<고칠 점>\" --driver <claude|codex>   또는 나중에   lupus approve {goal_id}"})
+        return 1
+    judging.approve(k, goal_id, criterion["id"], hashlib.sha256(data).hexdigest(), "user")
+    done = supervisor.finish(k, goal_id)
+    _out({**done, "out": criterion["verifier"]["path"]})
+    return 0 if done["done"] else 1
+
+
 def _write(k: Kernel, args: argparse.Namespace) -> int:
-    project = _project_here(k, "문서 작성")
+    project = _project_here(k, "문서 작성", args)
+    # `--out` is what the user typed where they are standing, not relative to wherever the project root is.
+    target_abs = os.path.realpath(os.path.join(os.getcwd(), args.out))
+    root_real = os.path.realpath(project["canonical_root"])
+    if not target_abs.startswith(root_real + os.sep):
+        raise LupusError("PATH_ESCAPES_PROJECT", f"{target_abs} is outside the project {root_real}")
+    args.out = os.path.relpath(target_abs, root_real)
     writer = DRIVER[args.driver]
     judge = DRIVER[args.judge] if args.judge else author.pick_judge(k, project, writer)
     if args.web and args.driver != "claude":
         raise LupusError("WEB_NOT_SUPPORTED", "--web works with --driver claude")
-    _confirm_user(f"요청: {args.request}\n결과물: {args.out} · 작성 {writer} · 평가 {judge}"
+    _confirm_user(f"요청: {args.request}\n결과물: {target_abs}" + (" (이미 있는 파일을 덮어씁니다)" if os.path.exists(target_abs) else "")
+                  + f" · 작성 {writer} · 평가 {judge}"
                   + ("\n작성자가 웹을 검색하고 읽을 수 있습니다(프로젝트 파일을 읽은 뒤 외부로 요청을 보낼 수 있음)" if args.web else "")
                   + ("\n주의: 평가자가 작성자와 같은 AI입니다" if judge == writer else ""))
     rubric = list(args.must)
@@ -276,6 +481,7 @@ def _write(k: Kernel, args: argparse.Namespace) -> int:
     print("\n----- 이 문서를 판정할 기준 -----\n" + "\n".join(f"{i}. {r}" for i, r in enumerate(rubric, 1)) + "\n-----")
     _confirm_user("이 기준으로 판정합니다. 기준은 작업 도중 바뀌지 않습니다")
     made = author.submit(k, project, args.request, args.out, rubric, judge, "user", min_chars=args.min_chars)
+    _started(args)
     args.goal_id = made["goal_id"]
     if args.driver == "claude":
         args.adapter = adapters.ClaudeAdapter(args.model, tools=("Read", "Write", "Edit", "Glob", "Grep"), web=args.web)
@@ -283,7 +489,8 @@ def _write(k: Kernel, args: argparse.Namespace) -> int:
     for _ in range(3):
         report = _run(k, args)
         if report["completion_blockers"] != ["EVIDENCE_FAIL:c2"]:
-            _out({"stage": "write", "result": "문서가 기계 검사 또는 평가를 통과하지 못했습니다", **report})
+            _out({"stage": "write", "result": "문서가 기계 검사 또는 평가를 통과하지 못했습니다", **report,
+                  "next": f"lupus run {made['goal_id']} --driver {args.driver}   그다음   lupus approve {made['goal_id']}"})
             return 1
         data = target.read_bytes()
         print(f"\n----- {made['out']} ({len(data.decode('utf-8', errors='replace'))}자) · 평가자 {judge}: 모든 기준 충족 판정 -----\n"
@@ -296,7 +503,8 @@ def _write(k: Kernel, args: argparse.Namespace) -> int:
             except (KeyboardInterrupt, EOFError):
                 feedback = ""
             if not feedback:
-                _out({"stage": "approval", "result": "승인하지 않았습니다. 목표는 완료되지 않은 채로 남습니다", "goal_id": made["goal_id"]})
+                _out({"stage": "approval", "result": "승인하지 않았습니다. 목표는 완료되지 않은 채로 남습니다", "goal_id": made["goal_id"],
+                      "next": f"lupus approve {made['goal_id']}   또는   lupus revise {made['goal_id']} \"<고칠 점>\" --driver {args.driver}"})
                 return 1
             author.revise(k, made["goal_id"], feedback, "user")
             continue
@@ -325,7 +533,7 @@ def _learn(k: Kernel, args: argparse.Namespace) -> int:
 
 
 def _session(k: Kernel, args: argparse.Namespace) -> int:
-    project = _project_here(k, "대화형 세션")
+    project = _project_here(k, "대화형 세션", args)
     if {"claude": "anthropic", "codex": "openai"}[args.driver] not in project["approved_providers"]:
         raise LupusError("PROVIDER_NOT_APPROVED", args.driver)
     _confirm_user(f"대화형 세션을 시작합니다: {project['canonical_root']} ({args.driver}). 지금 있는 테스트와 테스트 설정은 "
@@ -337,6 +545,7 @@ def _session(k: Kernel, args: argparse.Namespace) -> int:
         made = session.start(k, project, "user", args.check, args.protect, container=args.container)
     print(f"고정한 파일 {made['frozen']}개 · 시작 시점 테스트: {'통과' if made['baseline'] == 'PASS' else '실패(이 세션의 목표가 됩니다)'}",
           file=sys.stderr)
+    _started(args)
     args.goal_id, args.timeout = made["goal_id"], args.max_minutes * 60
     args.adapter = session.adapter(k, made["goal_id"], args.driver, [a for a in args.cli_args if a != "--"],
                                    not args.no_stop_check)
@@ -372,7 +581,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             _out([dict(r) for r in k.q("SELECT project_id, name, canonical_root, approved_providers, "
                                        "allow_unconfined_reads FROM project")])
         elif args.cmd == "goal-submit":
-            spec = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            spec = _goal_file(args.file)
             _confirm_user(f"새 목표 등록: {spec['objective']} · 예산 {spec['budget']}")
             with k.tx():
                 goal = goals.submit(k, args.project_id, spec["objective"], spec["criteria"], spec["budget"])
@@ -394,22 +603,23 @@ def _dispatch(args: argparse.Namespace) -> int:
             _out({"status": goals.resume_paused(k, args.goal_id, "user")})
         elif args.cmd == "refreeze":
             _confirm_user(f"보호된 검증 파일의 현재 상태를 기준으로 확정: {args.goal_id}")
-            _out({"files": protect.refreeze(k, args.goal_id, goals.project_root(k, args.goal_id), "user")})
+            files = protect.refreeze(k, args.goal_id, goals.project_root(k, args.goal_id), "user")
+            resumed = []
+            for task in goals.tasks(k, args.goal_id):      # the branches that were waiting for exactly this decision
+                if task["status"] == "NEEDS_ANSWER" and (task["wait_reason"] or "").startswith(("보호된 검증 파일", "PROTECT")):
+                    goals.resolve_wait(k, task["task_id"], "user", "보호된 검증 파일의 현재 상태를 확정함")
+                    resumed.append(task["task_id"])
+            _out({"files": files, "tasks_resumed": resumed})
         elif args.cmd == "goal-cancel":
             _confirm_user(f"목표 취소(되돌릴 수 없음): {args.goal_id}")
             goals.cancel(k, args.goal_id, "user")
         elif args.cmd == "recover":
             _out(supervisor.recover(k, args.stop_stale_writer))
         elif args.cmd == "fix-tests":
-            cwd = os.getcwd()
-            project = projects.resolve(k, cwd)
-            provider = {"claude": "anthropic", "codex": "openai"}[args.driver]
-            if project is None:
-                _confirm_user(f"이 폴더를 프로젝트로 등록하고 실패하는 테스트를 고칩니다: {os.path.realpath(cwd)} ({args.driver})")
-                project = projects.register(k, cwd, os.path.basename(os.path.realpath(cwd)), ["anthropic", "openai"])
-            elif provider not in project["approved_providers"]:
-                raise LupusError("PROVIDER_NOT_APPROVED", provider)
-            else:
+            project = _project_here(k, f"실패하는 테스트 고치기, {args.driver}", args)
+            if {"claude": "anthropic", "codex": "openai"}[args.driver] not in project["approved_providers"]:
+                raise LupusError("PROVIDER_NOT_APPROVED", args.driver)
+            if not getattr(args, "fresh_project", None):
                 _confirm_user(f"실패하는 테스트를 고칩니다: {project['canonical_root']} ({args.driver})")
             made = quick.fix_tests(k, project, "user", check=args.check, protect_paths=args.protect,
                                    container=args.container)
@@ -417,6 +627,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 _out(made)
                 return 0
             args.goal_id = made["goal_id"]
+            _started(args)
             report = _run(k, args)
             report["vault"] = vault.sync(k)
             _out(report)
@@ -425,15 +636,22 @@ def _dispatch(args: argparse.Namespace) -> int:
         elif args.cmd == "session":
             return _session(k, args)
         elif args.cmd == "do":
-            cwd = os.getcwd()
-            project = projects.resolve(k, cwd)
-            if project is None:
-                _confirm_user(f"이 폴더를 프로젝트로 등록합니다: {os.path.realpath(cwd)}")
-                project = projects.register(k, cwd, os.path.basename(os.path.realpath(cwd)), ["anthropic", "openai"])
+            project = _project_here(k, "요청 구현", args)
             _confirm_user(f"요청: {args.request}\n먼저 이 요청을 판정할 테스트를 작성합니다 ({args.driver})")
-            draft = quick.draft_check(k, project, args.request, "user")
+            draft = quick.draft_check(k, project, args.request, "user", stage=not args.two_step)
+            _started(args)
             args.goal_id = draft["goal_id"]
-            first = _run(k, args)
+            try:
+                first = _run(k, args)
+            except BaseException:
+                # Interrupted (Ctrl-C) or refused before you approved anything: the half-written test
+                # and proposal must not stay behind as a failing test in your project.
+                try:
+                    supervisor.recover(k)
+                    quick.discard_draft(k, project, draft["goal_id"], "user")
+                except LupusError:
+                    pass
+                raise
             if not first["done"]:
                 kept = quick.discard_draft(k, project, draft["goal_id"], "user")
                 _out({"stage": "check", "result": "유효한 검사를 만들지 못했습니다", "draft_kept_in": kept, **first})
@@ -448,11 +666,20 @@ def _dispatch(args: argparse.Namespace) -> int:
                 kept = quick.discard_draft(k, project, draft["goal_id"], "user")
                 _out({"stage": "approval", "result": "승인하지 않아 검사를 치웠습니다", "draft_kept_in": kept})
                 return 1
-            build = quick.approve_check(k, project, draft["goal_id"], draft["request"],
-                                        hashlib.sha256(content).hexdigest(), "user")
+            try:
+                build = quick.approve_check(k, project, draft["goal_id"], draft["request"],
+                                            hashlib.sha256(content).hexdigest(), "user")
+            except LupusError:
+                quick.discard_draft(k, project, draft["goal_id"], "user")      # nothing half-approved stays behind
+                raise
             args.goal_id = build["goal_id"]
             report = _run(k, args)
             report["check"] = draft["test_path"]
+            report["implementation"] = ("검사와 같은 호출에서 제안된 구현을 승인 뒤에 적용: " + ", ".join(build["staged_applied"])
+                                        if build["staged_applied"] else "승인 뒤 별도 호출로 작성")
+            for key, value in first["usage"]["totals"].items():      # the request cost both steps
+                report["usage"]["totals"][key] = report["usage"]["totals"].get(key, 0) + value
+            report["model_calls"] = len(first["steps"]) + sum(s.get("outcome") != "ALREADY_SATISFIED" for s in report["steps"])
             report["vault"] = vault.sync(k)
             _out(report)
         elif args.cmd == "run" and args.background:
@@ -511,7 +738,27 @@ def _dispatch(args: argparse.Namespace) -> int:
                              "user", args.reason)
         elif args.cmd == "revoke":
             _confirm_user(f"권한 철회: {args.project_id} · {args.reason}")
-            _out({"revocation_epoch": projects.revoke(k, args.project_id, "user", args.reason)})
+            _out({"revocation_epoch": projects.revoke(k, args.project_id, "user", args.reason),
+                  "next": "to let a goal of this project continue later: lupus revalidate <goal_id> --note \"...\""})
+        elif args.cmd == "revalidate":
+            _confirm_user(f"권한 철회 이후 남은 범위로 이 목표를 계속해도 됨을 확인: {args.goal_id} · {args.note}")
+            _out({"checkpoint_revision": recovery.revalidate(k, args.goal_id, "user", args.note)["revision"]})
+        elif args.cmd == "project-remove":
+            _confirm_user(f"프로젝트 등록 취소(목표가 없는 경우만): {args.project_id}")
+            projects.remove(k, args.project_id, "user")
+        elif args.cmd == "prune":
+            _confirm_user(f"{args.days:g}일보다 오래된 보관 파일·작업 로그·세션 임시 파일 삭제")
+            _out(jobs.prune(k, args.days))
+        elif args.cmd == "approve":
+            return _approve(k, args.goal_id)
+        elif args.cmd == "revise":
+            _confirm_user(f"문서 수정 요청: {args.goal_id} · {args.feedback}")
+            author.revise(k, args.goal_id, args.feedback, "user")
+            report = _run(k, args)
+            if report["completion_blockers"] == ["EVIDENCE_FAIL:c2"]:
+                return _approve(k, args.goal_id)
+            _out(report)
+            return 1
         elif args.cmd == "vault-sync":
             _out(vault.sync(k, args.vault))
         elif args.cmd == "graph":

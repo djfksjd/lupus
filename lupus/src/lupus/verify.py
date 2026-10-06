@@ -16,7 +16,7 @@ from typing import Callable, Mapping
 
 from . import runners
 from .util import (
-    GATE, GATE_EXEC_FAILED, SANDBOX_EXEC, LupusError, container_stop, safe_path, sandbox_available, sandbox_profile,
+    GATE, GATE_EXEC_FAILED, SANDBOX_EXEC, STAGE_DIR, LupusError, container_stop, safe_path, sandbox_available, sandbox_profile,
     scrubbed_env, sha256_file,
     sha256_json, stop_group,
 )
@@ -36,7 +36,7 @@ def _inside(root: Path, rel: str) -> Path:
     return target
 
 
-_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache"}
+_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", STAGE_DIR}
 _MAX_DIR_FILES = 5000
 
 
@@ -52,7 +52,9 @@ def _hash(path: Path) -> str:
             link = Path(current) / name
             if link.is_symlink():     # os.walk does not descend into it; its target is still an input
                 entries.append([os.path.relpath(link, path), "symlink:" + os.readlink(link)])
-        dirs[:] = sorted(d for d in dirs if d not in _SKIP_DIRS)
+        # Also skipped: a directory its own tool marks as a cache (cargo's target/ carries a
+        # CACHEDIR.TAG). Other output folders such as dist/ may be the product and stay watched.
+        dirs[:] = sorted(d for d in dirs if d not in _SKIP_DIRS and not os.path.isfile(os.path.join(current, d, "CACHEDIR.TAG")))
         for name in sorted(files):
             item = Path(current) / name
             rel = os.path.relpath(item, path)
@@ -61,7 +63,8 @@ def _hash(path: Path) -> str:
             elif item.is_file():
                 entries.append([rel, sha256_file(item)])
             if len(entries) > _MAX_DIR_FILES:
-                raise LupusError("VERIFIER_PATH_TOO_LARGE", f"{path.name}: more than {_MAX_DIR_FILES} files")
+                raise LupusError("VERIFIER_PATH_TOO_LARGE", f"{path.name}: more than {_MAX_DIR_FILES} files to watch; move "
+                                 "generated files out of the project or describe the goal in a goal file with narrower `paths`")
     return sha256_json(entries)
 
 
@@ -109,6 +112,8 @@ def _run_gated(verifier: Mapping, root: Path, on_spawn, on_exit) -> tuple[int | 
         argv = [docker, "run", "--rm", "--name", container, "--label", "lupus=verifier", "--network", "none",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "512", "--memory", "2g",
                 "-v", f"{os.path.realpath(root)}:/work", "-w", "/work", "-e", "PYTHONDONTWRITEBYTECODE=1",
+                # a proposal kept aside is hidden from the check, as in the host sandbox
+                *(["--mount", f"type=tmpfs,destination=/work/{STAGE_DIR}"] if os.path.isdir(os.path.join(root, STAGE_DIR)) else []),
                 *[x for name, value in sorted(verifier.get("env", {}).items()) for x in ("-e", f"{name}={value}")],
                 verifier["container"], *argv]
     sandboxed = verifier.get("sandbox", True) and container is None
@@ -220,26 +225,33 @@ def run(
         return "FAIL", digest, "not verified here"
     if kind in ("command", "red_test"):
         code, output = _run_gated(verifier, root, on_spawn, on_exit)
-        if code is None:
-            return "FAIL", digest, "verifier timed out"
-        if code == GATE_EXEC_FAILED:
-            return "FAIL", digest, "verifier command could not be started"
-        if code == OUTPUT_TOO_LARGE:
-            return "FAIL", digest, f"the check printed more than {MAX_OUTPUT // (1024 * 1024)} MB, too much to verify"
-        runner = verifier.get("require_tests", "")
-        tail = "\n".join(output.strip().splitlines()[-15:])[-700:]
-        if kind == "red_test":
-            return _judge_red(verifier, root, code, output, digest, tail)
-        if code == 0:
-            # "exit 0" from a runner that found nothing to run is not a pass.
-            count = runners.passed(runner, output) if runner else None
-            if count is not None:
-                if count == 0:
-                    return "FAIL", digest, "no tests ran"
-                if count < int(verifier.get("min_tests", 1)):
-                    # fewer tests ran than the approved check contains: something deselected them
-                    return "FAIL", digest, f"only {count} of at least {verifier['min_tests']} tests ran"
-            return "PASS", digest, "exit 0"
-        # Enough of the failure for the next attempt to act on, not the whole log.
-        return "FAIL", digest, f"exit {code}: {tail}"
+        return judge_command(verifier, root, code, output, digest)
     raise LupusError("VERIFIER_UNKNOWN", str(kind))
+
+
+def judge_command(verifier: Mapping, root: Path, code: int | None, output: str, digest: str) -> tuple[str, str, str]:
+    """Verdict for a command that already ran (so a caller that needs the full output for something
+    else does not have to run it twice)."""
+    kind = verifier["kind"]
+    if code is None:
+        return "FAIL", digest, "verifier timed out"
+    if code == GATE_EXEC_FAILED:
+        return "FAIL", digest, "verifier command could not be started"
+    if code == OUTPUT_TOO_LARGE:
+        return "FAIL", digest, f"the check printed more than {MAX_OUTPUT // (1024 * 1024)} MB, too much to verify"
+    runner = verifier.get("require_tests", "")
+    tail = "\n".join(output.strip().splitlines()[-15:])[-700:]
+    if kind == "red_test":
+        return _judge_red(verifier, root, code, output, digest, tail)
+    if code == 0:
+        # "exit 0" from a runner that found nothing to run is not a pass.
+        count = runners.passed(runner, output) if runner else None
+        if count is not None:
+            if count == 0:
+                return "FAIL", digest, "no tests ran"
+            if count < int(verifier.get("min_tests", 1)):
+                # fewer tests ran than the approved check contains: something deselected them
+                return "FAIL", digest, f"only {count} of at least {verifier['min_tests']} tests ran"
+        return "PASS", digest, "exit 0"
+    # Enough of the failure for the next attempt to act on, not the whole log.
+    return "FAIL", digest, f"exit {code}: {tail}"

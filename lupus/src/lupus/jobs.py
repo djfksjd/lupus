@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -125,6 +126,33 @@ def stop(k: Kernel, job_id: str, wait_s: float = 20.0) -> dict:
         return {"job_id": job_id, "stopped": False, "was_running": True, "note": "still stopping its worker; check `lupus jobs`"}
     finished(k, job_id, None)
     return {"job_id": job_id, "stopped": True, "was_running": True}
+
+
+def prune(k: Kernel, days: float) -> dict:
+    """Delete what only accumulates: files set aside when a frozen file was put back, logs and
+    records of finished background jobs, session scratch files — older than `days`. Goals, evidence
+    and the audit trail are history and are not touched."""
+    cutoff = time.time() - days * 86_400
+    removed = {"displaced": 0, "logs": 0, "session_files": 0, "jobs": 0}
+    live = {row["goal_id"] for row in k.q("SELECT goal_id FROM goal WHERE status NOT IN ('DONE','CANCELLED')")}
+    for name, key in (("displaced", "displaced"), ("sessions", "session_files")):
+        base = k.runtime / name
+        for entry in (sorted(base.iterdir()) if base.is_dir() else []):
+            owner = entry.name.removesuffix(".json")
+            if entry.is_symlink() or owner in live or any(owner == r["run_id"] for r in k.q(
+                    "SELECT run_id FROM run WHERE status <> 'STOPPED'")) or entry.stat().st_mtime > cutoff:
+                continue
+            shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
+            removed[key] += 1
+    listing(k)      # close records of jobs that are gone
+    with k.tx():
+        for row in k.q("SELECT job_id, log_path FROM job WHERE status = 'EXITED' AND coalesce(ended_at, started_at) < ?",
+                       int(cutoff * 1000)):
+            Path(row["log_path"]).unlink(missing_ok=True)
+            k.run("DELETE FROM job WHERE job_id = ?", row["job_id"])
+            removed["jobs"] += 1
+            removed["logs"] += 1
+    return removed
 
 
 def notify(title: str, text: str) -> None:

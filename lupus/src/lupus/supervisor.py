@@ -203,6 +203,9 @@ def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recall
         *[f"- {c['text']}" for c in criteria],
         "현재 디렉터리 안의 파일만 읽고 수정하라. 다른 작업은 하지 마라.",
     ]
+    notes = goals.resolutions(k, task["task_id"])
+    if notes:
+        lines += ["사용자가 이 작업에 추가로 준 지시(가장 최근 것이 우선한다):", *[f"- {n}" for n in notes[-3:]]]
     failures = _last_failures(k, task, criteria)     # from an earlier attempt or a batch pre-check
     if failures:
         # Second pass is the careful one: say exactly what failed and allow self-checking.
@@ -398,11 +401,13 @@ def run_task(
     try:
         attempt = runs.start_attempt(
             k, run_id, token,
-            hypothesis_id=f"{task_id}:direct",
+            # Each time the user sends the task back with new input, that is a new approach they
+            # authorised. Attempts, budget and the audit trail stay cumulative.
+            hypothesis_id=f"{task_id}:direct" + (f":r{len(goals.resolutions(k, task_id))}" if goals.resolutions(k, task_id) else ""),
             baseline_hash=baseline,
             # What the worker is told is part of the attempt's identity: a retry that carries the
             # verifier's failure output is not a repeat of the attempt that produced that failure.
-            change_scope=sha256_json([task["spec"], _last_failures(k, task, criteria)]),
+            change_scope=sha256_json([task["spec"], _last_failures(k, task, criteria), goals.resolutions(k, task_id)]),
             verifier_version=verify.VERSION,
             env_hash=f"{adapter.driver}:{adapter.variant}",
             new_evidence=f"task attempt {task['attempt_count'] + 1} from artifact state {baseline[:12]}",
@@ -637,6 +642,11 @@ def run_goal(k: Kernel, goal_id: str, adapter: Adapter, *, max_steps: int = 20,
     if tiers and any(t.driver != adapter.driver for t in tiers):
         raise LupusError("TIERS_INVALID", "tiers must be variants of the same driver")
     with k.supervisor_lock():
+        # The user is running this goal now, with this AI: branches that stopped because a provider
+        # was out of quota or logged out get their bounded retry (attempt limits still apply).
+        for task in goals.tasks(k, goal_id):
+            if task["status"] == "EXTERNAL_BLOCKED" and goals.get(k, goal_id)["status"] not in goals.GOAL_STICKY:
+                goals.resolve_wait(k, task["task_id"], "supervisor", f"retry with {adapter.driver}")
         return _run_goal(k, goal_id, adapter, max_steps, timeout_s, work_calls, tiers)
 
 

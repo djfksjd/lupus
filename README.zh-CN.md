@@ -14,7 +14,7 @@
 ![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-275%20passing-2ea043?style=flat-square)
+![Tests](https://img.shields.io/badge/offline%20tests-299%20passing-2ea043?style=flat-square)
 
 </div>
 
@@ -29,7 +29,7 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 | **只凭证据完成** | DONE 需要与当前验收条件绑定的检查通过。worker 的“我修好了”不是证据。 |
 | **冻结测试** | worker 启动前冻结测试文件和运行器配置。被修改、删除或跳过的测试会在验证前恢复。 |
 | **Python、Node、Go、Rust，或任意命令** | 仅凭项目文件识别 unittest、pytest、node:test、jest、vitest、`go test`、`cargo test`。其他情况用 `--check "<你的测试命令>"`。 |
-| **任何请求一行搞定** | `lupus fix-tests` 把它自己观测到的失败作为目标。`lupus do "<请求>"` 先起草一个失败的测试，你批准后再实现。 |
+| **任何请求一行搞定** | `lupus fix-tests` 把它自己观测到的失败作为目标。`lupus do "<请求>"` 在一次调用中起草一个失败的测试和（单独存放的）实现方案；你批准测试后，方案才被应用并验证。 |
 | **文档、规划、调研** | `lupus write`：先由你批准评判标准；由另一个 AI 评判，每认可一项都必须引用文档原文；最后由你对该版本签字确认。 |
 | **你平时的交互式会话** | `lupus session` 按你自己的配置启动平时的 `claude` / `codex` 界面，冻结测试，并在你退出时自行验证。 |
 | **Claude ↔ Codex 交接** | 一方停下（额度、中断、你的选择）时，另一方从经过验证的 checkpoint 继续。已完成的步骤不重做，预算和尝试次数不清零。 |
@@ -53,8 +53,8 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 | 4 步项目，Claude（1–2 次，2026-10-05） | 298,327 token · 52.0 s | 70,768 · 42.5 s |
 | 同一项目中断后由另一个 AI 接手（2026-10-05） | 337,133 token · 82.0 s · 重新说明 1,139 字符 | 138,989 · 64.1 s · 无需 |
 | 4 步项目，Codex，每步一次调用 对比 合并调用 | 185,278 token · 89.0 s | 122,595 · 53.1 s |
-| 用 `lupus do` 处理功能请求 对比 一次普通调用，Claude（3 次） | 17,497 token · 9.5 s | 28,852 · 17.4 s |
-| 同上，Codex（3 次） | 72,117 token · 18.6 s | 74,212 · 27.1 s |
+| 用 `lupus do` 处理功能请求 对比 一次普通调用，Claude（3 次，2026-10-07） | 17,493 token · 10.1 s | **15,629 · 15.1 s** |
+| 同上，Codex（3 次，2026-10-07） | 72,083 token · 24.4 s | **37,502 · 24.8 s** |
 
 **在真实项目上。** 选取 [hukkin/tomli](https://github.com/hukkin/tomli) 维护者实际做过的 3 处改动（一个缺陷修复、一个 TOML 1.1 功能、一处加固）：源码取该提交之前的状态，测试取提交之后的状态，除此之外什么都不给。`lupus fix-tests` 用 Claude（36k–64k token，10–21 秒）和 Codex（82k–119k token，16–21 秒）都在第一次尝试就完成了全部 3 项，由上游测试判定，没有任何一次运行试图修改这些测试。
 
@@ -63,7 +63,7 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 请如实看待这些数字：
 
 - **相对于“按你当前配置的 CLI”，节省主要来自不加载插件、MCP 服务器和技能说明**，这一点不用 Lupus 也能做到（中间一列）。Lupus 在此之上增加的是 prompt 技巧和验证。
-- **`lupus do` 比一次普通调用更贵**（Claude 上 token 为 1.65 倍，Codex 上大致相同，时间为 1.5–1.8 倍），而两种方式的 holdout 测试都全部通过。它带来的是一个你批准过的检查，而不是在这些任务上更好的结果。我们试过用更轻的模型起草测试，结果更贵，因此没有采用。
+- **`lupus do` 现在只调用一次模型，而不是两次。** 测试和实现方案来自同一次调用，方案被单独存放；测试针对当前代码进行检查并展示给你，只有在你批准之后方案才会被应用并验证。这使它在 Claude 上从 29,104 降到 15,629 token，在 Codex 上从 74,245 降到 37,502 token，token 数低于一次普通调用。不过在 Claude 上它仍比普通调用慢（15.1 秒对 10.1 秒），并且因为输出 token 占比更高，按标价估算的费用约为 1.6 倍（订阅并不按 token 计费）。所有条件下 holdout 测试都通过了；`--two-step` 可恢复原来的做法。
 - 在本次测量中，`--cheap-first` 在 Claude 上没有节省 token（107,738 对 37,216）。
 - 每格 3 次、一台机器、小任务。第一张表的耗时是在同时有其他 CLI 调用运行的情况下测得的。
 - 在 3 个带隐藏 holdout 测试的更难任务上（2026-10-05），无论是否使用 Lupus，36 次运行全部通过，因此该基准无法证明冻结测试能减少虚假完成。
@@ -91,7 +91,7 @@ lupus probe --live                   # 测量已安装 CLI 的实际支持范围
 cd ~/work/my-project
 lupus fix-tests --driver claude      # 观测失败 -> 冻结测试 -> 修复 -> 验证
 lupus do "给 export 命令增加 --json 选项" --driver claude
-                                     # 起草一个失败的测试 -> 你批准 -> 实现
+                                     # 一次调用：失败的测试 + 单独存放的方案 -> 你批准测试 -> 应用并验证
 lupus session --driver claude        # 你平时的交互式 Claude Code，测试已冻结，退出时验证
 lupus write "账单表迁移计划" --out docs/plan.md --driver claude
                                      # 你批准标准 -> 撰写 -> 另一个 AI 评判 -> 你签字
@@ -138,7 +138,8 @@ lupus learn --driver claude                                    # 从记录的失
 - **一次只有一个 worker。** `alpha-run` 轮流处理目标，不会并行运行多个项目。
 - 学习功能只提出候选，由后续经过验证的结果来决定；没有固定的评估集，也没有接入 Prime 本身。
 - jest 和 vitest 用真实安装验证过；Go 和 Rust 用为验证临时安装的工具链验证过。Linux 和 Windows 上没有操作系统沙箱支持。
-- 代码还很年轻。11 轮外部评审发现并修复了 83 个缺陷，应当假定仍有遗漏。
+- 任何等待状态都有出路：`lupus status <goal>` 说明原因，再用 `resolve`、`refreeze`、`approve`、`revise`、`revalidate`、`budget-raise` 继续。`lupus prune` 清理旧的遗留文件。
+- 代码还很年轻。12 轮外部评审发现并修复了 90 个缺陷，一次可用性审查又发现并修复了 16 个，应当假定仍有遗漏。
 
 ## 文档
 
