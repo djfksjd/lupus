@@ -1,0 +1,9 @@
+Lupus
+Copyright 2026 Lupus contributors
+
+This product bundles vis-network 10.1.2, unmodified, for the graph viewer
+(lupus/src/lupus/viewer/vendor/vis-network.min.js).
+Copyright (c) 2011-2017 Almende B.V. and (c) 2017-2019 visjs contributors,
+dual-licensed Apache-2.0 OR MIT. Upstream: https://github.com/visjs/vis-network
+Pinned source and hashes: lupus/src/lupus/viewer/vendor/upstream-lock.json
+Details: lupus/THIRD_PARTY_NOTICES.md

@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+# local research excerpts of third-party sources (not redistributed)
+evidence/
+# logo concept sheet (drafts)
+asset/logo/ChatGPT*

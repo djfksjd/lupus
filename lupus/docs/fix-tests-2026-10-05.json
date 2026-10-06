@@ -1,0 +1,20 @@
+[
+ {
+  "driver": "native_claude",
+  "done": true,
+  "attempts": 1,
+  "tokens": 12817,
+  "seconds": 5.7,
+  "human_input": "lupus fix-tests --driver claude",
+  "test_file_unchanged": true
+ },
+ {
+  "driver": "native_codex",
+  "done": true,
+  "attempts": 1,
+  "tokens": 36748,
+  "seconds": 14.8,
+  "human_input": "lupus fix-tests --driver codex",
+  "test_file_unchanged": true
+ }
+]

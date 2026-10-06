@@ -1,0 +1,144 @@
+{
+ "date": "2026-10-05",
+ "part": "project",
+ "cli_versions": {
+  "native_claude": "2.1.289 (Claude Code)",
+  "native_codex": "codex-cli 0.160.0"
+ },
+ "repeats": 2,
+ "rows": [
+  {
+   "scenario": "uninterrupted",
+   "condition": "A0",
+   "passed": true,
+   "calls": 1,
+   "new_input": 30003,
+   "cached_input": 262949,
+   "output": 5375,
+   "turns": 13,
+   "seconds": 52.0,
+   "list_cost_usd": 0.4,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 1004
+  },
+  {
+   "scenario": "uninterrupted",
+   "condition": "C",
+   "passed": true,
+   "calls": 4,
+   "new_input": 13422,
+   "cached_input": 54004,
+   "output": 3342,
+   "turns": 12,
+   "seconds": 42.5,
+   "list_cost_usd": 0.1849,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 4,
+   "variants": [
+    "default",
+    "default",
+    "default",
+    "default"
+   ],
+   "human_prompt_chars": 0
+  },
+  {
+   "scenario": "uninterrupted",
+   "condition": "CT",
+   "passed": true,
+   "calls": 4,
+   "new_input": 28647,
+   "cached_input": 125349,
+   "output": 12636,
+   "turns": 15,
+   "seconds": 99.8,
+   "list_cost_usd": 0.1329,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 4,
+   "variants": [
+    "haiku",
+    "haiku",
+    "haiku",
+    "haiku"
+   ],
+   "human_prompt_chars": 0
+  },
+  {
+   "scenario": "interrupted_then_other_ai",
+   "condition": "A0",
+   "first_ai": {
+    "passed": true,
+    "calls": 1,
+    "new_input": 26806,
+    "cached_input": 222379,
+    "output": 2951,
+    "turns": 10,
+    "seconds": 33.3,
+    "list_cost_usd": 0.3179,
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "errors": [],
+    "human_prompt_chars": 556
+   },
+   "second_ai": {
+    "passed": true,
+    "calls": 1,
+    "new_input": 9690,
+    "cached_input": 74112,
+    "output": 1195,
+    "turns": 1,
+    "seconds": 48.7,
+    "list_cost_usd": null,
+    "models": [],
+    "errors": [],
+    "human_prompt_chars": 583
+   },
+   "passed": true,
+   "human_prompt_chars": 1139
+  },
+  {
+   "scenario": "interrupted_then_other_ai",
+   "condition": "C",
+   "first_ai": {
+    "passed": true,
+    "calls": 2,
+    "new_input": 6265,
+    "cached_input": 18404,
+    "output": 1013,
+    "turns": 4,
+    "seconds": 14.7,
+    "list_cost_usd": 0.074,
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "errors": []
+   },
+   "second_ai": {
+    "passed": true,
+    "calls": 2,
+    "new_input": 14978,
+    "cached_input": 97280,
+    "output": 1049,
+    "turns": 2,
+    "seconds": 49.4,
+    "list_cost_usd": null,
+    "models": [],
+    "errors": []
+   },
+   "passed": true,
+   "human_prompt_chars": 0,
+   "attempts_on_finished_steps": 2,
+   "handoffs": 1
+  }
+ ]
+}

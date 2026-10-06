@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:">
+<title>Lupus 지식 그래프</title>
+<style>
+  :root { --bg:#ffffff; --panel:#f6f8fa; --line:#d0d7de; --text:#1f2328; --muted:#656d76; --accent:#0969da; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181d; --panel:#1e2127; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; }
+  }
+  html, body { height:100%; margin:0; background:var(--bg); color:var(--text);
+               font:13px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  #graph { position:fixed; inset:0 320px 0 0; cursor:grab; }
+  #graph:active { cursor:grabbing; }
+  #side { position:fixed; top:0; right:0; bottom:0; width:320px; box-sizing:border-box; padding:14px 14px 20px;
+          border-left:1px solid var(--line); background:var(--panel); overflow:auto; }
+  h1 { font-size:15px; margin:0 0 10px; letter-spacing:.04em; }
+  h2 { font-size:12px; margin:18px 0 6px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  input[type=search], select { width:100%; box-sizing:border-box; padding:6px 8px; border:1px solid var(--line); border-radius:6px;
+          background:var(--bg); color:var(--text); font:inherit; }
+  label.row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  label.slide { display:grid; grid-template-columns:86px 1fr; align-items:center; gap:8px; margin:6px 0; color:var(--muted); }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  button { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  #d-title { font-size:15px; font-weight:600; margin:0 0 6px; word-break:break-word; }
+  dl { margin:0; } dt { color:var(--muted); font-size:11px; margin-top:8px; } dd { margin:1px 0 0; white-space:pre-wrap; word-break:break-word; }
+  a { color:var(--accent); }
+  .legend span { display:inline-block; margin:2px 10px 2px 0; } .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+  .muted { color:var(--muted); font-size:11px; }
+  #hint { position:fixed; left:14px; bottom:12px; color:var(--muted); font-size:11px; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="graph"></div>
+<div id="hint">끌어서 이동 · 휠로 확대 · 노드를 끌면 주변이 따라옵니다 · 더블클릭: 문서 열기</div>
+<div id="side">
+  <h1>LUPUS 지식 그래프</h1>
+  <input type="search" id="search" placeholder="노드 검색…" autocomplete="off">
+  <h2>보기</h2>
+  <select id="scope"></select>
+  <label class="row"><input type="checkbox" id="recalls" checked> 회상 연결 표시</label>
+  <label class="row"><input type="checkbox" id="retired"> 은퇴한 노드 표시</label>
+  <label class="row"><input type="checkbox" id="pin"> 끌어다 놓은 위치에 고정</label>
+  <div><button id="unpin">고정 모두 해제</button> <button id="fit">화면에 맞추기</button></div>
+  <h2>힘</h2>
+  <label class="slide">반발력<input type="range" id="f-repel" min="20" max="400" value="120"></label>
+  <label class="slide">연결 거리<input type="range" id="f-link" min="40" max="320" value="130"></label>
+  <label class="slide">중심 인력<input type="range" id="f-center" min="0" max="100" value="18"></label>
+  <label class="slide">노드 크기<input type="range" id="f-size" min="4" max="24" value="9"></label>
+  <h2>선택한 노드</h2>
+  <div id="d-title">노드를 선택하세요</div>
+  <dl id="d-fields"></dl>
+  <p><a id="d-page" hidden>Vault 문서 열기</a></p>
+  <h2>범례</h2>
+  <div class="legend" id="legend"></div>
+  <p class="muted"><span id="count"></span><br>운영 DB에서 생성한 읽기 전용 보기 · 생성 <span id="generated"></span><br>
+  그래프 렌더링: vis-network (Apache-2.0 / MIT), 수정 없이 포함.</p>
+</div>
+<script type="application/json" id="data">__DATA__</script>
+<script src="vis-network.min.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>

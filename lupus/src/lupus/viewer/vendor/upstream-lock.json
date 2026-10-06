@@ -1,0 +1,26 @@
+{
+  "vis-network": {
+    "upstream": "https://github.com/visjs/vis-network",
+    "version": "10.1.2",
+    "git_head": "f2584c8d1264d8591e6c4d8f09e3a81d599ce1b8",
+    "license": "Apache-2.0 OR MIT",
+    "source": "https://registry.npmjs.org/vis-network/-/vis-network-10.1.2.tgz",
+    "tarball_integrity": "sha512-1Kj7GD7XNjygliqRWXv/VPT1X/2eKz2e09PvwDtETHwuvKJ0emid7/PmWoFqCMypun8rLbjgmalSfPkiVZ8ZMg==",
+    "retrieved": "2026-10-05",
+    "modified": false,
+    "files": {
+      "vis-network.min.js": {
+        "from": "package/standalone/umd/vis-network.min.js",
+        "sha256": "fc674cfa6cceb27a3b40ff4ea75c204a2d8570fb39b9a627127cf7039e141ad4"
+      },
+      "LICENSE-MIT": {
+        "from": "package/LICENSE-MIT",
+        "sha256": "1f65085e54c036645082257618db2c7b787e68c3b02485e214ecd09e0834ee8f"
+      },
+      "LICENSE-APACHE-2.0": {
+        "from": "package/LICENSE-APACHE-2.0",
+        "sha256": "1509904280a272780fd69c04b858f512cf216f8e3464a0dd98d8f34416feced9"
+      }
+    }
+  }
+}

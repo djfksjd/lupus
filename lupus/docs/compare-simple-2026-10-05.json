@@ -1,0 +1,839 @@
+{
+ "date": "2026-10-05",
+ "part": "simple",
+ "cli_versions": {
+  "native_claude": "2.1.289 (Claude Code)",
+  "native_codex": "codex-cli 0.160.0"
+ },
+ "repeats": 2,
+ "rows": [
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 23352,
+   "cached_input": 111171,
+   "output": 1107,
+   "turns": 5,
+   "seconds": 15.4,
+   "list_cost_usd": 0.2312,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4229,
+   "cached_input": 13155,
+   "output": 933,
+   "turns": 4,
+   "seconds": 12.4,
+   "list_cost_usd": 0.0551,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4218,
+   "cached_input": 13155,
+   "output": 894,
+   "turns": 4,
+   "seconds": 11.7,
+   "list_cost_usd": 0.0542,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4164,
+   "cached_input": 7800,
+   "output": 330,
+   "turns": 2,
+   "seconds": 6.2,
+   "list_cost_usd": 0.0415,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4161,
+   "cached_input": 7800,
+   "output": 327,
+   "turns": 2,
+   "seconds": 6.2,
+   "list_cost_usd": 0.0414,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11486,
+   "cached_input": 19213,
+   "output": 2224,
+   "turns": 3,
+   "seconds": 20.0,
+   "list_cost_usd": 0.036,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 13215,
+   "cached_input": 29462,
+   "output": 3589,
+   "turns": 4,
+   "seconds": 25.9,
+   "list_cost_usd": 0.0473,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 23786,
+   "cached_input": 111662,
+   "output": 1264,
+   "turns": 7,
+   "seconds": 16.2,
+   "list_cost_usd": 0.2379,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4397,
+   "cached_input": 13054,
+   "output": 936,
+   "turns": 5,
+   "seconds": 11.3,
+   "list_cost_usd": 0.0565,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4470,
+   "cached_input": 13054,
+   "output": 1022,
+   "turns": 5,
+   "seconds": 12.4,
+   "list_cost_usd": 0.0588,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4101,
+   "cached_input": 7817,
+   "output": 246,
+   "turns": 2,
+   "seconds": 5.8,
+   "list_cost_usd": 0.0393,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4383,
+   "cached_input": 7817,
+   "output": 545,
+   "turns": 2,
+   "seconds": 7.9,
+   "list_cost_usd": 0.0475,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11492,
+   "cached_input": 30305,
+   "output": 1826,
+   "turns": 5,
+   "seconds": 16.9,
+   "list_cost_usd": 0.0351,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11367,
+   "cached_input": 41235,
+   "output": 1640,
+   "turns": 5,
+   "seconds": 14.0,
+   "list_cost_usd": 0.035,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 23238,
+   "cached_input": 110660,
+   "output": 948,
+   "turns": 4,
+   "seconds": 13.3,
+   "list_cost_usd": 0.227,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3833,
+   "cached_input": 12730,
+   "output": 576,
+   "turns": 3,
+   "seconds": 8.7,
+   "list_cost_usd": 0.0447,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3834,
+   "cached_input": 12730,
+   "output": 578,
+   "turns": 3,
+   "seconds": 8.6,
+   "list_cost_usd": 0.0448,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3940,
+   "cached_input": 7608,
+   "output": 301,
+   "turns": 2,
+   "seconds": 5.8,
+   "list_cost_usd": 0.039,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3843,
+   "cached_input": 7608,
+   "output": 204,
+   "turns": 2,
+   "seconds": 5.0,
+   "list_cost_usd": 0.0363,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 10084,
+   "cached_input": 9115,
+   "output": 891,
+   "turns": 2,
+   "seconds": 9.0,
+   "list_cost_usd": 0.0255,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 10435,
+   "cached_input": 9115,
+   "output": 1206,
+   "turns": 2,
+   "seconds": 10.8,
+   "list_cost_usd": 0.0278,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 14642,
+   "cached_input": 66304,
+   "output": 407,
+   "turns": 1,
+   "seconds": 24.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6768,
+   "cached_input": 65792,
+   "output": 422,
+   "turns": 1,
+   "seconds": 22.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 7075,
+   "cached_input": 83584,
+   "output": 465,
+   "turns": 1,
+   "seconds": 29.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6082,
+   "cached_input": 30080,
+   "output": 155,
+   "turns": 1,
+   "seconds": 11.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6105,
+   "cached_input": 30080,
+   "output": 147,
+   "turns": 1,
+   "seconds": 10.5,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6129,
+   "cached_input": 30080,
+   "output": 153,
+   "turns": 1,
+   "seconds": 12.3,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6129,
+   "cached_input": 30080,
+   "output": 154,
+   "turns": 1,
+   "seconds": 16.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 15311,
+   "cached_input": 87296,
+   "output": 395,
+   "turns": 1,
+   "seconds": 25.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6640,
+   "cached_input": 65536,
+   "output": 371,
+   "turns": 1,
+   "seconds": 24.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 12401,
+   "cached_input": 59776,
+   "output": 372,
+   "turns": 1,
+   "seconds": 24.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6170,
+   "cached_input": 30080,
+   "output": 163,
+   "turns": 1,
+   "seconds": 11.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11677,
+   "cached_input": 24576,
+   "output": 169,
+   "turns": 1,
+   "seconds": 14.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11689,
+   "cached_input": 24576,
+   "output": 163,
+   "turns": 1,
+   "seconds": 16.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6182,
+   "cached_input": 30080,
+   "output": 161,
+   "turns": 1,
+   "seconds": 11.5,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 7988,
+   "cached_input": 72704,
+   "output": 543,
+   "turns": 1,
+   "seconds": 28.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11680,
+   "cached_input": 42368,
+   "output": 430,
+   "turns": 1,
+   "seconds": 20.9,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11921,
+   "cached_input": 42112,
+   "output": 406,
+   "turns": 1,
+   "seconds": 19.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11394,
+   "cached_input": 24576,
+   "output": 178,
+   "turns": 1,
+   "seconds": 12.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6021,
+   "cached_input": 29952,
+   "output": 181,
+   "turns": 1,
+   "seconds": 12.9,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5993,
+   "cached_input": 29952,
+   "output": 136,
+   "turns": 1,
+   "seconds": 11.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6039,
+   "cached_input": 29952,
+   "output": 183,
+   "turns": 1,
+   "seconds": 13.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  }
+ ]
+}

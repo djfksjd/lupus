@@ -1,0 +1,298 @@
+{
+ "date": "2026-10-05",
+ "cli_versions": {
+  "native_claude": "2.1.289 (Claude Code)",
+  "native_codex": "codex-cli 0.160.0"
+ },
+ "runs_per_cell": 1,
+ "rows": [
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A_baseline",
+   "passed": true,
+   "attempts": 1,
+   "error": null,
+   "duration_ms": 11675,
+   "tokens_in": 4164,
+   "tokens_cached": 13148,
+   "tokens_out": 892,
+   "turns": 4,
+   "prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "C_lupus",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 11563,
+   "tokens_in": 4404,
+   "tokens_cached": 13582,
+   "tokens_out": 838,
+   "turns": 4,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 1
+   },
+   "error": null
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A_baseline",
+   "passed": true,
+   "attempts": 1,
+   "error": null,
+   "duration_ms": 11285,
+   "tokens_in": 4389,
+   "tokens_cached": 13048,
+   "tokens_out": 872,
+   "turns": 5,
+   "prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "C_lupus",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 12271,
+   "tokens_in": 4637,
+   "tokens_cached": 13418,
+   "tokens_out": 932,
+   "turns": 5,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 0
+   },
+   "error": null
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A_baseline",
+   "passed": true,
+   "attempts": 1,
+   "error": null,
+   "duration_ms": 9379,
+   "tokens_in": 3824,
+   "tokens_cached": 12725,
+   "tokens_out": 693,
+   "turns": 3,
+   "prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "C_lupus",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 9784,
+   "tokens_in": 4001,
+   "tokens_cached": 13083,
+   "tokens_out": 644,
+   "turns": 3,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 1
+   },
+   "error": null
+  },
+  {
+   "driver": "native_claude",
+   "task": "release",
+   "condition": "M_memory_off",
+   "passed": false,
+   "goal_status": "NO_PROGRESS",
+   "attempts": 2,
+   "duration_ms": 63079,
+   "tokens_in": 12795,
+   "tokens_cached": 57748,
+   "tokens_out": 6685,
+   "turns": 41,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 1
+   },
+   "error": null
+  },
+  {
+   "driver": "native_claude",
+   "task": "release",
+   "condition": "M_memory_on",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 16490,
+   "tokens_in": 5019,
+   "tokens_cached": 14326,
+   "tokens_out": 1510,
+   "turns": 7,
+   "memory": {
+    "recalls": 1,
+    "estimated_prompt_tokens": 55,
+    "by_attempt_outcome": {
+     "PROGRESS": 1
+    },
+    "nodes_recorded": 1
+   },
+   "error": null
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A_baseline",
+   "passed": true,
+   "attempts": 1,
+   "error": null,
+   "duration_ms": 23172,
+   "tokens_in": 6734,
+   "tokens_cached": 65536,
+   "tokens_out": 413,
+   "turns": 1,
+   "prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "C_lupus",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 26364,
+   "tokens_in": 6834,
+   "tokens_cached": 65920,
+   "tokens_out": 436,
+   "turns": 1,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 1
+   },
+   "error": null
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A_baseline",
+   "passed": true,
+   "attempts": 1,
+   "error": null,
+   "duration_ms": 21538,
+   "tokens_in": 6642,
+   "tokens_cached": 65408,
+   "tokens_out": 361,
+   "turns": 1,
+   "prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "C_lupus",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 23334,
+   "tokens_in": 6794,
+   "tokens_cached": 65664,
+   "tokens_out": 365,
+   "turns": 1,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 1
+   },
+   "error": null
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A_baseline",
+   "passed": true,
+   "attempts": 1,
+   "error": null,
+   "duration_ms": 24329,
+   "tokens_in": 6681,
+   "tokens_cached": 65280,
+   "tokens_out": 491,
+   "turns": 1,
+   "prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "C_lupus",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 20442,
+   "tokens_in": 11699,
+   "tokens_cached": 42368,
+   "tokens_out": 405,
+   "turns": 1,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 0
+   },
+   "error": null
+  },
+  {
+   "driver": "native_codex",
+   "task": "release",
+   "condition": "M_memory_off",
+   "passed": false,
+   "goal_status": "NO_PROGRESS",
+   "attempts": 2,
+   "duration_ms": 43520,
+   "tokens_in": 24462,
+   "tokens_cached": 119808,
+   "tokens_out": 705,
+   "turns": 2,
+   "memory": {
+    "recalls": 0,
+    "estimated_prompt_tokens": 0,
+    "by_attempt_outcome": {},
+    "nodes_recorded": 1
+   },
+   "error": null
+  },
+  {
+   "driver": "native_codex",
+   "task": "release",
+   "condition": "M_memory_on",
+   "passed": true,
+   "goal_status": "DONE",
+   "attempts": 1,
+   "duration_ms": 27153,
+   "tokens_in": 6809,
+   "tokens_cached": 66048,
+   "tokens_out": 474,
+   "turns": 1,
+   "memory": {
+    "recalls": 1,
+    "estimated_prompt_tokens": 55,
+    "by_attempt_outcome": {
+     "PROGRESS": 1
+    },
+    "nodes_recorded": 0
+   },
+   "error": null
+  }
+ ]
+}

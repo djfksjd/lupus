@@ -1,0 +1,48 @@
+{
+ "date": "2026-10-06",
+ "driver": "native_codex",
+ "rows": [
+  {
+   "condition": "one_call_per_task",
+   "passed": true,
+   "calls": 4,
+   "new_input": 26841,
+   "cached_input": 156544,
+   "output": 1893,
+   "turns": 4,
+   "seconds": 89.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 4,
+   "outcomes": [
+    "PROGRESS",
+    "PROGRESS",
+    "PROGRESS",
+    "PROGRESS"
+   ],
+   "all_criteria_pass": true
+  },
+  {
+   "condition": "batched",
+   "passed": true,
+   "calls": 2,
+   "new_input": 17507,
+   "cached_input": 103424,
+   "output": 1664,
+   "turns": 2,
+   "seconds": 53.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 2,
+   "outcomes": [
+    "PROGRESS",
+    "ALREADY_SATISFIED",
+    "ALREADY_SATISFIED",
+    "PROGRESS"
+   ],
+   "all_criteria_pass": true
+  }
+ ]
+}

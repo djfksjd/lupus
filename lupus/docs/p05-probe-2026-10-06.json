@@ -1,0 +1,135 @@
+{
+  "measured_at": 1791248013027,
+  "inherited_provider_env": [],
+  "worker_env_passes": [
+    "HOME",
+    "LANG",
+    "LOGNAME",
+    "PATH",
+    "SHELL",
+    "TERM",
+    "TMPDIR",
+    "USER",
+    "__CF_USER_TEXT_ENCODING"
+  ],
+  "adapters": {
+    "native_claude": {
+      "version": "2.1.290 (Claude Code)",
+      "capabilities": [
+        {
+          "name": "subscription_auth",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "`claude auth status`: loggedIn=True authMethod=claude.ai apiProvider=firstParty; status only, see headless_exec for a real request"
+        },
+        {
+          "name": "subscription_auth",
+          "mode": "isolated_profile",
+          "status": "unsupported",
+          "scope": "fresh CLAUDE_CONFIG_DIR does not inherit the existing login; a separate interactive `claude auth login` in that profile would be required"
+        },
+        {
+          "name": "headless_exec",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "one request, exit=0 error=None file_written=True duration_ms=8083; a single successful call, not a reliability figure"
+        },
+        {
+          "name": "usage_reporting",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "final result reported ['calls', 'tokens_cached', 'tokens_in', 'tokens_out']; covers a call that finished normally. Usage of a killed or timed-out call was NOT observed here"
+        },
+        {
+          "name": "process_group_cleanup",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "no process left in the worker's group after exit; leftover_before_kill=False"
+        },
+        {
+          "name": "strict_input_gate",
+          "mode": "default_auth_stripped",
+          "status": "unsupported",
+          "scope": "free-form native TUI input cannot be intercepted by this adapter; only prompts built by the supervisor pass through it"
+        },
+        {
+          "name": "read_confinement",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "the worker could not read a canary file in the home directory (one attempt, not a proof; the temp directory stays readable)"
+        },
+        {
+          "name": "write_confinement",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "the worker could not create a file in the home directory (one attempt, not a proof)"
+        },
+        {
+          "name": "isolation",
+          "mode": "default_auth_stripped",
+          "status": "unsupported",
+          "scope": "same UID, no VM/container: the worker can read anything the user can, including the CLI's own login store. Protected work must not be started in this mode"
+        }
+      ]
+    },
+    "native_codex": {
+      "version": "codex-cli 0.160.0",
+      "capabilities": [
+        {
+          "name": "subscription_auth",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "`codex login status`: 'Logged in using ChatGPT'; status only, see headless_exec for a real request"
+        },
+        {
+          "name": "subscription_auth",
+          "mode": "isolated_profile",
+          "status": "unsupported",
+          "scope": "fresh CODEX_HOME does not inherit the existing login; a separate `codex login` in that profile would be required"
+        },
+        {
+          "name": "headless_exec",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "one request, exit=0 error=None file_written=True duration_ms=10580; a single successful call, not a reliability figure"
+        },
+        {
+          "name": "usage_reporting",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "final result reported ['calls', 'tokens_cached', 'tokens_in', 'tokens_out']; covers a call that finished normally. Usage of a killed or timed-out call was NOT observed here"
+        },
+        {
+          "name": "process_group_cleanup",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "no process left in the worker's group after exit; leftover_before_kill=False"
+        },
+        {
+          "name": "strict_input_gate",
+          "mode": "default_auth_stripped",
+          "status": "unsupported",
+          "scope": "free-form native TUI input cannot be intercepted by this adapter; only prompts built by the supervisor pass through it"
+        },
+        {
+          "name": "read_confinement",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "the worker could not read a canary file in the home directory (one attempt, not a proof; the temp directory stays readable)"
+        },
+        {
+          "name": "write_confinement",
+          "mode": "default_auth_stripped",
+          "status": "verified",
+          "scope": "the worker could not create a file in the home directory (one attempt, not a proof)"
+        },
+        {
+          "name": "isolation",
+          "mode": "default_auth_stripped",
+          "status": "unsupported",
+          "scope": "same UID, no VM/container: the worker can read anything the user can, including the CLI's own login store. Protected work must not be started in this mode"
+        }
+      ]
+    }
+  }
+}

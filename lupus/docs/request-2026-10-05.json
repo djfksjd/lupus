@@ -1,0 +1,78 @@
+{
+ "date": "2026-10-05",
+ "approval": "simulated",
+ "rows": [
+  {
+   "driver": "native_claude",
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 3762,
+   "cached_input": 12651,
+   "output": 652,
+   "turns": 3,
+   "seconds": 9.2,
+   "list_cost_usd": 0.0456,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_chars": 161
+  },
+  {
+   "driver": "native_claude",
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "check_lines": 55,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 7449,
+   "cached_input": 19324,
+   "output": 1280,
+   "turns": 4,
+   "seconds": 17.0,
+   "list_cost_usd": 0.089,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_chars": 161
+  },
+  {
+   "driver": "native_codex",
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 12116,
+   "cached_input": 59392,
+   "output": 615,
+   "turns": 1,
+   "seconds": 31.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_chars": 161
+  },
+  {
+   "driver": "native_codex",
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "check_lines": 55,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 18709,
+   "cached_input": 54528,
+   "output": 829,
+   "turns": 2,
+   "seconds": 47.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_chars": 161
+  }
+ ]
+}
