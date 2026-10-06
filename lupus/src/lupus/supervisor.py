@@ -383,7 +383,7 @@ def run_task(
     if interrupted is not None and interrupted["outcome"] == "ABANDONED":
         # The last worker of this goal was cut off before its changes could be checked. What it
         # left in the protected files is its doing: put it back now (versions are kept aside).
-        protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id)
+        protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "interrupted")
     outside = protect.drift(k, goal_id, root)
     if outside:
         names = ", ".join(sorted(d["path"] for d in outside)[:5])
@@ -492,7 +492,9 @@ def run_task(
     if undone["unrestorable"]:
         why = "보호된 검증 파일이 바뀌었고 되돌릴 수 없다: " + ", ".join(undone["unrestorable"])
         checked = [(c, "FAIL", digest, why) for c, _, digest, _ in checked]
-    elif undone["restored"]:
+    elif undone["restored"] and not any(c["verifier"].get("proposal") for c in criteria):
+        # (not said of a one-call draft: there the worker was ASKED to edit the sources, and taking
+        # its edits out again before the red check is the design, not a correction)
         note_undo = "보호된 검증 파일을 건드려 되돌렸다(수정 금지): " + ", ".join(undone["restored"]) + ". "
         checked = [(c, v, digest, (note_undo + detail) if v == "FAIL" else detail) for c, v, digest, detail in checked]
     safety_actual = {"calls": judge_calls, "active_ms": verify_ms}

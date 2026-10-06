@@ -6,11 +6,13 @@
   run    For each instance the worker gets the repository at the parent commit and ONLY the commit
          message as the request. It never sees the upstream tests. Afterwards the upstream test
          files are put in place and run; that hidden run is the score.
-         Arms: plain (one lean CLI call) and do (`lupus do`, approval simulated).
+         Arms: plain (one lean CLI call) and do (`lupus do`, approval simulated). With a reviewer
+         named, the do arm continues with `--review` and is scored a second time.
 
 Usage:
   PYTHONPATH=src python3 evaluations/issues.py mine <workdir> instances.json [per_repo]
-  PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit]
+  PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit] [reviewer] [arms]
+  (arms: "plain,do" by default; "do" alone repeats only the Lupus arm)
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from lupus import adapters, probe, projects, quick, supervisor, verify
+from lupus import adapters, probe, projects, quick, review, supervisor, verify
 from lupus.kernel import Kernel
 from lupus.util import LupusError, sha256_bytes
 
@@ -133,15 +135,16 @@ def recording(adapter, log):
     return adapter
 
 
-def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int) -> None:
+def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int, reviewer: str | None = None,
+        arms: tuple[str, ...] = ("plain", "do")) -> None:
     instances = json.loads(Path(instances_path).read_text())[:limit]
     base = Path(tempfile.mkdtemp(prefix="lupus-issues-")).resolve()
     k = Kernel.init(base / "home")
     probe.run(k, live=True)
-    out = {"driver": driver, "date": time.strftime("%Y-%m-%d"), "rows": []}
+    out = {"driver": driver, "reviewer": reviewer, "arms": list(arms), "date": time.strftime("%Y-%m-%d"), "rows": []}
     for i, inst in enumerate(instances):
         clone = work / "clones" / inst["repo"]
-        for arm in ("plain", "do"):
+        for arm in arms:
             root = base / f"{i}-{arm}"
             checkout(clone, inst["commit"] + "~1", root)
             log: list = []
@@ -161,10 +164,28 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int)
                     if first["done"]:
                         test = root / draft["test_path"]
                         build = quick.approve_check(k, project, draft["goal_id"], draft["request"],
-                                                    sha256_bytes(test.read_bytes()), "user")
+                                                    sha256_bytes(test.read_bytes()), "user", keep_base=bool(reviewer))
                         second = supervisor.run_goal(k, build["goal_id"], adapter, timeout_s=420, max_steps=3)
                         row.update(lupus_done=second["done"], staged=bool(build["staged_applied"]),
                                    build_steps=[s.get("outcome") or s.get("status") for s in second["steps"]])
+                        if reviewer and second["done"] and "review_base" in build:
+                            row["hidden_before_review"] = score(clone, inst, root)[0]
+                            row["seconds_before_review"] = round(time.monotonic() - started, 1)
+                            row["tokens_before_review"] = usage_of(log)["tokens"]
+                            seen = k.one("SELECT COUNT(*) FROM service_call")[0]
+                            outcome = review.cycle(
+                                k, build["goal_id"], draft["request"], reviewer, Path(build["review_base"]),
+                                lambda gid: supervisor.run_goal(k, gid, adapter, timeout_s=420, max_steps=3),
+                                quick.DEFAULT_CAPS, skip={draft["test_path"]})
+                            calls = [json.loads(r["usage"]) for r in k.q(
+                                "SELECT usage FROM service_call WHERE usage IS NOT NULL ORDER BY rowid") ][seen:]
+                            row["review"] = {
+                                "skipped": outcome.get("skipped"), "objections": outcome.get("objections", []),
+                                "dropped": outcome.get("dropped", 0), "revised": outcome["revised"],
+                                "revision_done": outcome.get("revision_done"), "remaining": outcome.get("remaining"),
+                                "not_put_back": outcome.get("not_put_back", []),
+                                "reviewer_tokens": sum(u.get("tokens_in", 0) + u.get("tokens_cached", 0) + u.get("tokens_out", 0)
+                                                       for u in calls)}
                     else:
                         quick.discard_draft(k, project, draft["goal_id"], "user")
             except LupusError as exc:
@@ -185,6 +206,21 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int)
                         said_done = [r for r in sel if r.get("lupus_done")]
                         summary[a].update(lupus_said_done=len(said_done),
                                           said_done_but_hidden_fail=sum(not r["hidden_tests_pass"] for r in said_done))
+                        seen_by_reviewer = [r for r in sel if "review" in r and not r["review"]["skipped"]]
+                        if seen_by_reviewer:
+                            clean = [r for r in seen_by_reviewer if not r["review"]["objections"]
+                                     or (r["review"]["revision_done"] and r["review"]["remaining"] == [])]
+                            summary[a]["review"] = {
+                                "reviewed": len(seen_by_reviewer),
+                                "hidden_pass_before": sum(r["hidden_before_review"] for r in seen_by_reviewer),
+                                "hidden_pass_after": sum(r["hidden_tests_pass"] for r in seen_by_reviewer),
+                                "objected": sum(bool(r["review"]["objections"]) for r in seen_by_reviewer),
+                                "ended_clean": len(clean),
+                                "clean_but_hidden_fail": sum(not r["hidden_tests_pass"] for r in clean),
+                                "objections_left_and_hidden_fail": sum(not r["hidden_tests_pass"] for r in seen_by_reviewer
+                                                                       if r not in clean),
+                                "reviewer_tokens_mean": round(sum(r["review"]["reviewer_tokens"] for r in seen_by_reviewer)
+                                                              / len(seen_by_reviewer))}
             out["summary"] = summary
             Path(out_path).write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
     k.close()
@@ -194,4 +230,6 @@ if __name__ == "__main__":
     if sys.argv[1] == "mine":
         mine(Path(sys.argv[2]).resolve(), sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 3)
     else:
-        run(Path(sys.argv[2]).resolve(), sys.argv[3], sys.argv[4], sys.argv[5], int(sys.argv[6]) if len(sys.argv) > 6 else 99)
+        run(Path(sys.argv[2]).resolve(), sys.argv[3], sys.argv[4], sys.argv[5], int(sys.argv[6]) if len(sys.argv) > 6 else 99,
+            (sys.argv[7] if len(sys.argv) > 7 else None) or None,
+            tuple(sys.argv[8].split(",")) if len(sys.argv) > 8 else ("plain", "do"))

@@ -16,7 +16,7 @@ from typing import Callable, Mapping
 
 from . import runners
 from .util import (
-    GATE, GATE_EXEC_FAILED, SANDBOX_EXEC, STAGE_DIR, LupusError, container_stop, safe_path, sandbox_available, sandbox_profile,
+    GATE, GATE_EXEC_FAILED, SANDBOX_EXEC, LupusError, container_stop, safe_path, sandbox_available, sandbox_profile,
     scrubbed_env, sha256_file,
     sha256_json, stop_group,
 )
@@ -36,7 +36,7 @@ def _inside(root: Path, rel: str) -> Path:
     return target
 
 
-_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", STAGE_DIR}
+_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache"}
 _MAX_DIR_FILES = 5000
 
 
@@ -112,8 +112,6 @@ def _run_gated(verifier: Mapping, root: Path, on_spawn, on_exit) -> tuple[int | 
         argv = [docker, "run", "--rm", "--name", container, "--label", "lupus=verifier", "--network", "none",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "512", "--memory", "2g",
                 "-v", f"{os.path.realpath(root)}:/work", "-w", "/work", "-e", "PYTHONDONTWRITEBYTECODE=1",
-                # a proposal kept aside is hidden from the check, as in the host sandbox
-                *(["--mount", f"type=tmpfs,destination=/work/{STAGE_DIR}"] if os.path.isdir(os.path.join(root, STAGE_DIR)) else []),
                 *[x for name, value in sorted(verifier.get("env", {}).items()) for x in ("-e", f"{name}={value}")],
                 verifier["container"], *argv]
     sandboxed = verifier.get("sandbox", True) and container is None

@@ -17,15 +17,16 @@ a new request was done.
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
 import stat
 from pathlib import Path
 
-from . import gitx, goals, protect, runners, runs, verify
+from . import gitx, goals, protect, review, runners, runs, verify
 from .kernel import Kernel
-from .util import STAGE_DIR, LupusError, atomic_write, find_secret, sha256_bytes
+from .util import LupusError, atomic_write, find_secret, sha256_bytes
 
 MAX_PINNED = 20_000
 # Time is reserved at its worst case (worker and check timeouts) and an interrupted attempt is
@@ -154,9 +155,8 @@ def _baseline(k: Kernel, project: dict, verifier: dict) -> tuple[str, str]:
     return verdict, detail
 
 
-STAGE = STAGE_DIR
 MAX_STAGED_FILES = 60
-MAX_STAGED_BYTES = 512 * 1024
+MAX_STAGED_BYTES = 2 * 1024 * 1024
 
 
 MAX_ALLOWED_FAILURES = 300
@@ -171,11 +171,12 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
     itself and seen it fail on the current code. The existing tests must be green first, so a
     later regression can be told apart from a failure that was already there.
 
-    With `stage`, the same call also writes its proposed implementation, but NOT into the
-    project: complete files go under `.lupus-staged/`, where nothing runs them. The test is
-    therefore still judged, shown and approved against the code as it is. Only after the user
-    approved the test are the staged files moved into place and verified like any worker's
-    result; if they do not pass, an ordinary implementation attempt follows. This saves the
+    With `stage`, the same call also implements the request, editing the project's sources in the
+    ordinary way. The supervisor takes those edits out again before it judges the test (every file
+    but the new test is frozen, and the displaced versions are kept in the runtime, outside the
+    project). The test is therefore still judged, shown and approved against the code as it is.
+    Only after the user approved the test are the kept versions put back and verified like any
+    worker's result; if they do not pass, an ordinary implementation attempt follows. This saves the
     second model call when the first proposal is right."""
     if actor != "user":
         raise LupusError("USER_AUTHORITY_REQUIRED", "requests are submitted by the user")
@@ -212,29 +213,33 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
     test_path = runners.new_test_path(root, found, sha256_bytes(request.encode("utf-8"))[:8])
     if (root / test_path).exists():
         raise LupusError("CHECK_EXISTS", test_path)
-    if stage and os.path.lexists(root / STAGE):
-        raise LupusError("CHECK_EXISTS", f"{STAGE} is left over from an earlier request; remove it")
     sources = runners.sources(root, found["language"], about=request)
     verifier = {"kind": "red_test", "argv": runners.one_file_argv(found, test_path), "path": test_path,
-                "paths": [test_path], "protect_except": [test_path, *([STAGE] if stage else [])], "timeout_s": 300, **common,
+                "paths": [test_path], "protect_except": [test_path], "timeout_s": 300, **common,
+                **({"proposal": True} if stage else {}),
                 **({"baseline_pass": pinned} if pinned else {}),
                 **({"baseline_failing": already_failing} if already_failing else {})}
     with k.tx():
         goal = goals.submit(k, project["project_id"], f"요청의 검사 작성: {request[:80]}", [
-            {"id": "c0", "text": f"{test_path} 가 존재하고, 현재 코드에서는 실패한다(요청이 아직 구현되지 않았으므로)",
+            {"id": "c0", "text": (f"{test_path} 가 존재하고, 요청을 구현하기 전의 코드에서는 실패한다" if stage else
+                                  f"{test_path} 가 존재하고, 현재 코드에서는 실패한다(요청이 아직 구현되지 않았으므로)"),
              "verifier": verifier}], caps or DEFAULT_CAPS, actor="user")
         goals.add_task(
-            k, goal["goal_id"], "검사 작성",
-            ("아래 요청이 구현됐는지 판정하는 테스트를 작성하라.\n" if stage else
+            k, goal["goal_id"], "검사 작성과 구현" if stage else "검사 작성",
+            ("아래 요청에 대해 두 가지를 하라: (1) 요청이 구현됐는지 판정하는 테스트를 새로 쓰고, (2) 요청을 구현한다.\n" if stage else
              "아래 요청이 구현됐는지 판정하는 테스트만 작성하라. 구현은 하지 마라.\n")
             + f"요청: {request}\n"
-            f"- 새 파일 {test_path} 를 만든다({runners.FORMAT[found['runner']]} 형식). 프로젝트의 기존 파일은 만들거나 수정하지 마라"
-            "(수정해도 되돌려진다).\n"
+            f"- 새 파일 {test_path} 를 만든다({runners.FORMAT[found['runner']]} 형식). "
+            + ("기존 테스트 파일과 테스트 설정은 만들거나 수정하지 마라" if stage else "프로젝트의 기존 파일은 만들거나 수정하지 마라")
+            + "(수정해도 되돌려진다).\n"
             "- 요청의 요구 동작을 구체적인 입력과 기대 결과로 검사하라. 경계 사례를 포함하라.\n"
-            "- 요청이 아직 구현되지 않았으므로 이 테스트는 지금 실패해야 한다. " + runners.DRAFT_HINT[found["language"]] + "\n"
-            + (f"- 이어서 구현안도 지금 작성하되 프로젝트 파일을 직접 고치지는 마라. 수정하거나 새로 만들 각 소스 파일의 전체 내용을 "
-               f"{STAGE}/<프로젝트 기준 같은 경로> 에 써라(예: pkg/mod.py 를 고치려면 {STAGE}/pkg/mod.py). 테스트 파일과 테스트 "
-               "설정은 거기에 넣지 마라. 사용자가 테스트를 승인하면 그 파일들이 제자리로 옮겨지고 테스트로 검증된다.\n" if stage else "")
+            + ("- 이 테스트는 원래 코드(네가 구현하기 전)에서는 실패하고 네 구현 뒤에는 통과해야 한다. 원래 코드에서 실패하는지는 "
+               "Lupus가 원본을 따로 보관해 두었다가 직접 확인하므로, 네가 코드를 되돌리거나 구현을 미룰 필요가 없다. 원래 코드를 "
+               "기준으로: " if stage else "- 요청이 아직 구현되지 않았으므로 이 테스트는 지금 실패해야 한다. ")
+            + runners.DRAFT_HINT[found["language"]] + "\n"
+            + ("- 그리고 요청을 지금 프로젝트의 소스 파일을 직접 수정해 구현하라(필요한 부분만 고쳐라). 패치 파일, 사본, 설명 "
+               "문서로 내지 마라: 소스 파일 자체가 바뀌어 있어야 하고, 그 상태에서 이 테스트와 기존 테스트가 모두 통과해야 한다.\n"
+               if stage else "")
             + "프로젝트의 소스 파일: " + (", ".join(sources) or "(없음)"), ["c0"],
             inputs=sources[:8])      # small ones are handed over in the prompt, so they need not be read one by one
     return {"goal_id": goal["goal_id"], "test_path": test_path, "runner": found["runner"], "request": request,
@@ -242,7 +247,7 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
 
 
 def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, test_sha256: str, actor: str,
-                  caps: dict | None = None) -> dict:
+                  caps: dict | None = None, keep_base: bool = False) -> dict:
     """Step 2: the user has read the drafted test and approves THIS exact version. Creates the
     implementation goal: the approved test and every existing test are frozen, and the goal is
     done only when the supervisor sees the approved test and the existing tests pass."""
@@ -294,6 +299,13 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
                               # names recorded from the green run BEFORE the new test existed
                               **({"must_pass": red["baseline_pass"]} if red.get("baseline_pass") else {})}}]
     related = [m for m in found["inputs"] if m != test_path]
+    base = base_error = None
+    if keep_base:
+        # What the project looked like before the implementation, for a reviewer to compare against.
+        try:
+            base = review.snapshot(k, draft_goal_id, root)
+        except LupusError as exc:
+            base_error = f"{exc.code}: {exc.detail}"
     with k.tx():
         goal = goals.submit(k, project["project_id"], request[:200], criteria, caps or DEFAULT_CAPS, actor="user")
         task = goals.add_task(
@@ -312,49 +324,69 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
                sha256=test_sha256)
     # The test is approved and frozen. Only now does the implementation proposed alongside it enter
     # the project; whether it is any good is decided by the frozen tests, before any further call.
-    # …and only if THIS draft was allowed to stage one (a folder left by something else is not ours).
-    applied = _apply_staged(root, set(protect_paths), found["language"]) if STAGE in red.get("protect_except", []) else []
+    # …and only if THIS draft was asked for one.
+    applied = _apply_proposal(k, draft_goal_id, root, set(protect_paths), found["language"]) if red.get("proposal") else []
     if applied:
         with k.tx():
             k.emit("supervisor", "do.staged_applied", "goal", goal["goal_id"], files=applied)
             k.emit("supervisor", "batch.planned", "task", task["task_id"], lead_attempt=None,
                    acceptance_revision=goal["acceptance_revision"])       # verified first, called only if that fails
-    return {"goal_id": goal["goal_id"], "test_path": test_path, "staged_applied": applied}
+    return {"goal_id": goal["goal_id"], "test_path": test_path, "staged_applied": applied,
+            **({"review_base": str(base)} if base else {}), **({"review_unavailable": base_error} if base_error else {})}
 
 
-def _apply_staged(root: Path, frozen: set[str], language: str) -> list[str]:
-    """Move the files a worker proposed under `.lupus-staged/` into the project. Never a test, a
-    runner configuration, a frozen path, a link, or anything that would land outside the project."""
-    stage, applied = root / STAGE, []
-    if stage.is_symlink() or not stage.is_dir():
+def proposal(k: Kernel, draft_goal_id: str) -> tuple[Path, list[str]] | None:
+    """Where the implementation written alongside a drafted check is kept, and which files it has:
+    the versions the supervisor displaced when it put the project back after the draft's LAST
+    successful call. An earlier, rejected call's edits are not part of it."""
+    last = k.one("SELECT run_id FROM attempt WHERE goal_id = ? AND outcome = 'PROGRESS' ORDER BY rowid DESC LIMIT 1",
+                 draft_goal_id)
+    if last is None:
+        return None
+    kept_in = k.runtime / "displaced" / last["run_id"]
+    row = k.one("SELECT payload FROM event WHERE type = 'protect.restored' AND aggregate_id = ? "
+                "AND json_extract(payload, '$.displaced_kept_in') = ? ORDER BY seq LIMIT 1", draft_goal_id, str(kept_in))
+    if row is None:
+        return None
+    return kept_in, sorted(json.loads(row["payload"]).get("kept", []))
+
+
+def _apply_proposal(k: Kernel, draft_goal_id: str, root: Path, frozen: set[str], language: str) -> list[str]:
+    """Put the kept versions into the project. Never a test, a runner configuration, a frozen
+    path, a link, or anything that would land outside the project."""
+    found, applied = proposal(k, draft_goal_id), []
+    if found is None:
         return applied
-    real_root = os.path.realpath(root)
-    try:
-        for current, dirs, files in os.walk(stage):
-            dirs[:] = sorted(d for d in dirs if not (Path(current) / d).is_symlink())
-            for name in sorted(files):
-                source = Path(current) / name
-                rel = os.path.relpath(source, stage)
-                target = root / rel
-                parts = Path(rel).parts
-                info = os.lstat(source)
-                on_the_way = [root.joinpath(*parts[:i]) for i in range(1, len(parts) + 1)]
-                if (not stat.S_ISREG(info.st_mode) or info.st_size > MAX_STAGED_BYTES      # no links, pipes, devices
-                        or any(p.is_symlink() for p in on_the_way)                         # nor through a link, wherever it leads
-                        or len(applied) >= MAX_STAGED_FILES
-                        or parts[0] in protect.SKIP_DIRS or parts[0] == STAGE
-                        or rel in frozen or any(rel.startswith(f + os.sep) for f in frozen)
-                        or runners.is_test_file(language, rel) or name in runners.CONFIG[language]):
-                    continue
-                with open(source, "rb") as handle:
-                    data = handle.read(MAX_STAGED_BYTES + 1)
-                if len(data) > MAX_STAGED_BYTES:
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                atomic_write(target, data, mode=(target.stat().st_mode & 0o777) if target.is_file() else 0o644)
-                applied.append(rel)
-    finally:
-        shutil.rmtree(stage, ignore_errors=True)
+    kept_in, rels = found
+    # The kept versions were written against the project as the draft left it. A file edited since
+    # (by the user, while reading the test) is not overwritten: the whole proposal is dropped and
+    # an ordinary implementation attempt follows.
+    edited = sorted({d["path"] for d in protect.drift(k, draft_goal_id, root)} & {os.path.normpath(r) for r in rels})
+    if edited:
+        with k.tx():
+            k.emit("supervisor", "do.proposal_dropped", "goal", draft_goal_id, edited_since_draft=edited[:20])
+        return applied
+    for rel in rels:
+        rel = os.path.normpath(rel)
+        parts = Path(rel).parts
+        source = kept_in.joinpath(*parts)
+        if os.path.isabs(rel) or ".." in parts or len(applied) >= MAX_STAGED_FILES:
+            continue
+        try:
+            info = os.lstat(source)
+        except OSError:
+            continue
+        on_the_way = [root.joinpath(*parts[:i]) for i in range(1, len(parts) + 1)]
+        if (not stat.S_ISREG(info.st_mode) or info.st_size > MAX_STAGED_BYTES      # no links, pipes, devices
+                or any(p.is_symlink() for p in on_the_way)                         # nor through a link, wherever it leads
+                or parts[0] in protect.SKIP_DIRS
+                or rel in frozen or any(rel.startswith(f + os.sep) for f in frozen)
+                or runners.is_test_file(language, rel) or parts[-1] in runners.CONFIG[language]):
+            continue
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(target, source.read_bytes(), mode=(target.stat().st_mode & 0o777) if target.is_file() else 0o644)
+        applied.append(rel)
     return applied
 
 
@@ -380,14 +412,6 @@ def discard_draft(k: Kernel, project: dict, draft_goal_id: str, actor: str) -> s
         # Undo whatever the draft step left changed BEFORE its frozen copies are released.
         protect.restore(k, draft_goal_id, root, keep_dir=k.runtime / "displaced" / draft_goal_id / "restored")
         goals.cancel(k, draft_goal_id, "user", "draft discarded")
-    staged = root / STAGE
-    if staged.is_symlink():
-        staged.unlink()
-    elif staged.is_dir():      # the proposal that came with the check goes with it
-        aside = k.runtime / "displaced" / draft_goal_id / "staged"
-        aside.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        shutil.rmtree(aside, ignore_errors=True)
-        shutil.move(str(staged), str(aside))
     target = root / red["path"]
     if not target.is_file() or target.is_symlink():
         return None

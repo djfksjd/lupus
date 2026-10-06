@@ -291,7 +291,7 @@ def restore(k: Kernel, goal_id: str, root: Path, keep_dir: Path | None = None) -
     A hash cannot tell whether the worker or a person changed a file while the run was going
     on. So nothing is thrown away: every displaced version is first moved to `keep_dir` (in the
     runtime, outside the project) and can be recovered from there."""
-    restored, unrestorable = [], []
+    restored, unrestorable, kept = [], [], []
     real_root = Path(os.path.realpath(root))
     for item in drift(k, goal_id, root):
         target = _plain(real_root, item["path"])
@@ -309,6 +309,7 @@ def restore(k: Kernel, goal_id: str, root: Path, keep_dir: Path | None = None) -
             saved = keep_dir / item["path"]
             saved.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             atomic_write(saved, target.read_bytes())
+            kept.append(item["path"])
         if item["change"] == "mode":
             target.chmod(item["row"]["mode"])
             restored.append(f"{item['path']} (실행 권한 되돌림)")
@@ -330,5 +331,5 @@ def restore(k: Kernel, goal_id: str, root: Path, keep_dir: Path | None = None) -
             restored.append(f"{item['path']} ({'삭제' if item['change'] == 'deleted' else '수정'} 되돌림)")
     if restored or unrestorable:
         k.emit("supervisor", "protect.restored", "goal", goal_id, restored=restored, unrestorable=unrestorable,
-               displaced_kept_in=str(keep_dir) if keep_dir else None)
-    return {"restored": restored, "unrestorable": unrestorable}
+               displaced_kept_in=str(keep_dir) if keep_dir else None, kept=kept)
+    return {"restored": restored, "unrestorable": unrestorable, "kept": kept}
