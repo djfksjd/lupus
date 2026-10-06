@@ -1,0 +1,540 @@
+{
+ "driver": "native_codex",
+ "date": "2026-10-06",
+ "rows": [
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "plain",
+   "seconds": 58.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 161165,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 63.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 144922,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "plain",
+   "seconds": 62.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 193076,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 68.0,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 238831,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "plain",
+   "seconds": 75.7,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 220748,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 60.4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 199474,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "plain",
+   "seconds": 125.3,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 314616,
+   "errors": [],
+   "hidden_detail": "st_split_for_update_in_begin_end - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 45 passed in 0.06s"
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 123.0,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 292485,
+   "errors": [],
+   "hidden_detail": "st_split_for_update_in_begin_end - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 45 passed in 0.07s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "plain",
+   "seconds": 58.6,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 193371,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 71.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 108862,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "plain",
+   "seconds": 67.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 235934,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 97.7,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 166032,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "plain",
+   "seconds": 50.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 169769,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 97.0,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 130724,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "plain",
+   "seconds": 46.6,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 155098,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 75.7,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 107492,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "1e6e869a",
+   "arm": "plain",
+   "seconds": 49.8,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 179836,
+   "errors": [],
+   "hidden_detail": "estMiscellaneous::test_inline_array_recursion_limit\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed in 0.43s"
+  },
+  {
+   "repo": "tomli",
+   "commit": "1e6e869a",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 51.4,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 130624,
+   "errors": [],
+   "hidden_detail": "estMiscellaneous::test_inline_array_recursion_limit\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed in 0.02s"
+  },
+  {
+   "repo": "tomli",
+   "commit": "e1fdb94b",
+   "arm": "plain",
+   "seconds": 34.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 107230,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "e1fdb94b",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 69.5,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 197804,
+   "errors": [],
+   "hidden_detail": "stMiscellaneous::test_key_recursion_limit - Asse...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed in 0.03s"
+  },
+  {
+   "repo": "tomli",
+   "commit": "9eb2125e",
+   "arm": "plain",
+   "seconds": 62.5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 177412,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "9eb2125e",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 144.9,
+   "hidden_tests_pass": true,
+   "calls": 3,
+   "tokens": 434490,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "2a2aa62f",
+   "arm": "plain",
+   "seconds": 59.2,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 191091,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "2a2aa62f",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 125.2,
+   "hidden_tests_pass": true,
+   "calls": 3,
+   "tokens": 345038,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "2c87a33f",
+   "arm": "plain",
+   "seconds": 52.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 155583,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "2c87a33f",
+   "arm": "do",
+   "refused": "BASELINE_RED: existing tests do not pass; run `lupus fix-tests` first: s/test_pylock.py\nERROR tests/test_specifiers.py\nERROR tests/tes",
+   "seconds": 2.1,
+   "hidden_tests_pass": false,
+   "calls": 0,
+   "tokens": 0,
+   "errors": [],
+   "hidden_detail": "OR licenseref-MIT-LicenseRef-mit OR LicenseRef-mit]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 7 passed in 0.03s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "959bb79c",
+   "arm": "plain",
+   "seconds": 80.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 248052,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "959bb79c",
+   "arm": "do",
+   "refused": "BASELINE_RED: existing tests do not pass; run `lupus fix-tests` first: s/test_pylock.py\nERROR tests/test_specifiers.py\nERROR tests/tes",
+   "seconds": 1.9,
+   "hidden_tests_pass": false,
+   "calls": 0,
+   "tokens": 0,
+   "errors": [],
+   "hidden_detail": "t_expand_contract_model_only_does_inner_lookup_once\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed in 0.07s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "d17cfaf0",
+   "arm": "plain",
+   "seconds": 55.3,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 167766,
+   "errors": [],
+   "hidden_detail": "n_str_uses_literal_eval_for_complex_string[\"a\\tb\"]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 23 passed in 0.10s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "d17cfaf0",
+   "arm": "do",
+   "refused": "BASELINE_RED: existing tests do not pass; run `lupus fix-tests` first: s/test_pylock.py\nERROR tests/test_specifiers.py\nERROR tests/tes",
+   "seconds": 1.8,
+   "hidden_tests_pass": false,
+   "calls": 0,
+   "tokens": 0,
+   "errors": [],
+   "hidden_detail": "skips_literal_eval_for_plain_string[\"plain\"-plain]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 15 passed in 0.10s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "23669b1b",
+   "arm": "plain",
+   "seconds": 70.8,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 192662,
+   "errors": [],
+   "hidden_detail": "t.py::test_unknown_extras - AssertionError: Reg...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 29 passed in 0.07s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "23669b1b",
+   "arm": "do",
+   "refused": "BASELINE_RED: existing tests do not pass; run `lupus fix-tests` first: s/test_pylock.py\nERROR tests/test_specifiers.py\nERROR tests/tes",
+   "seconds": 2.6,
+   "hidden_tests_pass": false,
+   "calls": 0,
+   "tokens": 0,
+   "errors": [],
+   "hidden_detail": "t.py::test_unknown_extras - Failed: DID NOT RAI...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 29 passed in 0.12s"
+  },
+  {
+   "repo": "click",
+   "commit": "b90faad1",
+   "arm": "plain",
+   "seconds": 121.0,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 451265,
+   "errors": [],
+   "hidden_detail": "ts.py::test_argument_normalizes_an_identifier_decl\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 15 passed in 0.19s"
+  },
+  {
+   "repo": "click",
+   "commit": "b90faad1",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 104.5,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 192881,
+   "errors": [],
+   "hidden_detail": "ts.py::test_argument_normalizes_an_identifier_decl\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 15 passed in 0.18s"
+  },
+  {
+   "repo": "click",
+   "commit": "f67c2bb6",
+   "arm": "plain",
+   "seconds": 88.3,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 191412,
+   "errors": [],
+   "hidden_detail": "e_default_short_help[-abbreviation inside sentence]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 8 passed in 0.02s"
+  },
+  {
+   "repo": "click",
+   "commit": "f67c2bb6",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 97.7,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 227135,
+   "errors": [],
+   "hidden_detail": "e_default_short_help[-abbreviation inside sentence]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 8 passed in 0.02s"
+  },
+  {
+   "repo": "click",
+   "commit": "05f6fd0d",
+   "arm": "plain",
+   "seconds": 46.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 186206,
+   "errors": []
+  },
+  {
+   "repo": "click",
+   "commit": "05f6fd0d",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "seconds": 121.4,
+   "hidden_tests_pass": true,
+   "calls": 2,
+   "tokens": 329134,
+   "errors": []
+  },
+  {
+   "repo": "click",
+   "commit": "f25f697a",
+   "arm": "plain",
+   "seconds": 87.6,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 360523,
+   "errors": [],
+   "hidden_detail": "gument_help_undocumented_arguments_only_no_section\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 39 passed in 0.07s"
+  },
+  {
+   "repo": "click",
+   "commit": "f25f697a",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "seconds": 155.3,
+   "hidden_tests_pass": true,
+   "calls": 2,
+   "tokens": 454413,
+   "errors": []
+  }
+ ],
+ "summary": {
+  "plain": {
+   "n": 20,
+   "hidden_pass": 13,
+   "tokens_mean": 212641,
+   "seconds_mean": 67.7
+  },
+  "do": {
+   "n": 20,
+   "hidden_pass": 11,
+   "tokens_mean": 185017,
+   "seconds_mean": 76.8,
+   "lupus_said_done": 14,
+   "said_done_but_hidden_fail": 5
+  }
+ }
+}

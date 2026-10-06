@@ -108,7 +108,19 @@ def _language(root: Path) -> str | None:
 _PYTEST_STYLE = re.compile(r"^(?:def test_\w*\(|import pytest\b|from pytest\b|@pytest\.)", re.M)
 
 
-def _python(root: Path, host: bool = True) -> dict:
+def project_python(root: Path) -> tuple[str, str] | None:
+    """(interpreter, environment folder) of the project's own virtual environment, if it has one.
+    The project's tests are meant to run with the project's dependencies, not with whatever
+    Python happens to run Lupus. The folder is fingerprinted like a dependency tree, so a worker
+    cannot swap the interpreter or a package for something that prints a pass."""
+    for name in (".venv", "venv", "env"):
+        python = root / name / "bin" / "python"
+        if (root / name / "pyvenv.cfg").is_file() and python.exists() and os.access(python, os.X_OK):
+            return str(python), name
+    return None
+
+
+def _python(root: Path, host: bool = True, python_from: Path | None = None) -> dict:
     test_dirs = [d for d in ("tests", "test") if (root / d).is_dir()]
     loose = sorted(p.name for p in root.glob("test_*.py")) + sorted(p.name for p in root.glob("*_test.py"))
     candidates = loose + [str(p.relative_to(root)) for d in test_dirs for p in sorted((root / d).rglob("*.py"))][:200]
@@ -117,18 +129,25 @@ def _python(root: Path, host: bool = True) -> dict:
         # no configuration, but the tests are written the pytest way (plain functions, fixtures):
         # unittest would import such a file and run nothing
         _PYTEST_STYLE.search((root / rel).read_text(errors="ignore")) for rel in candidates)
+    own = project_python(root) if host else None
+    # An isolated checkout has no environment of its own: it uses the one of the repository it was
+    # made from (outside the checkout, so nothing a worker there can write to).
+    borrowed = project_python(python_from) if host and own is None and python_from is not None else None
+    python = own[0] if own else (borrowed[0] if borrowed else sys.executable)
     if uses_pytest and not host:
         argv, runner = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider"], "pytest"
     elif uses_pytest:
-        # Not run inside the project and with the scrubbed environment: importing pytest there
-        # could execute the project's conftest/plugins with the user's credentials.
-        probe = subprocess.run([sys.executable, "-m", "pytest", "--version"], capture_output=True,
-                               cwd=tempfile.gettempdir(), env=scrubbed_env(), stdin=subprocess.DEVNULL)
-        if probe.returncode != 0:
+        # Is pytest there? Asked only of Lupus's own interpreter, outside the project and with the
+        # scrubbed environment. An interpreter that belongs to the project is never run here: it
+        # runs only as a sandboxed check, where a missing pytest shows up as that check failing.
+        probe = None if own or borrowed else subprocess.run(
+            [python, "-m", "pytest", "--version"], capture_output=True, cwd=tempfile.gettempdir(), env=scrubbed_env(),
+            stdin=subprocess.DEVNULL)
+        if probe is not None and probe.returncode != 0:
             raise LupusError("TEST_RUNNER_UNAVAILABLE", "the project is configured for pytest but pytest is not installed")
-        argv, runner = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], "pytest"
+        argv, runner = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider"], "pytest"
     else:
-        argv, runner = [sys.executable if host else "python3", "-m", "unittest", "discover", "-q"], "unittest"
+        argv, runner = [python if host else "python3", "-m", "unittest", "discover", "-q"], "unittest"
     tests = loose + [str(p.relative_to(root)) for d in test_dirs for p in sorted((root / d).rglob("test*.py"))]
     # "src layout": the package lives in src/ and is not importable from the project root unless
     # it is installed. The tests are run against the source in front of us, not an installed copy.
@@ -143,7 +162,8 @@ def _python(root: Path, host: bool = True) -> dict:
                     sorted(str(p.relative_to(root)) for p in package.glob("*.py"))[:6] if (package / "__init__.py").is_file() else [])
                 related += [f for f in found if f not in related and not is_test_file("python", f)]
     return {"runner": runner, "argv": argv, "protect": test_dirs + loose, "tests": tests, "related": related,
-            "test_dir": test_dirs[0] if test_dirs else "", **({"env": {"PYTHONPATH": "src"}} if src else {})}
+            "test_dir": test_dirs[0] if test_dirs else "", **({"env": {"PYTHONPATH": "src"}} if src else {}),
+            **({"frozen_trees": [own[1]]} if own else {})}
 
 
 _SHELL = re.compile(r"[|&;<>$`(){}*?~]|^\w+=")
@@ -233,14 +253,15 @@ def _rust(root: Path, host: bool = True) -> dict:
             "related": [f for f in ("src/lib.rs", "src/main.rs") if (root / f).is_file()], "test_dir": "tests"}
 
 
-def detect(root: Path, need_tests: bool = True, host: bool = True) -> dict:
+def detect(root: Path, need_tests: bool = True, host: bool = True, python_from: Path | None = None) -> dict:
     """Pick the test command and what to freeze, from files only (no model, no guessing).
     `host=False`: the tests will run in a container, so programs are named, not looked up here."""
     root = Path(root)
     language = _language(root)
     if language is None:
         raise LupusError("NO_TESTS_FOUND", "no tests and no recognised project file here")
-    found = {"python": _python, "node": _node, "go": _go, "rust": _rust}[language](root, host)
+    found = (_python(root, host, python_from) if language == "python"
+             else {"node": _node, "go": _go, "rust": _rust}[language](root, host))
     # Rust and Go keep unit tests inside source files; those cannot be frozen as files, so only
     # the test files proper count as "has tests" for freezing purposes.
     has_tests = bool(found["tests"]) or (language == "rust" and (root / "src").is_dir() and any(
@@ -337,6 +358,27 @@ def passed(runner: str, output: str) -> int | None:
         skipped = [int(n) for n in _UNITTEST_SKIPPED.findall(output)]
         return max(0, min(counts) - (max(skipped) if skipped else 0))
     return min(counts)
+
+
+_FAILED_ID = {
+    "pytest": re.compile(r"^(?:FAILED|ERROR) (\S+)", re.M),                       # needs -rfE
+    "unittest": re.compile(r"^(?:FAIL|ERROR): (\S+) \(([^)]*)\)", re.M),
+}
+
+
+def failed_ids(runner: str, output: str) -> set[str] | None:
+    """Names of the tests (or test files that could not be loaded) a run reports as failed; None
+    for a runner whose output does not name them."""
+    pattern = _FAILED_ID.get(runner)
+    if pattern is None:
+        return None
+    if runner == "unittest":
+        return {(where if "_FailedTest" not in where else name) or name for name, where in pattern.findall(output)}
+    return {name.split(" - ")[0] for name in pattern.findall(output)}
+
+
+def with_failure_names(runner: str, argv: list[str]) -> list[str]:
+    return [*argv, "-rfE"] if runner == "pytest" and "-rfE" not in argv else list(argv)
 
 
 def nothing_ran(runner: str, detail: str) -> bool:
@@ -459,5 +501,24 @@ FORMAT = {"unittest": "unittest", "pytest": "pytest", "node": "node:test (import
           "vitest": "vitest", "go": "Go testing", "cargo": "Rust #[test]"}
 
 
-def sources(root: Path, language: str, limit: int = 40) -> list[str]:
-    return [rel for rel in _walk(root, SOURCE_EXT[language]) if not is_test_file(language, rel)][:limit]
+def sources(root: Path, language: str, limit: int = 40, about: str = "") -> list[str]:
+    """Source files, the ones most likely to matter for `about` first: files whose name or content
+    mentions the identifiers in the request. A plain alphabetical slice says nothing in a
+    repository of real size."""
+    files = [rel for rel in _walk(root, SOURCE_EXT[language]) if not is_test_file(language, rel)]
+    words = {w.lower() for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", about)} - _COMMON
+    if not words or len(files) <= limit // 4:
+        return files[:limit]
+    scored = []
+    for position, rel in enumerate(files[:1500]):
+        try:
+            text = (root / rel).read_bytes()[:200_000].decode("utf-8", errors="ignore").lower()
+        except OSError:
+            continue
+        name = rel.lower()
+        score = sum(8 for w in words if w in name) + sum(min(text.count(w), 5) for w in words)
+        scored.append((-score, position, rel))
+    return [rel for _, _, rel in sorted(scored)[:limit]]
+
+
+_COMMON = frozenset("the and for with that this from into when should must add fix use not are was has have will can".split())

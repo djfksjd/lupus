@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lupus import goals, protect, runs, verify   # noqa: E402
+from lupus import gitx, goals, protect, runs, verify   # noqa: E402
 from lupus.kernel import Kernel   # noqa: E402
 from lupus.util import LupusError, find_secret   # noqa: E402
 
@@ -60,6 +60,7 @@ def stop(k: Kernel, goal_id: str, event: dict) -> tuple[int, str]:
     if seen.get("hash") == current:
         return 0, ""              # nothing changed since the last look: do not interrupt a conversation
     problems = [f"- 고정된 검증 파일이 바뀌었다: {d['path']}" for d in protect.drift(k, goal_id, root)][:5]
+    taken = gitx.guard(root) if not problems else None
     if not problems:
         for c in criteria:
             # Recorded like any verifier of this project, so a check left behind (and the container it
@@ -68,6 +69,8 @@ def stop(k: Kernel, goal_id: str, event: dict) -> tuple[int, str]:
                                             on_exit=lambda pid: runs.clear_aux(k, pid))
             if verdict != "PASS":
                 problems.append(f"- {c['text']}: " + ("(출력 생략)" if find_secret(detail) else detail[-600:]))
+    if taken is not None:
+        gitx.unguard(k, root, taken, goal_id)
     state_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     state_file.write_text(json.dumps({"hash": verify.artifact_hash({"paths": ["."]}, root)}))
     if not problems:

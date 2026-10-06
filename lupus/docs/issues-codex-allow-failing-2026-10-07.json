@@ -1,0 +1,135 @@
+{
+ "driver": "native_codex",
+ "date": "2026-10-06",
+ "rows": [
+  {
+   "repo": "packaging",
+   "commit": "2c87a33f",
+   "arm": "plain",
+   "seconds": 40.2,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 152506,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "2c87a33f",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 58.4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 111611,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "959bb79c",
+   "arm": "plain",
+   "seconds": 96.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 214230,
+   "errors": []
+  },
+  {
+   "repo": "packaging",
+   "commit": "959bb79c",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 85.8,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 225628,
+   "errors": [],
+   "hidden_detail": "t_expand_contract_model_only_does_inner_lookup_once\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed in 0.07s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "d17cfaf0",
+   "arm": "plain",
+   "seconds": 58.7,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 223112,
+   "errors": [],
+   "hidden_detail": "n_str_uses_literal_eval_for_complex_string[\"a\\tb\"]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 23 passed in 0.10s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "d17cfaf0",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 85.7,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 178242,
+   "errors": [],
+   "hidden_detail": "n_str_uses_literal_eval_for_complex_string[\"a\\tb\"]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 23 passed in 0.10s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "23669b1b",
+   "arm": "plain",
+   "seconds": 77.6,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 247493,
+   "errors": [],
+   "hidden_detail": "t.py::test_unknown_extras - AssertionError: Reg...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 29 passed in 0.06s"
+  },
+  {
+   "repo": "packaging",
+   "commit": "23669b1b",
+   "arm": "do",
+   "already_failing": 20,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 74.9,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 159443,
+   "errors": [],
+   "hidden_detail": "t.py::test_unknown_extras - AssertionError: Reg...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 29 passed in 0.07s"
+  }
+ ],
+ "summary": {
+  "plain": {
+   "n": 4,
+   "hidden_pass": 2,
+   "tokens_mean": 209335,
+   "seconds_mean": 68.3
+  },
+  "do": {
+   "n": 4,
+   "hidden_pass": 1,
+   "tokens_mean": 168731,
+   "seconds_mean": 76.2,
+   "lupus_said_done": 4,
+   "said_done_but_hidden_fail": 3
+  }
+ }
+}

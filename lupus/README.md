@@ -44,6 +44,9 @@ lupus fix-tests --driver claude                      # 실패하는 테스트를
 lupus fix-tests --driver codex --check "make test" --protect tests   # 알아보지 못하는 프로젝트: 테스트 명령을 직접 지정
 lupus fix-tests --driver claude --container node:24  # 테스트를 호스트 샌드박스 대신 Docker 컨테이너에서(네트워크 없음)
 lupus do "<요청>" --driver claude [--two-step]       # 한 번 호출로 실패하는 테스트 + 따로 둔 구현안 -> 승인 -> 적용·검증
+                                                     # 승인 때 edit 입력: 테스트를 직접 고쳐서 승인. --allow-failing: 지금 실패하는 기존 테스트는 그대로 둠
+lupus do "<요청>" --driver claude --isolated          # 커밋된 HEAD의 별도 체크아웃에서 작업 (fix-tests도 가능). --shell: worker가 명령 실행 가능
+lupus diff <goal_id> | lupus accept <goal_id> | lupus discard <goal_id>   # 결과 보기 / 커밋 하나로 가져오기 / 버리기
 lupus write "<요청>" --out docs/plan.md --driver claude [--judge codex] [--must "<기준>"] [--web]
                                                      # 문서: 기준 승인 -> 작성 -> 다른 AI가 인용하며 평가 -> 판본 승인
 lupus session --driver claude [-- <CLI 인자>]        # 평소의 대화형 CLI. 테스트 고정, 종료 시 Lupus가 검증
@@ -121,3 +124,4 @@ python3 -m lupus graph --open                                     # 그래프 �
 | `session`, `hook` | 대화형 세션과 그 안의 확인 |
 | `alpha`, `jobs` | 여러 프로젝트의 순서·공유 예산·AI 전환, 백그라운드 실행 |
 | `learn` | 기록된 실패에서 절차 후보 만들기 |
+| `gitx` | `.git` 보호, 격리된 체크아웃과 diff·accept·discard |

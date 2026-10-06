@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import adapters, budget, goals, handoff, judging, memory, projects, protect, recovery, runs, service, usage, verify
+from . import adapters, budget, gitx, goals, handoff, judging, memory, projects, protect, recovery, runs, service, usage, verify
 from .adapters import Adapter
 from .kernel import Kernel
 from .util import LupusError, container_stop, crash_point, find_secret_bytes, proc_start, sha256_json
@@ -37,6 +37,14 @@ def _timed_verify(k: Kernel, goal: dict, criteria: list[dict], root: Path) -> tu
     their group is confirmed empty."""
     started = time.monotonic()
     checked, calls = [], 0
+    taken = gitx.guard(root)        # checks run the project's code: whatever it leaves in .git must not survive
+    try:
+        return _run_checks(k, goal, criteria, root, checked, calls, started)
+    finally:
+        gitx.unguard(k, root, taken, goal["goal_id"])
+
+
+def _run_checks(k: Kernel, goal: dict, criteria: list[dict], root: Path, checked: list, calls: int, started: float):
     for c in criteria:
         if c["verifier"]["kind"] == "judge" and any(v != "PASS" for _, v, _, _ in checked):
             # A judge costs a model call; it is not asked about a document that already failed a
@@ -127,6 +135,11 @@ SINGLE_PASS = (
     "검증은 이 작업 밖에서 따로 수행된다. 직접 테스트나 검증 명령을 실행하지 말고, 쓴 파일을 다시 읽지 마라. "
     "필요한 파일을 한 번에 최종 형태로 쓴 뒤 'done' 한 단어로 답하라."
 )
+EXPLORE = (
+    "관련 코드를 먼저 찾아 읽은 뒤(파일 검색 도구 사용) 필요한 파일을 수정하라. 추측으로 쓰지 마라. "
+    "검증은 이 작업 밖에서 따로 수행된다. 끝나면 'done' 한 단어로 답하라."
+)
+SELF_CHECK = "셸을 쓸 수 있으면 관련 테스트를 직접 실행해 확인해도 된다."
 MAX_INLINE_FILE = 6_000
 
 
@@ -190,7 +203,7 @@ def _was_batched(k: Kernel, task_id: str) -> bool:
 
 
 def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recalled: str = "",
-                 root: Path | None = None, followers: list[dict] | None = None) -> str:
+                 root: Path | None = None, followers: list[dict] | None = None, shell: bool = False) -> str:
     """Minimal worker context, assembled from structured state. No model writes or summarises
     it, and no transcript of an earlier CLI session is carried over (§6.7, §11.1)."""
     goal = goals.get(k, task["goal_id"])
@@ -211,17 +224,20 @@ def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recall
         # Second pass is the careful one: say exactly what failed and allow self-checking.
         lines += ["이전 시도는 아래 검증에 실패했다(검증기의 실제 출력이다). 원인을 먼저 확인하고 고쳐라. "
                   "필요하면 파일을 다시 읽어 확인해도 된다.", *failures]
-    else:
-        lines.append(SINGLE_PASS)
     paths = _artifact_paths(criteria) + task["spec"].get("inputs", [])
     for i, follower in enumerate(followers or [], 2):
         extra = _task_criteria(k, follower)
         lines += [f"이어서 다음 작업도 수행하라({i}번째, 따로 검증된다): {follower['title']}", follower["spec"]["prompt"],
                   *[f"- {c['text']}" for c in extra]]
         paths += _artifact_paths(extra) + follower["spec"].get("inputs", [])
-    if root is not None:
-        # The verifiers' files plus files the tasks name as their inputs (same limits apply).
-        lines += _inline_files(k, root, list(dict.fromkeys(paths)))
+    # The verifiers' files plus files the tasks name as their inputs (same limits apply).
+    inlined = _inline_files(k, root, list(dict.fromkeys(paths))) if root is not None else []
+    if not failures:
+        # Everything needed is in front of the worker: write once. Otherwise it has to look first,
+        # and writing blind in one pass would only produce a confident wrong answer.
+        whole = root is None or all((root / p).is_file() and f"--- 현재 파일 {p} ---" in inlined for p in task["spec"].get("inputs", []))
+        lines.append(SINGLE_PASS if whole else EXPLORE + (" " + SELF_CHECK if shell else ""))
+    lines += inlined
     if continuation:
         work = continuation["work"]
         lines += [
@@ -438,8 +454,10 @@ def run_task(
             k, project_id=goal["project_id"], goal_id=goal_id, attempt_id=attempt_id,
             query="\n".join([task["title"], task["spec"]["prompt"], *[c["text"] for c in criteria]]))
         crash_point("supervisor.before_worker")
+        taken = gitx.guard(root)
         result = adapters.execute(
-            adapter, build_prompt(k, task, continuation, memory.render(recalled), root, followers), root,
+            adapter, build_prompt(k, task, continuation, memory.render(recalled), root, followers,
+                                  shell=getattr(adapter, "shell", False)), root,
             on_spawn=lambda pid: runs.attach_process(k, run_id, token, pid), timeout_s=timeout_s,
         )
     except LupusError as exc:
@@ -462,6 +480,7 @@ def run_task(
         # Whatever the worker did to the protected files is undone BEFORE verifying, so the
         # checks that run are the ones that were frozen.
         undone = protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id)
+        gitx.unguard(k, root, taken, goal_id)      # hooks/config a worker left in .git never get to run
         checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
         # Running the checks can itself write into protected paths (a test with side effects):
         # leave the project as frozen, not as the verifier left it.
@@ -702,9 +721,9 @@ def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout
         steps.append(step)
         if step["status"] in ("NO_RUNNABLE_TASK", "REJECTED"):
             break
-    done = False
+    done, unverified = False, None
     if goals.get(k, goal_id)["status"] == "ACTIVE":
-        _final_verification(k, goal_id, root)
+        unverified = _final_verification(k, goal_id, root)
         # Completion needs the same standing as verification (authority, nobody else alive,
         # protected files as frozen), not only passing evidence.
         if not _final_blockers(k, goal_id) and not goals.completion_blockers(k, goal_id):
@@ -719,4 +738,8 @@ def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout
         "memory": memory.summary(k, goal_id),
         "completion_blockers": [] if done else list(dict.fromkeys(
             goals.completion_blockers(k, goal_id) + _final_blockers(k, goal_id))),
+        # Why the last verification could not be run, when that is what stands between here and done.
+        **({"final_verification_not_run": unverified} if unverified and not done else {}),
+        # Exactly what was checked, in the user's words: "done" means these and nothing more.
+        "checks": [{"id": c["id"], "text": c["text"], "result": view["evidence"].get(c["id"])} for c in view["criteria"]],
     }

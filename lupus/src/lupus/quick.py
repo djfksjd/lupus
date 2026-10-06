@@ -23,12 +23,14 @@ import shutil
 import stat
 from pathlib import Path
 
-from . import goals, protect, runners, runs, verify
+from . import gitx, goals, protect, runners, runs, verify
 from .kernel import Kernel
 from .util import STAGE_DIR, LupusError, atomic_write, find_secret, sha256_bytes
 
 MAX_PINNED = 20_000
-DEFAULT_CAPS = {"calls": 40, "attempts": 3, "active_ms": 1_800_000, "tokens": 3_000_000}
+# Time is reserved at its worst case (worker and check timeouts) and an interrupted attempt is
+# charged in full, so the cap has to leave room for that to happen and the goal still to finish.
+DEFAULT_CAPS = {"calls": 40, "attempts": 3, "active_ms": 7_200_000, "tokens": 3_000_000}
 detect = runners.detect
 
 
@@ -59,14 +61,14 @@ def suite(k: Kernel, project: dict, check: str | None = None, protect_paths: lis
         raise LupusError("WRITER_NOT_STOPPED", project["project_id"])
     if check:
         try:
-            known = detect(root, need_tests=False, host=not container)
+            known = detect(root, need_tests=False, host=not container, python_from=gitx.origin_root(k, project))
         except LupusError:
             known = {"protect": [], "inputs": []}
         found = {"runner": "custom", "argv": shlex.split(check) if container else check_argv(root, check), "env": {},
                  "inputs": known["inputs"],
                  "protect": sorted(set(protect_paths or []) | set(known["protect"]))}
     else:
-        found = detect(root, need_tests=need_tests, host=not container)
+        found = detect(root, need_tests=need_tests, host=not container, python_from=gitx.origin_root(k, project))
     if files_only:
         files: list[str] = []
         for rel in found["protect"]:
@@ -84,9 +86,14 @@ def suite(k: Kernel, project: dict, check: str | None = None, protect_paths: lis
         verifier["container"] = container
     found["argv"] = verifier["argv"]
     # One run: its verdict, and (Rust) the complete list of test names from the same output.
-    code, output = verify._run_gated(verifier, root, runs.aux_recorder(k, project["project_id"], "baseline"),
-                                     lambda pid: runs.clear_aux(k, pid))
+    taken = gitx.guard(root)
+    try:
+        code, output = verify._run_gated(verifier, root, runs.aux_recorder(k, project["project_id"], "baseline"),
+                                         lambda pid: runs.clear_aux(k, pid))
+    finally:
+        gitx.unguard(k, root, taken)
     verdict, _, detail = verify.judge_command(verifier, root, code, output, "")
+    found["output"] = output
     if found["runner"] == "cargo":
         # Rust unit tests live in the source files a worker edits and cannot be frozen. Two rules
         # instead: a failing one is not accepted as the goal (it could be "fixed" by deleting it),
@@ -136,10 +143,14 @@ MAX_REQUEST = 2000
 
 
 def _baseline(k: Kernel, project: dict, verifier: dict) -> tuple[str, str]:
-    verdict, _, detail = verify.run(
-        verifier, Path(project["canonical_root"]),
-        on_spawn=runs.aux_recorder(k, project["project_id"], "baseline"),
-        on_exit=lambda pid: runs.clear_aux(k, pid))
+    root = Path(project["canonical_root"])
+    taken = gitx.guard(root)
+    try:
+        verdict, _, detail = verify.run(
+            verifier, root, on_spawn=runs.aux_recorder(k, project["project_id"], "baseline"),
+            on_exit=lambda pid: runs.clear_aux(k, pid))
+    finally:
+        gitx.unguard(k, root, taken)
     return verdict, detail
 
 
@@ -148,7 +159,11 @@ MAX_STAGED_FILES = 60
 MAX_STAGED_BYTES = 512 * 1024
 
 
-def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict | None = None, stage: bool = True) -> dict:
+MAX_ALLOWED_FAILURES = 300
+
+
+def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict | None = None, stage: bool = True,
+                allow_failing: bool = False) -> dict:
     """Step 1 of `lupus do`: a goal whose only job is to WRITE the acceptance test for a request.
 
     Nothing else in the project may change during this step (everything but the one new test
@@ -171,25 +186,39 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
     if k.one("SELECT 1 FROM run WHERE project_id = ? AND status <> 'STOPPED'", project["project_id"]) or runs.aux_alive(
             k, project["project_id"]):
         raise LupusError("WRITER_NOT_STOPPED", project["project_id"])
-    found = detect(root, need_tests=False)
+    found = detect(root, need_tests=False, python_from=gitx.origin_root(k, project))
     common = {"require_tests": found["runner"], **({"env": found["env"]} if found["env"] else {}),
               **({"frozen_trees": found["frozen_trees"]} if found["frozen_trees"] else {})}
     pinned: list[str] = []
+    already_failing: list[str] = []
     if found["has_tests"] or found["runner"] == "cargo":      # Rust: always, tests may hide in source in forms a scan misses
         _, whole, verdict, detail = suite(k, project, need_tests=False)
         pinned = whole.get("must_pass", [])      # taken now, while everything builds and passes
         if verdict != "PASS" and (found["has_tests"] or pinned or not runners.nothing_ran(found["runner"], detail)):
-            # Otherwise "the old tests fail afterwards" would say nothing about this request.
-            raise LupusError("BASELINE_RED", "existing tests do not pass; run `lupus fix-tests` first: " + detail[-200:])
+            # A red suite makes "the old tests fail afterwards" say nothing about this request —
+            # unless the user accepts the tests that fail NOW, by name, as the starting point.
+            if allow_failing and runners.failed_ids(found["runner"], "") is not None:
+                again = {**whole, "argv": runners.with_failure_names(found["runner"], whole["argv"])}
+                taken = gitx.guard(root)
+                try:
+                    _, output = verify._run_gated(again, root, runs.aux_recorder(k, project["project_id"], "baseline"),
+                                                  lambda pid: runs.clear_aux(k, pid))
+                finally:
+                    gitx.unguard(k, root, taken)
+                already_failing = sorted(runners.failed_ids(found["runner"], output) or [])
+            if not already_failing or len(already_failing) > MAX_ALLOWED_FAILURES:
+                raise LupusError("BASELINE_RED", "existing tests do not pass; run `lupus fix-tests` first, or accept the tests "
+                                 "failing now as the starting point with --allow-failing: " + detail[-200:])
     test_path = runners.new_test_path(root, found, sha256_bytes(request.encode("utf-8"))[:8])
     if (root / test_path).exists():
         raise LupusError("CHECK_EXISTS", test_path)
     if stage and os.path.lexists(root / STAGE):
         raise LupusError("CHECK_EXISTS", f"{STAGE} is left over from an earlier request; remove it")
-    sources = runners.sources(root, found["language"])
+    sources = runners.sources(root, found["language"], about=request)
     verifier = {"kind": "red_test", "argv": runners.one_file_argv(found, test_path), "path": test_path,
                 "paths": [test_path], "protect_except": [test_path, *([STAGE] if stage else [])], "timeout_s": 300, **common,
-                **({"baseline_pass": pinned} if pinned else {})}
+                **({"baseline_pass": pinned} if pinned else {}),
+                **({"baseline_failing": already_failing} if already_failing else {})}
     with k.tx():
         goal = goals.submit(k, project["project_id"], f"요청의 검사 작성: {request[:80]}", [
             {"id": "c0", "text": f"{test_path} 가 존재하고, 현재 코드에서는 실패한다(요청이 아직 구현되지 않았으므로)",
@@ -208,7 +237,8 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
                "설정은 거기에 넣지 마라. 사용자가 테스트를 승인하면 그 파일들이 제자리로 옮겨지고 테스트로 검증된다.\n" if stage else "")
             + "프로젝트의 소스 파일: " + (", ".join(sources) or "(없음)"), ["c0"],
             inputs=sources[:8])      # small ones are handed over in the prompt, so they need not be read one by one
-    return {"goal_id": goal["goal_id"], "test_path": test_path, "runner": found["runner"], "request": request}
+    return {"goal_id": goal["goal_id"], "test_path": test_path, "runner": found["runner"], "request": request,
+            "already_failing": already_failing}
 
 
 def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, test_sha256: str, actor: str,
@@ -232,7 +262,12 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
     if not target.is_file() or target.is_symlink() or sha256_bytes(target.read_bytes()) != test_sha256:
         # What gets frozen must be what the user actually read.
         raise LupusError("CHECK_CHANGED", test_path)
-    found = detect(root)
+    found = detect(root, python_from=gitx.origin_root(k, project))
+    if found["language"] == "python" and red["argv"][0] != found["argv"][0]:
+        # Decided when the request was made, before any worker touched the project. An environment
+        # that showed up since is not the project's.
+        found["argv"] = [red["argv"][0], *found["argv"][1:]]
+        found["frozen_trees"] = red.get("frozen_trees", [])
     # Run the approved version once more: it must still be red on the code as it is now, and the
     # number of tests it runs becomes the minimum that must run (and pass) later.
     verdict, detail = _baseline(k, project, red)
@@ -250,8 +285,12 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
                  "verifier": {"kind": "command", "argv": red["argv"], "timeout_s": 300, **common,
                               # a compiled language reports nothing per test when the run is filtered by name
                               **({"min_tests": count} if runners.passed(found["runner"], "") is not None else {})}},
-                {"id": "c1", "text": "기존 테스트를 포함한 전체 테스트가 통과한다",
-                 "verifier": {"kind": "command", "argv": found["argv"], "timeout_s": 600, **common,
+                {"id": "c1", "text": ("기존 테스트를 포함한 전체 테스트가 통과한다" if not red.get("baseline_failing") else
+                                      f"전체 테스트에서 요청 전부터 실패하던 {len(red['baseline_failing'])}개 외에는 실패가 없다"),
+                 "verifier": {"kind": "command", "timeout_s": 600, **common,
+                              "argv": (runners.with_failure_names(found["runner"], found["argv"]) if red.get("baseline_failing")
+                                       else found["argv"]),
+                              **({"allowed_failures": red["baseline_failing"]} if red.get("baseline_failing") else {}),
                               # names recorded from the green run BEFORE the new test existed
                               **({"must_pass": red["baseline_pass"]} if red.get("baseline_pass") else {})}}]
     related = [m for m in found["inputs"] if m != test_path]

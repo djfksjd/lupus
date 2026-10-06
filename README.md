@@ -14,7 +14,7 @@
 ![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-299%20passing-2ea043?style=flat-square)
+![Tests](https://img.shields.io/badge/offline%20tests-318%20passing-2ea043?style=flat-square)
 
 </div>
 
@@ -36,6 +36,7 @@ Lupus runs the `claude` and `codex` CLIs you already have (with your existing su
 | **Several projects, in the background** | `lupus alpha-run` advances every open goal in turn under shared budgets and switches AI when one runs out of quota. `--background` keeps it running after the terminal closes. |
 | **Budgets and loop control** | Calls, attempts, time and tokens are reserved before work starts. Repeating the same failed attempt is refused before any model is called. |
 | **Crash-safe checkpoints** | Recovery objects are written durably before the database commit; tested by killing the process at every boundary. |
+| **Your working tree stays yours** | `--isolated` does the work in a separate checkout of your committed HEAD. `lupus diff` shows the result, `lupus accept` brings it over as one commit (fast-forward only, re-checked as that exact commit), `lupus discard` drops it. |
 | **OS-level confinement** | The Claude worker and every verifier run inside a macOS sandbox applied by Lupus; verifiers can run in a Docker container instead. |
 | **Memory that has to earn its place** | Project knowledge as typed, linked nodes. `lupus learn` proposes procedures from recorded failures; they stay candidates until later verified outcomes promote or retire them. |
 
@@ -58,6 +59,16 @@ Same tasks, same checks, fresh directory per run, 3 runs per cell, every run pas
 
 **On a real project.** Three changes the maintainers of [hukkin/tomli](https://github.com/hukkin/tomli) really made (a bug fix, a TOML 1.1 feature, a hardening change): source as it was before the commit, tests as they were after it, nothing else given. `lupus fix-tests` finished all three on the first attempt with both Claude (36k–64k tokens, 10–21 s) and Codex (82k–119k tokens, 16–21 s), judged by the upstream tests, which no run tried to edit.
 
+**Does it get more requests right? A pilot says no.** 20 real upstream commits from five projects (sqlparse, more-itertools, tomli, packaging, click): the worker got the repository before the commit and only the commit message; the upstream tests were kept hidden and used as the score. The check `lupus do` drafts was approved automatically, which is not how it is meant to be used.
+
+| Hidden upstream tests passed | Plain call | `lupus do` |
+|---|---|---|
+| Codex, 20 instances | 13 | 11 (4 refused to start because the project's own suite was not green; with `--allow-failing` those four gave 1 pass) |
+| Codex, the 16 that ran | 11 | 11 |
+| Claude, 7 instances (stopped early: `do` took 6.5 min each) | 7 | 4 |
+
+When Lupus reported DONE, the hidden tests failed in 5 of 14 cases on Codex and 1 of 5 on Claude. **DONE means the check you approved passed. It does not mean the request was understood.** A check written by the same model from the same one-line request shares its misunderstanding; what the flow adds is the moment where you read (or edit) that check, and this pilot did not measure a person doing so.
+
 **Judging documents.** A document missing a rubric item and a document that tells the judge to pass it were both rejected by both judges; the complete one was accepted (6 of 6 as expected, one run each).
 
 Read these honestly:
@@ -76,6 +87,8 @@ Raw data and scripts: [`lupus/docs/`](./lupus/docs) · [`lupus/evaluations/`](./
 
 **Use the plain CLI** for one-off questions and quick exploration: there Lupus only adds steps.
 
+**It does not replace** an editor-integrated assistant (Cline, Cursor), a tool with its own agent loop and wide model choice (Aider, OpenHands), or a multi-agent workspace (Claude Squad, claude-flow). It is a supervisor for bounded Claude Code / Codex tasks on macOS: reproducible checks, reviewable changes, interruption recovery.
+
 ## Quick start
 
 Requirements: macOS, Python **3.12+** whose SQLite is **3.51.3+ with FTS5** (Homebrew Python works), and `claude` and/or `codex` installed and logged in.
@@ -92,6 +105,7 @@ cd ~/work/my-project
 lupus fix-tests --driver claude      # observe red -> freeze tests -> fix -> verify
 lupus do "add a --json flag to the export command" --driver claude
                                      # one call: failing test + proposal kept aside -> you approve the test -> applied and verified
+lupus do "…" --driver claude --isolated   # same, in a separate checkout; then: lupus diff | accept | discard <goal>
 lupus session --driver claude        # your usual interactive Claude Code, tests frozen, verified on exit
 lupus write "migration plan for the billing tables" --out docs/plan.md --driver claude
                                      # rubric you approve -> written -> judged by the other AI -> your sign-off
@@ -131,6 +145,7 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 
 ## Limits you should know
 
+- **It does not make the model smarter.** On hidden tests it did no better than a plain call (pilot above). What it gives you is a result that was checked the way you agreed to, in a place that is not your working tree, and that survives interruption.
 - **Not a VM.** The Claude worker and verifiers run in a macOS sandbox (home directory unreadable except what the CLI itself needs, no writes outside the project and temp, Lupus's own state out of reach); Codex uses its own sandbox with a profile Lupus sets; verifiers can use Docker. The temp directory is shared, the worker's network is open, and an interactive session is not sandboxed at all. Do not give it protected or customer data.
 - **You start it.** `lupus session` wraps your interactive CLI; nothing activates Lupus when you type `claude` yourself. Token usage of an interactive session is not reported by the CLIs, so it is charged at its full reservation.
 - **A judge is an opinion.** The quote check stops unsupported passes, not wrong facts. That is why your sign-off is the last condition. Images and visual design cannot be judged.
@@ -139,7 +154,7 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 - Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set, and Prime itself is not connected.
 - jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
 - A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
-- Young code. Twelve external review rounds found and fixed 90 defects, and a usability audit another 16; assume more remain.
+- Young code. Fourteen external review rounds found and fixed 108 defects, and a usability audit another 16; assume more remain.
 
 ## Documentation
 

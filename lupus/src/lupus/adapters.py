@@ -115,7 +115,7 @@ def execute(
             crash_point("adapter.before_go")
             proc.stdin.write(b"g")
             proc.stdin.close()
-            proc.wait(timeout=timeout_s)
+            _wait_showing_progress(proc, timeout_s, adapter.driver)
         except subprocess.TimeoutExpired:
             timed_out = True
         except BaseException as exc:
@@ -142,6 +142,28 @@ def execute(
     return result
 
 
+
+
+def _wait_showing_progress(proc: subprocess.Popen, timeout_s: float, label: str) -> None:
+    """Wait for the worker; at a terminal, show that something is happening and for how long."""
+    if not sys.stderr.isatty():
+        proc.wait(timeout=timeout_s)
+        return
+    started = time.monotonic()
+    try:
+        while True:
+            elapsed = time.monotonic() - started
+            if elapsed >= timeout_s:
+                raise subprocess.TimeoutExpired(proc.args, timeout_s)
+            try:
+                proc.wait(timeout=min(1.0, timeout_s - elapsed))
+                return
+            except subprocess.TimeoutExpired:
+                sys.stderr.write(f"\r  {label} 작업 중… {int(time.monotonic() - started)}초 ")
+                sys.stderr.flush()
+    finally:
+        sys.stderr.write("\r" + " " * 48 + "\r")
+        sys.stderr.flush()
 
 
 def execute_interactive(adapter: Adapter, prompt: str, cwd: Path, on_spawn: Callable[[int], None],
@@ -250,12 +272,15 @@ class ClaudeAdapter(Adapter):
     auth_mode = "subscription"
     os_sandbox = "claude"
 
-    def __init__(self, model: str | None = None, tools: tuple[str, ...] = ("Read", "Write", "Edit"),
-                 web: bool = False):
+    # Read-only search tools are included: in a repository of real size the worker has to find the
+    # code before it can change it. No shell: checks are run by the supervisor, not by the worker.
+    def __init__(self, model: str | None = None, tools: tuple[str, ...] = ("Read", "Write", "Edit", "Glob", "Grep"),
+                 web: bool = False, shell: bool = False):
         self.model = model
-        self.tools = tools + (("WebSearch", "WebFetch") if web else ())
+        self.tools = tools + (("WebSearch", "WebFetch") if web else ()) + (("Bash",) if shell else ())
         self.web = web
-        self.variant = (model or "default") + ("+web" if web else "")
+        self.shell = shell      # the user allowed the worker to run commands (inside the OS sandbox)
+        self.variant = (model or "default") + ("+web" if web else "") + ("+shell" if shell else "")
 
     def argv(self, prompt: str, cwd: Path) -> list[str]:
         argv = [
@@ -268,8 +293,9 @@ class ClaudeAdapter(Adapter):
             "--no-session-persistence",
             "--tools", *(self.tools or ("",)),
         ]
-        if self.web:      # the user asked for a task that needs to look things up
-            argv += ["--allowedTools", "WebSearch", "WebFetch"]
+        allowed = (["WebSearch", "WebFetch"] if self.web else []) + (["Bash"] if self.shell else [])
+        if allowed:      # asked for by the user: looking things up, or running commands to check its own work
+            argv += ["--allowedTools", *allowed]
         if self.model:
             argv += ["--model", self.model]
         return argv
@@ -315,8 +341,10 @@ def codex_filesystem_profile(readonly: bool = False) -> dict:
     `lupus probe --live` (codex-cli 0.160.0: default sandbox read it, this profile did not)."""
     # `readonly` is for calls that only think (a judge): no write access anywhere, and no access to the
     # shared temp directory, where other projects may live.
+    # `.git` stays read-only inside the writable project: a hook or config entry planted there would
+    # run, unsandboxed, at the user's next git command (measured: without this entry it can be written).
     profile: dict = ({":minimal": "read", ":project_roots": {".": "read"}} if readonly
-                     else {":minimal": "read", ":project_roots": {".": "write"}, ":tmpdir": "write"})
+                     else {":minimal": "read", ":project_roots": {".": "write", ".git": "read"}, ":tmpdir": "write"})
     cli = shutil.which("codex", path=safe_path())
     if cli:
         real = os.path.realpath(cli)
@@ -337,6 +365,7 @@ class CodexAdapter(Adapter):
     driver = "native_codex"
     auth_mode = "subscription"
     batch = True            # measured: ~30k tokens of fixed input per call
+    shell = True            # Codex always has its own sandboxed shell
 
     def __init__(self, model: str | None = None, effort: str | None = None, readonly: bool = False):
         self.model = model

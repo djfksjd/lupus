@@ -1,0 +1,217 @@
+{
+ "driver": "native_claude",
+ "date": "2026-10-06",
+ "rows": [
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "plain",
+   "seconds": 29.6,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 63326,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 47.4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 32026,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "plain",
+   "seconds": 35.0,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 64324,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 173.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 135197,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "plain",
+   "seconds": 28.9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 62355,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 87.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 91259,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "plain",
+   "seconds": 302.3,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 427647,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "seconds": 298.7,
+   "hidden_tests_pass": false,
+   "calls": 2,
+   "tokens": 558829,
+   "errors": [],
+   "hidden_detail": "st_split_anonymous_begin_end_for - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 43 passed in 0.07s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "plain",
+   "seconds": 29.6,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 60004,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 849.3,
+   "hidden_tests_pass": false,
+   "calls": 2,
+   "tokens": 0,
+   "errors": [
+    "timeout",
+    "timeout"
+   ],
+   "hidden_detail": "!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.23s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "plain",
+   "seconds": 41.1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 60487,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 849.6,
+   "hidden_tests_pass": false,
+   "calls": 2,
+   "tokens": 0,
+   "errors": [
+    "timeout",
+    "timeout"
+   ],
+   "hidden_detail": "!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.05s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "plain",
+   "seconds": 29.8,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 59108,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "do",
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": false,
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "seconds": 449.6,
+   "hidden_tests_pass": true,
+   "calls": 2,
+   "tokens": 35379,
+   "errors": [
+    "timeout"
+   ]
+  }
+ ],
+ "summary": {
+  "pairs": 7,
+  "plain_hidden_pass": 7,
+  "do_hidden_pass": 4,
+  "lupus_said_done": 5,
+  "said_done_but_hidden_fail": 1,
+  "tokens_mean": {
+   "plain": 113893,
+   "do": 121813
+  },
+  "seconds_mean": {
+   "plain": 70.9,
+   "do": 393.6
+  }
+ },
+ "note": "stopped after 7 instances (each `do` run took several minutes); only complete plain/do pairs are kept"
+}

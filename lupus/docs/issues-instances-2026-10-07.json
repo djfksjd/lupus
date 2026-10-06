@@ -1,0 +1,265 @@
+[
+ {
+  "repo": "sqlparse",
+  "commit": "53ff44b53e27cff78259acc1af015506fea60f63",
+  "request": "Escape backslashes in output formatters.",
+  "tests": [
+   "tests/test_format.py"
+  ],
+  "source_files": [
+   "sqlparse/filters/output.py"
+  ],
+  "upstream_lines_changed": 16,
+  "failure_before": "\nFAILED tests/test_format.py::TestOutputFormat::test_python_escapes_backslashes\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 48 passed, 1 xfailed in 0.14s"
+ },
+ {
+  "repo": "sqlparse",
+  "commit": "a194d3187b04b0aed7a935c3401f068236fb6264",
+  "request": "Keep keyword before leading-dot float literal (issue601)\n\nThe SQL_REGEX rule that tags a word followed by a period as a Name (to\nsupport ``schema . name`` member access) also matched a keyword sitting in\nfront of a float literal written without a leading zero, e.g. the ``BETWEEN``\nin ``x BETWEEN .03 AND .06``. As a result BETWEEN was demoted to a Name, the\nstatement was grouped incorrectly, and the bounds were no longer standalone\nnumber tokens.\n\nAdd a ``(?!\\d)`` negative lookahead so the Name-before-period rule ignores a\nperiod that starts a numeric literal, while ``schema . name`` grouping is\npreserved. Adds regression tests covering both the fix and the member-access\nbehavior.",
+  "tests": [
+   "tests/test_regressions.py"
+  ],
+  "source_files": [
+   "sqlparse/keywords.py"
+  ],
+  "upstream_lines_changed": 6,
+  "failure_before": "_regressions.py::test_between_leading_dot_float_issue601[a BETWEEN .03 AND .06]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 89 passed, 1 xpassed in 0.08s"
+ },
+ {
+  "repo": "sqlparse",
+  "commit": "f66d12c245412f28c58f045b646eb53c0e691b8b",
+  "request": "Fix get_real_name for names with more than two dotted parts (#332)\n\nget_real_name anchored on the first dot (via token_next_by), so it\nreturned the second component of a fully-qualified name. For a 2-part\nname the first dot is also the last, so it was accidentally correct;\nfor 3+ parts it returned an intermediate component:\n\n    parse(\"db.schema.tbl.col\")[0].tokens[0].get_real_name()\n    # 'schema', should be 'col'\n\nThe object name is the component after the last dot. Anchor on the last\ndot instead. get_parent_name still uses the first dot, as documented, so\nparent/real name now come from opposite ends as intended.",
+  "tests": [
+   "tests/test_parse.py"
+  ],
+  "source_files": [
+   "sqlparse/sql.py"
+  ],
+  "upstream_lines_changed": 7,
+  "failure_before": "=========\nFAILED tests/test_parse.py::test_get_real_name_multi_part_dotted - AssertionE...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 72 passed in 0.08s"
+ },
+ {
+  "repo": "sqlparse",
+  "commit": "8f978caa7cc777d845d358bfc82ea30110395d32",
+  "request": "Refactor statement splitter to a simplified stack-based architecture (fixes #845)",
+  "tests": [
+   "tests/test_split.py"
+  ],
+  "source_files": [
+   "sqlparse/engine/statement_splitter.py",
+   "sqlparse/keywords.py"
+  ],
+  "upstream_lines_changed": 119,
+  "failure_before": "=========\nFAILED tests/test_split.py::test_split_anonymous_begin_end_for - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 43 passed in 0.06s"
+ },
+ {
+  "repo": "more-itertools",
+  "commit": "f89d7a3331ba6b5421273e556c0a738e3dd1dd35",
+  "request": "Issue 1304: make ichunked match chunked for n=0 and negative n",
+  "tests": [
+   "tests/test_more.py"
+  ],
+  "source_files": [
+   "more_itertools/more.py"
+  ],
+  "upstream_lines_changed": 5,
+  "failure_before": "test_more.py::IchunkedTests::test_negative - AssertionError: 'n ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 374 passed, 3179 subtests passed in 0.64s"
+ },
+ {
+  "repo": "more-itertools",
+  "commit": "3eb4053e1aacac53853f6e0abae556f280726f01",
+  "request": "Bound zero-cache seekable lookahead storage",
+  "tests": [
+   "tests/test_seekable_memory.py"
+  ],
+  "source_files": [
+   "more_itertools/more.py"
+  ],
+  "upstream_lines_changed": 9,
+  "failure_before": " tests/test_seekable_memory.py::SeekableMemoryTests::test_repeated_zero_cache_peek_has_bounded_memory\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed in 0.06s"
+ },
+ {
+  "repo": "more-itertools",
+  "commit": "2b8d5cddce4ea01f88a973551cd50479cf5fa45f",
+  "request": "Issue 1284: don't let a bucket lookup invent a key\n\nbucket._cache was a defaultdict(deque), and _get_values opened with\n`if self._cache[value]:` — a read that inserts an empty deque on a miss.\n__iter__ reports `iter(self._cache)`, so every failed lookup left a\npermanent phantom key behind, and __contains__ routes through\n_get_values, so a plain `in` test was enough to create one.\n\nThe result was that `'c' in s` and `'c' in list(s)` disagreed for the\nsame object at the same moment, misses accumulated, and the docstring's\nown \"Get the keys\" example returned a fourth key after one membership\ntest.\n\nMake _cache a plain dict so a lookup cannot insert, and register a key\nonly where an item with that key is actually seen. A key whose items are\nproduced straight to the caller is registered at that point, so the\nexisting test_list case — a key fully consumed through s[key] is still\nlisted — keeps working.\n\nCo-Authored-By: Claude Opus 5 <<email>>",
+  "tests": [
+   "tests/test_more.py"
+  ],
+  "source_files": [
+   "more_itertools/more.py"
+  ],
+  "upstream_lines_changed": 12,
+  "failure_before": "/test_more.py::BucketTests::test_getitem_miss_does_not_add_key - ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 91 passed, 1170 subtests passed in 0.32s"
+ },
+ {
+  "repo": "more-itertools",
+  "commit": "def2dabea858b6ecb84ee0c52e6e07929f2c409c",
+  "request": "Fix one()/only() dropping a falsy user-supplied exception\n\n`one(it, too_long=exc)` and `only(it, too_long=exc)` used\n`raise too_long or ValueError(msg)`, so a `too_long`/`too_short` whose\ninstances are falsy (e.g. an Exception subclass overriding `__bool__`)\nwas discarded and the default `ValueError` raised instead.\n\nSwitch to explicit `is not None` checks, and only build the default\nmessage when no custom exception is supplied so a faulty `__repr__` on\nthe iterable's items can't shadow the requested exception.\n\nCo-Authored-By: Claude Sonnet 5 <<email>>",
+  "tests": [
+   "tests/test_more.py"
+  ],
+  "source_files": [
+   "more_itertools/more.py"
+  ],
+  "upstream_lines_changed": 14,
+  "failure_before": "/test_more.py::OneTests::test_falsy_custom_exception - ValueError...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 60 passed, 1157 subtests passed in 0.36s"
+ },
+ {
+  "repo": "tomli",
+  "commit": "1e6e869aa9dbbddc492608944e82d9ad5397280f",
+  "request": "Set smaller MAX_INLINE_NESTING to avoid python:3.13-alpine worker thread crash",
+  "tests": [
+   "tests/test_misc.py"
+  ],
+  "source_files": [
+   "src/tomli/_parser.py"
+  ],
+  "upstream_lines_changed": 10,
+  "failure_before": "===========\nFAILED tests/test_misc.py::TestMiscellaneous::test_inline_array_recursion_limit\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed in 0.02s"
+ },
+ {
+  "repo": "tomli",
+  "commit": "e1fdb94bc998377f1c2545c7cd4f70ff2a3fb4e4",
+  "request": "Limit number of parts of a key (#286)\n\n* Limit number of parts of a key\n\ntomli has quadratic time complexity when handling parts of a key\n(via Flags.is_ calls in key_value_rule's loop, and maybe elsewhere).\nThis isn't a problem unless a document has an excessive number (10_000-ish)\nof parts in a key. Limiting input seems like the best fix here.\n\n`sys.getrecursionlimit` and `RecursionError` is already (and in the non-mypyc\nversion, implicitly) used for `MAX_INLINE_NESTING`.\nKeys aren't parsed recursively, but that's an implementation detail;\n`RecursionError` works nicely for names recursive structures.",
+  "tests": [
+   "tests/test_misc.py"
+  ],
+  "source_files": [
+   "src/tomli/_parser.py"
+  ],
+  "upstream_lines_changed": 11,
+  "failure_before": "==========\nFAILED tests/test_misc.py::TestMiscellaneous::test_key_recursion_limit - Asse...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed in 0.02s"
+ },
+ {
+  "repo": "tomli",
+  "commit": "9eb2125ef49071e673d42e383b5221a268665193",
+  "request": "TOML 1.1: Make seconds optional in Date-Time and Time (#203)",
+  "tests": [
+   "tests/test_data.py"
+  ],
+  "source_files": [
+   "src/tomli/_re.py"
+  ],
+  "upstream_lines_changed": 22,
+  "failure_before": "common-31] tests/test_data.py::TestData::test_valid - tomli._parser...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 4 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n4 failed, 2 passed, 740 subtests passed in 0.08s"
+ },
+ {
+  "repo": "tomli",
+  "commit": "2a2aa62f1bc71b89b74d41dd2ab67b5dd24bc129",
+  "request": "TOML 1.1: Allow newlines and trailing comma in inline tables (#200)",
+  "tests": [
+   "tests/test_data.py"
+  ],
+  "source_files": [
+   "src/tomli/_parser.py"
+  ],
+  "upstream_lines_changed": 10,
+  "failure_before": "common-47] tests/test_data.py::TestData::test_valid - tomli._parser...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 3 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n3 failed, 2 passed, 740 subtests passed in 0.11s"
+ },
+ {
+  "repo": "packaging",
+  "commit": "2c87a33f665828b7aa0f650b1b50243b3ab95695",
+  "request": "fix(licenses): canonicalize_license_expression mangling case-distinct LicenseRef identifiers (#1412)\n\n* Fix canonicalize_license_expression mangling case-distinct LicenseRef identifiers\n\n* fix(licenses): canonicalize LicenseRef case variants to first spelling\n\nThe idstring of a LicenseRef- is case-insensitive in SPDX, so case\nvariants refer to the same license and use one spelling.\n\nAssisted-by: ClaudeCode:claude-opus-5-5\n\n---------\n\nCo-authored-by: Henry Schreiner <<email>>",
+  "tests": [
+   "tests/test_licenses.py"
+  ],
+  "source_files": [
+   "src/packaging/licenses/__init__.py"
+  ],
+  "upstream_lines_changed": 14,
+  "failure_before": "iants_use_first_spelling[LicenseRef-mit OR licenseref-MIT-LicenseRef-mit OR LicenseRef-mit]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 7 passed in 0.02s"
+ },
+ {
+  "repo": "packaging",
+  "commit": "959bb79c06cb883bf1ecd1ddc94a079294907e0f",
+  "request": "fix(dependency-groups): collect errors from sibling includes after a first parse error (#1411)\n\n* fix(dependency-groups): collect errors from sibling includes after a first parse error\n\n* Apply review suggestion for the parse error comment\n\nCo-authored-by: Henry Schreiner <<email>>\nCo-Authored-By: Claude Opus 5 <<email>>\n\n* fix(dependency-groups): report each failing group once per resolve\n\nTrack groups that already failed in the current resolve call, so a\ndiamond-shaped include graph does not give duplicate errors. Move the\nregression test into test_dependency_groups.py.\n\nCo-authored-by: Stephen Rosen <<email>>\nAssisted-by: ClaudeCode:claude-opus-5-5\n\n---------\n\nCo-authored-by: Str0k <<email>>\nCo-authored-by: Henry Schreiner <<email>>\nCo-authored-by: Claude Opus 5 <<email>>\nCo-authored-by: Henry Schreiner <<email>>\nCo-authored-by: Stephen Rosen <<email>>",
+  "tests": [
+   "tests/test_dependency_groups.py"
+  ],
+  "source_files": [
+   "src/packaging/dependency_groups.py"
+  ],
+  "upstream_lines_changed": 25,
+  "failure_before": "LED tests/test_dependency_groups.py::test_expand_contract_model_only_does_inner_lookup_once\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed in 0.07s"
+ },
+ {
+  "repo": "packaging",
+  "commit": "d17cfaf0b77a5690f03087359e7c8d665a3c728d",
+  "request": "perf(parser): avoid literal_eval for plain marker strings (#1429)\n\n* perf(parser): avoid literal_eval for plain marker strings\n\n* Apply suggestion from @henryiii\n\n---------\n\nCo-authored-by: Henry Schreiner <<email>>",
+  "tests": [
+   "tests/test_markers.py"
+  ],
+  "source_files": [
+   "src/packaging/_parser.py"
+  ],
+  "upstream_lines_changed": 4,
+  "failure_before": "s.py::TestNode::test_process_python_str_skips_literal_eval_for_plain_string[\"plain\"-plain]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 15 passed in 0.11s"
+ },
+ {
+  "repo": "packaging",
+  "commit": "23669b1b69fb5fffbc773a68fc099166fc847356",
+  "request": "feat(pylock.select): fail on unknown extras and dependency groups (#1376)\n\n* pylocl.select: fail on unknown extras and dependency groups\n\n* pylock.select: also consider default_groups when testing if selected groups exist\n\nThe spec says membes of default-groups should not be listed in\ndependency-groups.\n\n* pylock: apply simplification suggested in code review",
+  "tests": [
+   "tests/test_pylock_select.py"
+  ],
+  "source_files": [
+   "src/packaging/pylock.py"
+  ],
+  "upstream_lines_changed": 33,
+  "failure_before": "=========\nFAILED tests/test_pylock_select.py::test_unknown_extras - Failed: DID NOT RAI...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 29 passed in 0.06s"
+ },
+ {
+  "repo": "click",
+  "commit": "b90faad1788bc030bb3320938f07c9189f42d7d0",
+  "request": "Deprecate a parameter name that Click 9.0 will refuse or lower case\n\nPrepares the ground for #3827",
+  "tests": [
+   "tests/test_arguments.py",
+   "tests/test_deprecations.py",
+   "tests/test_options.py"
+  ],
+  "source_files": [
+   "src/click/core.py"
+  ],
+  "upstream_lines_changed": 94,
+  "failure_before": "==============\nFAILED tests/test_arguments.py::test_argument_normalizes_an_identifier_decl\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 15 passed in 0.19s"
+ },
+ {
+  "repo": "click",
+  "commit": "f67c2bb6c2f055c1c7a57cd46c3697fc26a7742e",
+  "request": "Fix short help abbreviation",
+  "tests": [
+   "tests/test_utils/test_make_default_short_help.py"
+  ],
+  "source_files": [
+   "src/click/utils.py"
+  ],
+  "upstream_lines_changed": 52,
+  "failure_before": "est_make_default_short_help.py::test_make_default_short_help[-abbreviation inside sentence]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 8 passed in 0.02s"
+ },
+ {
+  "repo": "click",
+  "commit": "05f6fd0df4ecbd104eb7a229f9f185c2484dee69",
+  "request": "Always return a help record for an `Argument`",
+  "tests": [
+   "tests/test_arguments.py"
+  ],
+  "source_files": [
+   "src/click/core.py"
+  ],
+  "upstream_lines_changed": 20,
+  "failure_before": "===========\nFAILED tests/test_arguments.py::test_argument_get_help_record_never_none[None]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 42 passed in 0.07s"
+ },
+ {
+  "repo": "click",
+  "commit": "f25f697a439acc2b0d84aa8f5413330f4e2e75cf",
+  "request": "List every argument in the `Positional arguments` help section\n\nCloup already renders the section this way: https://github.com/janluke/cloup/issues/210",
+  "tests": [
+   "tests/test_arguments.py"
+  ],
+  "source_files": [
+   "src/click/core.py"
+  ],
+  "upstream_lines_changed": 20,
+  "failure_before": "==========\nFAILED tests/test_arguments.py::test_argument_help_lists_undocumented_arguments\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 38 passed in 0.08s"
+ }
+]
