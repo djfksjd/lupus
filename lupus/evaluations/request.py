@@ -64,45 +64,67 @@ def holdout(root: Path) -> bool:
                               timeout=120).returncode == 0
 
 
-def main(out_path: str) -> None:
+def lupus_do(k, base, name, cls, cheap_draft: bool) -> dict:
+    """draft a red test, (simulated) approval, implement, verify. With `cheap_draft` the test is
+    drafted by the lighter tier first (the user reads the draft either way)."""
+    root = fresh(base, name, FILES)
+    project = projects.register(k, root, root.name, ["anthropic", "openai"])
+    log: list = []
+
+    def recording(adapter):
+        if not isinstance(adapter, Recording):
+            adapter.__class__ = type("Rec", (Recording, adapter.__class__), {})
+        adapter.log = log
+        return adapter
+
+    a = recording(cls())
+    tiers = [recording(t) for t in adapters.cheap_first(a.driver)] if cheap_draft else None
+    started = time.monotonic()
+    draft = quick.draft_check(k, project, REQUEST, "user")
+    first = supervisor.run_goal(k, draft["goal_id"], a, timeout_s=300, tiers=tiers)
+    row = {"check_drafted": first["done"], "draft_variants": [s.get("variant") for s in first["steps"]]}
+    if first["done"]:
+        test = root / draft["test_path"]
+        row["check_tests"] = test.read_text().count("def test")
+        build = quick.approve_check(k, project, draft["goal_id"], draft["request"], sha256_bytes(test.read_bytes()), "user")
+        second = supervisor.run_goal(k, build["goal_id"], a, timeout_s=300)
+        row.update(lupus_done=second["done"], attempts=first["budget"]["attempts"]["used"] + second["budget"]["attempts"]["used"])
+    return {**row, "holdout_pass": holdout(root), **totals(log, started, True)}
+
+
+def main(out_path: str, driver: str, repeats: int) -> None:
+    cls = {"native_claude": Claude, "native_codex": Codex}[driver]
     rows = []
+    out = {"date": time.strftime("%Y-%m-%d"), "approval": "simulated", "driver": driver, "repeats": repeats, "rows": rows}
     with tempfile.TemporaryDirectory(prefix="lupus-request-") as tmp:
         base = Path(tmp).resolve()
         k = Kernel.init(base / "home")
         probe.run(k, live=True)
-        for driver, cls in (("native_claude", Claude), ("native_codex", Codex)):
-            # plain CLI: the request as a person would type it
-            root = fresh(base, f"A-{driver}", FILES)
+        for i in range(repeats):
+            root = fresh(base, f"A{i}", FILES)      # plain CLI: the request as a person would type it
             log: list = []
             a = cls(); a.log = log
             started = time.monotonic()
             adapters.execute(a, REQUEST + "\n현재 디렉터리 안의 파일만 읽고 수정하라.", root, lambda pid: None, timeout_s=300)
-            rows.append({"driver": driver, "condition": "A_plain_cli", "holdout_pass": holdout(root),
-                         **totals(log, started, True, human_chars=len(REQUEST))})
-            # lupus do: draft a red test, (simulated) approval, implement, verify
-            root = fresh(base, f"D-{driver}", FILES)
-            project = projects.register(k, root, root.name, ["anthropic", "openai"])
-            log = []
-            a = cls(); a.log = log
-            started = time.monotonic()
-            draft = quick.draft_check(k, project, REQUEST, "user")
-            first = supervisor.run_goal(k, draft["goal_id"], a, timeout_s=300)
-            row = {"driver": driver, "condition": "D_lupus_do", "check_drafted": first["done"]}
-            if first["done"]:
-                test = root / draft["test_path"]
-                row["check_lines"] = len(test.read_text().splitlines())
-                build = quick.approve_check(k, project, draft["goal_id"], draft["request"],
-                                            sha256_bytes(test.read_bytes()), "user")
-                second = supervisor.run_goal(k, build["goal_id"], a, timeout_s=300)
-                row.update(lupus_done=second["done"], attempts=first["budget"]["attempts"]["used"] + second["budget"]["attempts"]["used"])
-            rows.append({**row, "holdout_pass": holdout(root), **totals(log, started, True, human_chars=len(REQUEST))})
-            print(json.dumps(rows[-2:], ensure_ascii=False), flush=True)
+            rows.append({"run": i, "condition": "A_plain_cli", "holdout_pass": holdout(root), **totals(log, started, True)})
+            rows.append({"run": i, "condition": "D_lupus_do", **lupus_do(k, base, f"D{i}", cls, False)})
+            rows.append({"run": i, "condition": "E_lupus_do_cheap_draft", **lupus_do(k, base, f"E{i}", cls, True)})
+            for r in rows[-3:]:
+                r.pop("passed", None)
+                print(json.dumps(r, ensure_ascii=False), flush=True)
+            summary = {}
+            for cond in ("A_plain_cli", "D_lupus_do", "E_lupus_do_cheap_draft"):
+                sel = [r for r in rows if r["condition"] == cond]
+                tok = [r["new_input"] + r["cached_input"] + r["output"] for r in sel]
+                summary[cond] = {"n": len(sel), "holdout_pass": sum(r["holdout_pass"] for r in sel),
+                                 "tokens_mean": round(sum(tok) / len(tok)), "tokens_min": min(tok), "tokens_max": max(tok),
+                                 "seconds_mean": round(sum(r["seconds"] for r in sel) / len(sel), 1),
+                                 "list_cost_usd_mean": (round(sum(r["list_cost_usd"] or 0 for r in sel) / len(sel), 4)
+                                                        if all(r.get("list_cost_usd") is not None for r in sel) else None)}
+            out["summary"] = summary
+            Path(out_path).write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
         k.close()
-    for r in rows:
-        r.pop("passed", None)
-    Path(out_path).write_text(json.dumps({"date": time.strftime("%Y-%m-%d"), "approval": "simulated", "rows": rows},
-                                         ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 3)

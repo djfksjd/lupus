@@ -1,0 +1,69 @@
+{
+ "project": "hukkin/tomli",
+ "driver": "native_claude",
+ "rows": [
+  {
+   "commit": "4e245a4",
+   "change": "loads(): raise TypeError, not AttributeError, for a non-str argument",
+   "upstream_src_numstat": [
+    "6",
+    "1"
+   ],
+   "runner": "unittest",
+   "frozen": 2,
+   "failure_seen": "t is required, not 'str'\" != \"Expected str object, not 'bytes'\"\n- a bytes-like object is required, not 'str'\n+ Expected str object, not 'bytes'\n\n\n----------------------------------------------------------------------\nRan 14 tests in 0.028s\n\nFAILED (failures=1)",
+   "done": true,
+   "attempts": [
+    "PROGRESS"
+   ],
+   "tokens": 35845,
+   "seconds": 10.0,
+   "os_sandbox": [
+    true
+   ],
+   "frozen_tests_touched": 0
+  },
+  {
+   "commit": "9eb2125",
+   "change": "TOML 1.1: seconds are optional in times",
+   "upstream_src_numstat": [
+    "13",
+    "9"
+   ],
+   "runner": "unittest",
+   "frozen": 2,
+   "failure_seen": "ent after a statement\", src, pos\n    )\ntomli._parser.TOMLDecodeError: Expected newline or end of document after a statement (at line 1, column 18)\n\n----------------------------------------------------------------------\nRan 16 tests in 0.025s\n\nFAILED (errors=6)",
+   "done": true,
+   "attempts": [
+    "PROGRESS"
+   ],
+   "tokens": 63547,
+   "seconds": 21.4,
+   "os_sandbox": [
+    true
+   ],
+   "frozen_tests_touched": 0
+  },
+  {
+   "commit": "e1fdb94",
+   "change": "limit the number of parts of a key",
+   "upstream_src_numstat": [
+    "11",
+    "0"
+   ],
+   "runner": "unittest",
+   "frozen": 2,
+   "failure_seen": "an the allowed [0-9]+ parts\",\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ):\n    ^\nAssertionError: RecursionError not raised\n\n----------------------------------------------------------------------\nRan 17 tests in 0.030s\n\nFAILED (failures=1)",
+   "done": true,
+   "attempts": [
+    "PROGRESS"
+   ],
+   "tokens": 59086,
+   "seconds": 14.2,
+   "os_sandbox": [
+    true
+   ],
+   "frozen_tests_touched": 0
+  }
+ ]
+}

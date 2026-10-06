@@ -5,17 +5,16 @@ Lupus의 supervisor 코어. 목표·예산·시도·checkpoint·인계 상태와
 - 설계: [../docs/design/LUPUS-PLAN.md](../docs/design/LUPUS-PLAN.md) · 이번 구현의 근거와 한계: [../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md)
 - 코드가 강제하는 규칙과 범위 밖 항목: [docs/CONTRACT.md](docs/CONTRACT.md)
 
-전역 설정(`~/.claude`, `~/.codex`, PATH, 훅)을 바꾸지 않는다. worker는 사용자와 같은 권한으로 실행되므로 **보호가 필요한 자료에는 쓰지 않는다.**
+전역 설정(`~/.claude`, `~/.codex`, PATH)을 바꾸지 않는다. worker와 검증기는 OS 샌드박스 안에서 실행되지만 VM은 아니므로 **보호가 필요한 자료에는 쓰지 않는다.**
 
-## 기본 CLI 대비 측정 (2026-10-05, 이 Mac, 소수 반복)
+## 기본 CLI 대비 측정 (2026-10-06, 이 Mac, 칸당 3회, 모두 통과)
 
-| 상황 | 평소 설정의 CLI 대비 | 설정을 끈 CLI 대비 |
+| 한 번에 끝나는 작업 3종 | 평소 설정의 CLI 대비 | 설정을 끈 CLI 대비 |
 |---|---|---|
-| 한 번에 끝나는 작업 3종, Claude | 토큰 −91%, 시간 −59% | 토큰 −32%, 시간 −43% |
-| 한 번에 끝나는 작업 3종, Codex | 토큰 −59%, 시간 −53% | 토큰 −48%, 시간 −48% |
-| 4단계 프로젝트, Claude | 토큰 −76%, 시간 −18% | 측정 안 함 |
+| Claude | 토큰 −91%, 시간 −67% | 토큰 −33%, 시간 −46% |
+| Codex | 토큰 −56%, 시간 −51% | 토큰 −47%, 시간 −44% |
 
-모든 실행이 같은 검증기를 통과했다. 조건·원자료·한계는 [../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) 1.8절과 `docs/compare-*.json`. 재현: `PYTHONPATH=src python3 evaluations/compare.py simple out.json`.
+`lupus do`는 평범한 한 번 호출보다 Claude에서 토큰 1.65배·시간 1.8배, Codex에서 토큰 1.03배·시간 1.5배다(3회씩, holdout은 모두 통과). 실제 프로젝트(tomli)의 upstream 변경 3건은 두 CLI 모두 첫 시도에 끝냈다. 조건·원자료·한계는 [../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](../docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) 1.13절과 `docs/*.json`. 재현: `PYTHONPATH=src python3 evaluations/compare.py simple out.json 3`, `evaluations/request.py`, `evaluations/real.py`, `evaluations/write.py`.
 
 ## 시험
 
@@ -38,6 +37,30 @@ python3 -m lupus run <goal_id> --driver codex # 다른 AI로 이어가기 (검�
 python3 -m lupus vault-sync                   # 전용 Vault(<home>/vault) 갱신. run 뒤에는 자동
 ```
 
+목표 파일 없이 한 줄로(프로젝트 폴더 안에서):
+
+```sh
+lupus fix-tests --driver claude                      # 실패하는 테스트를 관측해 목표로 삼는다 (Python·Node·Go·Rust)
+lupus fix-tests --driver codex --check "make test" --protect tests   # 알아보지 못하는 프로젝트: 테스트 명령을 직접 지정
+lupus fix-tests --driver claude --container node:24  # 테스트를 호스트 샌드박스 대신 Docker 컨테이너에서(네트워크 없음)
+lupus do "<요청>" --driver claude                    # 실패하는 테스트 초안 -> 승인 -> 구현
+lupus write "<요청>" --out docs/plan.md --driver claude [--judge codex] [--must "<기준>"] [--web]
+                                                     # 문서: 기준 승인 -> 작성 -> 다른 AI가 인용하며 평가 -> 판본 승인
+lupus session --driver claude [-- <CLI 인자>]        # 평소의 대화형 CLI. 테스트 고정, 종료 시 Lupus가 검증
+```
+
+여러 프로젝트와 백그라운드:
+
+```sh
+lupus alpha-status                                   # 모든 프로젝트의 열린 목표, 대기 사유, 공유 예산
+lupus alpha-budget [--project <id>] --calls 300 --attempts 40 --minutes 600 [--tokens N]
+lupus goal-priority <goal_id> 5                      # 큰 수가 먼저
+lupus alpha-run --drivers claude,codex [--background]   # 열린 목표를 차례로. 한도가 떨어지면 다른 AI로 인계
+lupus run <goal_id> --driver claude --background     # 터미널을 닫아도 계속
+lupus jobs | lupus logs <job_id> | lupus stop <job_id>
+lupus learn --driver claude                          # 기록된 실패에서 절차 후보 생성(사건이 없으면 호출하지 않음)
+```
+
 지식 그래프:
 
 ```sh
@@ -48,7 +71,7 @@ python3 -m lupus note-verify|note-retire|note-promote|note-forget <node_id>
 python3 -m lupus graph --open                                     # 그래프 화면
 ```
 
-사용자 권한이 필요한 명령(`project-add`, `goal-submit`, `goal-pause/resume/cancel`, `resolve`, `budget-raise`, `revoke`, `note-add/link/verify/retire/promote/forget`)은 실제 터미널에서 `yes`를 입력해야 실행된다.
+사용자 권한이 필요한 명령(`project-add`, `goal-submit`, `goal-pause/resume/cancel`, `resolve`, `budget-raise`, `revoke`, `fix-tests`, `do`, `write`, `session`, `learn`, `alpha-budget`, `goal-priority`, `note-add/link/verify/retire/promote/forget`)은 실제 터미널에서 `yes`를 입력해야 실행된다. `run`·`alpha-run`·`jobs`·`stop`은 확인을 묻지 않으므로 백그라운드로 실행할 수 있다.
 
 `goal.json`:
 
@@ -69,7 +92,7 @@ python3 -m lupus graph --open                                     # 그래프 �
 }
 ```
 
-완료 조건은 검증기(`file_contains`, `file_sha256`, `command`)로 표현한다. 모든 task는 완료 조건 하나 이상에 연결되어야 하며, worker가 완료했다고 답해도 검증기가 통과하지 않으면 완료되지 않는다.
+완료 조건은 검증기(`file_contains`, `file_sha256`, `command`, `red_test`, `document`, `judge`, `user_approval`)로 표현한다. `command`에는 `protect`·`forbid_new`·`forbid_new_names`·`frozen_trees`·`must_pass`·`require_tests`·`min_tests`·`env`·`env_pass`·`container`·`sandbox`를 붙일 수 있고, 실행·보호·환경에 관한 것은 user만 정할 수 있다([docs/CONTRACT.md](docs/CONTRACT.md)). 모든 task는 완료 조건 하나 이상에 연결되어야 하며, worker가 완료했다고 답해도 검증기가 통과하지 않으면 완료되지 않는다.
 
 ## 구조
 
@@ -88,3 +111,9 @@ python3 -m lupus graph --open                                     # 그래프 �
 | `vault`, `graph` | 그래프의 Markdown 투영(전용 Vault)과 그래프 보기 화면 |
 | `migrations/` | 스키마(순서 있는 SQL 파일) |
 | `probe` | CLI 지원 범위 측정 |
+| `runners`, `quick` | 테스트 러너 판별과 출력 판독, `fix-tests`·`do` |
+| `protect`, `verify` | 검증 수단의 고정·되돌림, 검증기 실행(샌드박스·컨테이너) |
+| `service`, `judging`, `author` | 프로젝트 밖에서 실행되는 모델 호출, 문서 평가와 승인, `write` |
+| `session`, `hook` | 대화형 세션과 그 안의 확인 |
+| `alpha`, `jobs` | 여러 프로젝트의 순서·공유 예산·AI 전환, 백그라운드 실행 |
+| `learn` | 기록된 실패에서 절차 후보 만들기 |

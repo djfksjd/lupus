@@ -1,0 +1,226 @@
+{
+ "date": "2026-10-06",
+ "approval": "simulated",
+ "driver": "native_claude",
+ "repeats": 3,
+ "rows": [
+  {
+   "run": 0,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 3883,
+   "cached_input": 12915,
+   "output": 699,
+   "turns": 3,
+   "seconds": 9.8,
+   "list_cost_usd": 0.0476,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 12,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 7923,
+   "cached_input": 19695,
+   "output": 1383,
+   "turns": 4,
+   "seconds": 17.5,
+   "list_cost_usd": 0.095,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "E_lupus_do_cheap_draft",
+   "check_drafted": true,
+   "draft_variants": [
+    "haiku"
+   ],
+   "check_tests": 12,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 17159,
+   "cached_input": 28890,
+   "output": 2281,
+   "turns": 5,
+   "seconds": 27.2,
+   "list_cost_usd": 0.0884,
+   "models": [
+    "claude-haiku-4-5-20251001",
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 3884,
+   "cached_input": 12915,
+   "output": 706,
+   "turns": 3,
+   "seconds": 9.4,
+   "list_cost_usd": 0.0478,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 12,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 7918,
+   "cached_input": 19692,
+   "output": 1381,
+   "turns": 4,
+   "seconds": 17.7,
+   "list_cost_usd": 0.0949,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "E_lupus_do_cheap_draft",
+   "check_drafted": true,
+   "draft_variants": [
+    "haiku"
+   ],
+   "check_tests": 15,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 18096,
+   "cached_input": 39499,
+   "output": 2662,
+   "turns": 6,
+   "seconds": 29.6,
+   "list_cost_usd": 0.0954,
+   "models": [
+    "claude-haiku-4-5-20251001",
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 3883,
+   "cached_input": 12915,
+   "output": 690,
+   "turns": 3,
+   "seconds": 9.4,
+   "list_cost_usd": 0.0474,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 11,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 7704,
+   "cached_input": 19585,
+   "output": 1274,
+   "turns": 4,
+   "seconds": 17.1,
+   "list_cost_usd": 0.091,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "E_lupus_do_cheap_draft",
+   "check_drafted": true,
+   "draft_variants": [
+    "haiku"
+   ],
+   "check_tests": 13,
+   "lupus_done": false,
+   "attempts": 3,
+   "holdout_pass": true,
+   "calls": 3,
+   "new_input": 21501,
+   "cached_input": 33810,
+   "output": 4952,
+   "turns": 6,
+   "seconds": 52.8,
+   "list_cost_usd": 0.1628,
+   "models": [
+    "claude-haiku-4-5-20251001",
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  }
+ ],
+ "summary": {
+  "A_plain_cli": {
+   "n": 3,
+   "holdout_pass": 3,
+   "tokens_mean": 17497,
+   "tokens_min": 17488,
+   "tokens_max": 17505,
+   "seconds_mean": 9.5,
+   "list_cost_usd_mean": 0.0476
+  },
+  "D_lupus_do": {
+   "n": 3,
+   "holdout_pass": 3,
+   "tokens_mean": 28852,
+   "tokens_min": 28563,
+   "tokens_max": 29001,
+   "seconds_mean": 17.4,
+   "list_cost_usd_mean": 0.0936
+  },
+  "E_lupus_do_cheap_draft": {
+   "n": 3,
+   "holdout_pass": 3,
+   "tokens_mean": 56283,
+   "tokens_min": 48330,
+   "tokens_max": 60263,
+   "seconds_mean": 36.5,
+   "list_cost_usd_mean": 0.1155
+  }
+ }
+}

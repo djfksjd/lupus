@@ -247,6 +247,75 @@ def sandbox_profile(project: Path, executable: str | None = None) -> str:
     ])
 
 
+def _docker() -> str | None:
+    return shutil.which("docker", path=safe_path())
+
+
+def container_alive(name: str) -> bool:
+    """Whether a container Lupus started still exists. If Docker cannot be asked, the answer is
+    "yes": a writer that cannot be shown to be gone keeps the project's slot."""
+    docker = _docker()
+    if docker is None:
+        return True
+    try:
+        proc = subprocess.run([docker, "ps", "-aq", "--filter", f"name=^{name}$"], capture_output=True, text=True,
+                              timeout=20, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return proc.returncode != 0 or bool(proc.stdout.strip())
+
+
+def container_stop(name: str) -> bool:
+    """Kill and remove the container; True once it is confirmed gone."""
+    docker = _docker()
+    if docker is not None:
+        try:
+            subprocess.run([docker, "rm", "-f", name], capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return not container_alive(name)
+
+
+# What each CLI itself must reach in the home directory to run and to use its own login.
+_WORKER_HOME = {
+    "claude": {"read": (".claude", ".claude.json", ".local/bin", ".local/share/claude", ".local/state/claude", ".nvm",
+                        ".npm-global", "Library/Keychains", "Library/Preferences", "Library/Application Support/Claude",
+                        ".config/claude", ".cache/claude", "Library/Caches/claude-cli-nodejs"),
+               "write": (".claude", ".local/state/claude", ".cache/claude", "Library/Caches/claude-cli-nodejs"),
+               # …but never what decides which code a LATER, ordinary session of the user runs: settings and
+               # hooks, commands, agents, skills, plugins, standing instructions, MCP server definitions.
+               "never_write": (".claude/settings.json", ".claude/settings.local.json", ".claude/CLAUDE.md", ".claude/hooks",
+                               ".claude/commands", ".claude/agents", ".claude/skills", ".claude/plugins",
+                               ".claude/output-styles", ".claude/keybindings.json", ".claude/projects", ".claude.json")},
+}
+
+
+def sandbox_profile_worker(project: Path, cli: str) -> str:
+    """Seatbelt profile for a headless worker CLI. The network stays open (the CLI talks to its
+    provider), everything else follows the verifier profile: writes only in the project, the
+    temp directories and the CLI's own state; of the home directory only the project, the CLI's
+    own files and its login are readable; Lupus's state is out of reach. This holds whatever the
+    CLI's own permission system decides, including for commands the model runs through it."""
+    home = os.path.realpath(Path.home())
+    root = os.path.realpath(project)
+    tmp = os.path.realpath(os.environ.get("TMPDIR", "/tmp"))
+    own = _WORKER_HOME[cli]
+    literal = lambda rel: os.path.join(home, rel)
+    writable = [root, tmp, "/private/tmp", "/private/var/folders", "/dev"] + [literal(r) for r in own["write"]]
+    readable = [root] + [literal(r) for r in own["read"]] + [literal(t) for t in _HOME_TOOLCHAINS if os.path.isdir(literal(t))]
+    state = sorted(os.path.realpath(p) for p in PROTECTED_STATE)
+    rule = lambda paths: " ".join(f"(subpath {_sb(p)})" for p in paths)
+    return "\n".join([
+        "(version 1)", "(allow default)",
+        "(deny file-write*)", f"(allow file-write* {rule(writable)})",
+        f"(deny file-read* (subpath {_sb(home)}))",
+        f"(allow file-read-metadata (subpath {_sb(home)}))",
+        f"(allow file-read* (literal {_sb(home)}) {rule(readable)})",
+        f"(deny file-write* {rule([literal(r) for r in own['never_write']])})",
+        *[f"(deny file-read* file-write* (subpath {_sb(p)}))" for p in state],
+    ])
+
+
 def stop_group(pgid: int, grace_s: float = 5.0) -> bool:
     """Terminate a whole process group: SIGTERM, wait, SIGKILL. Returns True once it is empty."""
     for sig, wait in ((signal.SIGTERM, grace_s), (signal.SIGKILL, 5.0)):

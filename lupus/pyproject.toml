@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lupus"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic local supervisor for goal-driven work across Claude Code and Codex CLI"
 requires-python = ">=3.12"
 license = "Apache-2.0"
