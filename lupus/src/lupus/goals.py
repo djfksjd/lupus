@@ -15,7 +15,7 @@ from typing import Any
 
 from . import budget, projects, verify
 from .kernel import Kernel
-from .util import LupusError, canonical_json, find_secret, new_id
+from .util import LupusError, canonical_json, find_secret, new_id, is_sha256
 
 # A goal shown as FAILED is derived from a failed branch and can be resolved by the user; only
 # these are never recomputed.
@@ -122,7 +122,17 @@ def _validate_criteria(items: list[dict]) -> list[dict]:
             raise LupusError("CRITERION_INVALID", canonical_json(item))
         if verifier.get("kind") not in VERIFIER_KINDS:
             raise LupusError("VERIFIER_UNKNOWN", str(verifier.get("kind")))
-        if verifier["kind"] in EXECUTING_KINDS and not (verifier.get("argv") and verifier.get("paths")):
+        if verifier["kind"] == "file_contains" and not (isinstance(verifier.get("path"), str) and isinstance(verifier.get("text"), str)
+                                                        and verifier["text"]):
+            raise LupusError("CRITERION_INVALID", f"{cid}: file_contains needs a path and the text to look for")
+        if verifier["kind"] == "file_sha256" and not (isinstance(verifier.get("path"), str) and is_sha256(verifier.get("sha256"))):
+            raise LupusError("CRITERION_INVALID", f"{cid}: file_sha256 needs a path and a sha256")
+        if "timeout_s" in verifier and not (isinstance(verifier["timeout_s"], (int, float)) and not isinstance(
+                verifier["timeout_s"], bool) and 0 < verifier["timeout_s"] <= 86_400):
+            raise LupusError("CRITERION_INVALID", f"{cid}: timeout_s must be a number of seconds")
+        if verifier["kind"] in EXECUTING_KINDS and not (
+                isinstance(verifier.get("argv"), list) and verifier["argv"] and all(isinstance(a, str) for a in verifier["argv"])
+                and verifier.get("paths")):
             # A command's evidence is tied to the files it declares; without them it could never
             # be recognised as out of date.
             raise LupusError("CRITERION_INVALID", f"{cid}: command verifier needs argv and paths")
@@ -352,7 +362,16 @@ def resolve_wait(k: Kernel, task_id: str, actor: str, note: str) -> None:
             raise LupusError("TASK_NOT_WAITING", status)
         if status == "NO_PROGRESS":
             k.run("UPDATE task SET no_progress_streak = 0 WHERE task_id = ?", task_id)
+        if actor == "user":
+            # What the user said is input for the next attempt, not only a log entry.
+            k.emit("user", "task.resolved", "task", task_id, note=note.strip()[:1000], was=status)
         move_task(k, task_id, "PENDING", note, actor)
+
+
+def resolutions(k: Kernel, task_id: str) -> list[str]:
+    """What the user wrote each time they sent this task back to work, oldest first."""
+    return [json.loads(r["payload"])["note"] for r in k.q(
+        "SELECT payload FROM event WHERE type = 'task.resolved' AND aggregate_id = ? ORDER BY seq", task_id)]
 
 
 # ---------------------------------------------------------------- acceptance

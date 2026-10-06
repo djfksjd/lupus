@@ -14,7 +14,7 @@
 ![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-275%20passing-2ea043?style=flat-square)
+![Tests](https://img.shields.io/badge/offline%20tests-299%20passing-2ea043?style=flat-square)
 
 </div>
 
@@ -29,7 +29,7 @@ Lupus runs the `claude` and `codex` CLIs you already have (with your existing su
 | **Evidence-only completion** | DONE requires passing checks bound to the current acceptance criteria. A worker's "I fixed it" is not evidence. |
 | **Frozen tests** | Test files and runner config are frozen before a worker starts. Edited, deleted or skipped tests are put back before verification. |
 | **Python, Node, Go, Rust — or any command** | unittest, pytest, node:test, jest, vitest, `go test`, `cargo test` are recognised from the project's files. Anything else: `--check "<your test command>"`. |
-| **One line for any request** | `lupus fix-tests` turns the red tests it observes into the goal. `lupus do "<request>"` drafts a failing test, you approve it, then it implements. |
+| **One line for any request** | `lupus fix-tests` turns the red tests it observes into the goal. `lupus do "<request>"` drafts a failing test (and, kept aside, a proposed implementation) in one call; you approve the test, then the proposal is applied and verified. |
 | **Documents, plans, research** | `lupus write`: a rubric you approve first, a judge that is a different AI and must quote the document for every item it accepts, then your sign-off on the exact version. |
 | **Your normal interactive session** | `lupus session` starts your usual `claude` / `codex` screen with your own configuration, freezes the tests, and verifies by itself when you exit. |
 | **Claude ↔ Codex handoff** | When one AI stops (quota, crash, your choice), the other continues from a validated checkpoint. Finished steps are not redone; budgets and attempt counts are not reset. |
@@ -53,8 +53,8 @@ Same tasks, same checks, fresh directory per run, 3 runs per cell, every run pas
 | 4-step project, Claude (1–2 runs, 2026-10-05) | 298,327 tokens · 52.0 s | 70,768 · 42.5 s |
 | Same project interrupted, other AI takes over (2026-10-05) | 337,133 tokens · 82.0 s · 1,139 chars of re-explanation | 138,989 · 64.1 s · none |
 | 4-step project, Codex, one call per step vs batched | 185,278 tokens · 89.0 s | 122,595 · 53.1 s |
-| Feature request via `lupus do` vs one plain lean call, Claude (3 runs) | 17,497 tokens · 9.5 s | 28,852 · 17.4 s |
-| Same, Codex (3 runs) | 72,117 tokens · 18.6 s | 74,212 · 27.1 s |
+| Feature request via `lupus do` vs one plain lean call, Claude (3 runs, 2026-10-07) | 17,493 tokens · 10.1 s | **15,629 · 15.1 s** |
+| Same, Codex (3 runs, 2026-10-07) | 72,083 tokens · 24.4 s | **37,502 · 24.8 s** |
 
 **On a real project.** Three changes the maintainers of [hukkin/tomli](https://github.com/hukkin/tomli) really made (a bug fix, a TOML 1.1 feature, a hardening change): source as it was before the commit, tests as they were after it, nothing else given. `lupus fix-tests` finished all three on the first attempt with both Claude (36k–64k tokens, 10–21 s) and Codex (82k–119k tokens, 16–21 s), judged by the upstream tests, which no run tried to edit.
 
@@ -63,7 +63,7 @@ Same tasks, same checks, fresh directory per run, 3 runs per cell, every run pas
 Read these honestly:
 
 - **Most of the saving against "your CLI as configured" comes from not loading plugins, MCP servers and skill descriptions**, which you can also get without Lupus (middle column). What Lupus adds on top is the prompt technique and the verification.
-- **`lupus do` costs more than a plain call** (1.65× tokens on Claude, about the same on Codex, 1.5–1.8× time) and all holdout tests passed either way. What it buys is a check you approved, not a better result on these tasks. Drafting the test with a lighter model was tried and cost more, so it is not used.
+- **`lupus do` now uses one model call instead of two.** The test and a proposed implementation come from the same call; the proposal is kept aside, the test is checked and shown to you against the code as it is, and only after your approval is the proposal applied and verified. That brought it from 29,104 to 15,629 tokens on Claude and from 74,245 to 37,502 on Codex, below a plain call in tokens. It is still slower than a plain call on Claude (15.1 s vs 10.1 s) and, because more of its tokens are output, its estimated list price there is about 1.6× (subscription use is not billed per token). All holdout tests passed in every arm; `--two-step` restores the old behaviour.
 - `--cheap-first` did not save tokens on Claude in this measurement (107,738 vs 37,216).
 - Three runs per cell, one machine, small tasks. Timings in the first table were taken while other CLI calls were running.
 - On three harder tasks with hidden holdout tests (2026-10-05), all 36 runs passed with and without Lupus, so that benchmark could not show that frozen tests reduce false completion.
@@ -91,7 +91,7 @@ lupus probe --live                   # measures what your installed CLIs support
 cd ~/work/my-project
 lupus fix-tests --driver claude      # observe red -> freeze tests -> fix -> verify
 lupus do "add a --json flag to the export command" --driver claude
-                                     # drafts a failing test, you approve it, then implements
+                                     # one call: failing test + proposal kept aside -> you approve the test -> applied and verified
 lupus session --driver claude        # your usual interactive Claude Code, tests frozen, verified on exit
 lupus write "migration plan for the billing tables" --out docs/plan.md --driver claude
                                      # rubric you approve -> written -> judged by the other AI -> your sign-off
@@ -138,7 +138,8 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 - **One worker at a time.** `alpha-run` takes goals in turn; it does not run projects in parallel.
 - Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set, and Prime itself is not connected.
 - jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
-- Young code. Eleven external review rounds found and fixed 83 defects; assume more remain.
+- A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
+- Young code. Twelve external review rounds found and fixed 90 defects, and a usability audit another 16; assume more remain.
 
 ## Documentation
 

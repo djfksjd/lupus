@@ -64,7 +64,7 @@ def holdout(root: Path) -> bool:
                               timeout=120).returncode == 0
 
 
-def lupus_do(k, base, name, cls, cheap_draft: bool) -> dict:
+def lupus_do(k, base, name, cls, cheap_draft: bool, stage: bool = False) -> dict:
     """draft a red test, (simulated) approval, implement, verify. With `cheap_draft` the test is
     drafted by the lighter tier first (the user reads the draft either way)."""
     root = fresh(base, name, FILES)
@@ -80,7 +80,7 @@ def lupus_do(k, base, name, cls, cheap_draft: bool) -> dict:
     a = recording(cls())
     tiers = [recording(t) for t in adapters.cheap_first(a.driver)] if cheap_draft else None
     started = time.monotonic()
-    draft = quick.draft_check(k, project, REQUEST, "user")
+    draft = quick.draft_check(k, project, REQUEST, "user", stage=stage)
     first = supervisor.run_goal(k, draft["goal_id"], a, timeout_s=300, tiers=tiers)
     row = {"check_drafted": first["done"], "draft_variants": [s.get("variant") for s in first["steps"]]}
     if first["done"]:
@@ -88,6 +88,7 @@ def lupus_do(k, base, name, cls, cheap_draft: bool) -> dict:
         row["check_tests"] = test.read_text().count("def test")
         build = quick.approve_check(k, project, draft["goal_id"], draft["request"], sha256_bytes(test.read_bytes()), "user")
         second = supervisor.run_goal(k, build["goal_id"], a, timeout_s=300)
+        row.update(staged_applied=build["staged_applied"], build_steps=[s.get("outcome") for s in second["steps"]])
         row.update(lupus_done=second["done"], attempts=first["budget"]["attempts"]["used"] + second["budget"]["attempts"]["used"])
     return {**row, "holdout_pass": holdout(root), **totals(log, started, True)}
 
@@ -108,15 +109,16 @@ def main(out_path: str, driver: str, repeats: int) -> None:
             adapters.execute(a, REQUEST + "\n현재 디렉터리 안의 파일만 읽고 수정하라.", root, lambda pid: None, timeout_s=300)
             rows.append({"run": i, "condition": "A_plain_cli", "holdout_pass": holdout(root), **totals(log, started, True)})
             rows.append({"run": i, "condition": "D_lupus_do", **lupus_do(k, base, f"D{i}", cls, False)})
-            rows.append({"run": i, "condition": "E_lupus_do_cheap_draft", **lupus_do(k, base, f"E{i}", cls, True)})
+            rows.append({"run": i, "condition": "F_lupus_do_one_call", **lupus_do(k, base, f"F{i}", cls, False, stage=True)})
             for r in rows[-3:]:
                 r.pop("passed", None)
                 print(json.dumps(r, ensure_ascii=False), flush=True)
             summary = {}
-            for cond in ("A_plain_cli", "D_lupus_do", "E_lupus_do_cheap_draft"):
+            for cond in ("A_plain_cli", "D_lupus_do", "F_lupus_do_one_call"):
                 sel = [r for r in rows if r["condition"] == cond]
                 tok = [r["new_input"] + r["cached_input"] + r["output"] for r in sel]
                 summary[cond] = {"n": len(sel), "holdout_pass": sum(r["holdout_pass"] for r in sel),
+                                 "calls_mean": round(sum(r["calls"] for r in sel) / len(sel), 2),
                                  "tokens_mean": round(sum(tok) / len(tok)), "tokens_min": min(tok), "tokens_max": max(tok),
                                  "seconds_mean": round(sum(r["seconds"] for r in sel) / len(sel), 1),
                                  "list_cost_usd_mean": (round(sum(r["list_cost_usd"] or 0 for r in sel) / len(sel), 4)

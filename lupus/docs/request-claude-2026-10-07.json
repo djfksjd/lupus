@@ -1,0 +1,256 @@
+{
+ "date": "2026-10-06",
+ "approval": "simulated",
+ "driver": "native_claude",
+ "repeats": 3,
+ "rows": [
+  {
+   "run": 0,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 3884,
+   "cached_input": 12915,
+   "output": 689,
+   "turns": 3,
+   "seconds": 10.3,
+   "list_cost_usd": 0.0474,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 13,
+   "staged_applied": [],
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 8186,
+   "cached_input": 19884,
+   "output": 1457,
+   "turns": 4,
+   "seconds": 18.6,
+   "list_cost_usd": 0.0986,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "F_lupus_do_one_call",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 13,
+   "staged_applied": [
+    "inventory.py"
+   ],
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "lupus_done": true,
+   "attempts": 1,
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 5897,
+   "cached_input": 8325,
+   "output": 1400,
+   "turns": 3,
+   "seconds": 14.9,
+   "list_cost_usd": 0.0768,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 3884,
+   "cached_input": 12915,
+   "output": 692,
+   "turns": 3,
+   "seconds": 9.7,
+   "list_cost_usd": 0.0475,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 12,
+   "staged_applied": [],
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 8026,
+   "cached_input": 19804,
+   "output": 1377,
+   "turns": 4,
+   "seconds": 18.2,
+   "list_cost_usd": 0.0957,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "F_lupus_do_one_call",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 13,
+   "staged_applied": [
+    "inventory.py"
+   ],
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "lupus_done": true,
+   "attempts": 1,
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 5976,
+   "cached_input": 8325,
+   "output": 1479,
+   "turns": 3,
+   "seconds": 15.9,
+   "list_cost_usd": 0.079,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 3884,
+   "cached_input": 12915,
+   "output": 700,
+   "turns": 3,
+   "seconds": 10.4,
+   "list_cost_usd": 0.0476,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 10,
+   "staged_applied": [],
+   "build_steps": [
+    "PROGRESS"
+   ],
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 7712,
+   "cached_input": 19647,
+   "output": 1220,
+   "turns": 4,
+   "seconds": 17.1,
+   "list_cost_usd": 0.09,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "F_lupus_do_one_call",
+   "check_drafted": true,
+   "draft_variants": [
+    "default"
+   ],
+   "check_tests": 12,
+   "staged_applied": [
+    "inventory.py"
+   ],
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "lupus_done": true,
+   "attempts": 1,
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 5828,
+   "cached_input": 8325,
+   "output": 1331,
+   "turns": 3,
+   "seconds": 14.6,
+   "list_cost_usd": 0.0749,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": []
+  }
+ ],
+ "summary": {
+  "A_plain_cli": {
+   "n": 3,
+   "holdout_pass": 3,
+   "calls_mean": 1.0,
+   "tokens_mean": 17493,
+   "tokens_min": 17488,
+   "tokens_max": 17499,
+   "seconds_mean": 10.1,
+   "list_cost_usd_mean": 0.0475
+  },
+  "D_lupus_do": {
+   "n": 3,
+   "holdout_pass": 3,
+   "calls_mean": 2.0,
+   "tokens_mean": 29104,
+   "tokens_min": 28579,
+   "tokens_max": 29527,
+   "seconds_mean": 18.0,
+   "list_cost_usd_mean": 0.0948
+  },
+  "F_lupus_do_one_call": {
+   "n": 3,
+   "holdout_pass": 3,
+   "calls_mean": 1.0,
+   "tokens_mean": 15629,
+   "tokens_min": 15484,
+   "tokens_max": 15780,
+   "seconds_mean": 15.1,
+   "list_cost_usd_mean": 0.0769
+  }
+ }
+}

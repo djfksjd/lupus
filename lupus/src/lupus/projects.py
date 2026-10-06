@@ -83,6 +83,26 @@ def resolve(k: Kernel, cwd: str | Path) -> dict | None:
     return None
 
 
+def remove(k: Kernel, project_id: str, actor: str) -> None:
+    """Take back a registration that has no work under it (e.g. the wrong folder was registered).
+    A project with goals is history and stays; use `revoke` to stop work on it."""
+    if actor != "user":
+        raise LupusError("USER_AUTHORITY_REQUIRED", "remove a project")
+    with k.tx():
+        get(k, project_id)
+        if k.one("SELECT 1 FROM goal WHERE project_id = ?", project_id) or k.one(
+                "SELECT 1 FROM aux_process WHERE project_id = ?", project_id):
+            raise LupusError("PROJECT_IN_USE", "this project has goals; it cannot be removed")
+        k.run("DELETE FROM service_call WHERE project_id = ? AND goal_id IS NULL AND status <> 'RUNNING'", project_id)
+        k.run("DELETE FROM node WHERE project_id = ? AND NOT EXISTS (SELECT 1 FROM recall r WHERE r.node_id = node.node_id)", project_id)
+        k.run("DELETE FROM alpha WHERE project_id = ?", project_id)
+        try:
+            k.run("DELETE FROM project WHERE project_id = ?", project_id)
+        except Exception as exc:      # still referenced by something recorded: keep it
+            raise LupusError("PROJECT_IN_USE", str(exc)) from exc
+        k.emit(actor, "project.removed", "project", project_id)
+
+
 def provider_allowed(project: dict, driver: str) -> bool:
     provider = DRIVER_PROVIDER.get(driver)
     return provider is not None and provider in project["approved_providers"]

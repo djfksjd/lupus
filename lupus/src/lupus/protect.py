@@ -98,6 +98,11 @@ def tree_fingerprint(root: Path, rel: str, strict: bool = False) -> str:
     return "tree:" + sha256_json(entries)
 
 
+def _is_excepted(rel: str, excepted: set[str]) -> bool:
+    """An excepted path is a file, or a directory with everything under it."""
+    return rel in excepted or any(rel.startswith(e + os.sep) for e in excepted)
+
+
 def _inside(root: Path, rel: str) -> Path:
     real_root = Path(os.path.realpath(root))
     target = Path(os.path.realpath(real_root / rel))
@@ -113,15 +118,15 @@ def _files_under(root: Path, rel_dir: str, strict: bool = False) -> list[str]:
     out = []
     for current, dirs, files in os.walk(base):
         for name in dirs:
-            if strict and (Path(current) / name).is_symlink():
-                raise LupusError("PROTECTED_SYMLINK", os.path.relpath(Path(current) / name, os.path.realpath(root)))
+            if (Path(current) / name).is_symlink():
+                if strict:
+                    raise LupusError("PROTECTED_SYMLINK", os.path.relpath(Path(current) / name, os.path.realpath(root)))
+                out.append(os.path.relpath(Path(current) / name, os.path.realpath(root)))      # a link that appeared later
         dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
         for name in sorted(files):
             path = Path(current) / name
-            if path.is_symlink():
-                if strict:
-                    raise LupusError("PROTECTED_SYMLINK", os.path.relpath(path, os.path.realpath(root)))
-                continue
+            if path.is_symlink() and strict:
+                raise LupusError("PROTECTED_SYMLINK", os.path.relpath(path, os.path.realpath(root)))
             out.append(os.path.relpath(path, os.path.realpath(root)))
     return out
 
@@ -167,7 +172,7 @@ def freeze(k: Kernel, goal_id: str, root: Path, force: bool = False) -> int:
                 raise LupusError("PROTECTED_PATH_MISSING", rel)
         whole_project = bool(_excepted(k, goal_id))
         files += _named(root, _names(k, goal_id))       # existing collection hooks are frozen like any test file
-        files = sorted({os.path.normpath(f) for f in files} - _excepted(k, goal_id))
+        files = sorted(f for f in {os.path.normpath(f) for f in files} if not _is_excepted(f, _excepted(k, goal_id)))
         for c in goals.criteria(k, goal_id):
             for rel in c["verifier"].get("frozen_trees", []):
                 if _inside(root, rel).is_dir():
@@ -218,7 +223,7 @@ def drift(k: Kernel, goal_id: str, root: Path) -> list[dict]:
     out = []
     real_root = Path(os.path.realpath(root))
     for rel in _named(root, _names(k, goal_id)):
-        if os.path.normpath(rel) not in rows and os.path.normpath(rel) not in _excepted(k, goal_id):
+        if os.path.normpath(rel) not in rows and not _is_excepted(os.path.normpath(rel), _excepted(k, goal_id)):
             out.append({"path": os.path.normpath(rel), "change": "added", "row": None})
     for rel, row in rows.items():
         if row["sha256"].startswith("tree:"):
@@ -243,7 +248,7 @@ def drift(k: Kernel, goal_id: str, root: Path) -> list[dict]:
             excepted = _excepted(k, goal_id)
             for rel in _files_under(root, d["path"]):
                 rel = os.path.normpath(rel)
-                if rel not in rows and rel not in excepted:
+                if rel not in rows and not _is_excepted(rel, excepted):
                     out.append({"path": rel, "change": "added", "row": None})
     return out
 
@@ -260,7 +265,13 @@ def restore(k: Kernel, goal_id: str, root: Path, keep_dir: Path | None = None) -
     for item in drift(k, goal_id, root):
         target = _plain(real_root, item["path"])
         if target is None:
-            unrestorable.append(item["path"])      # never write through a symlinked path
+            link = Path(os.path.join(real_root, item["path"]))
+            parent = os.path.dirname(item["path"])
+            if item["change"] == "added" and link.is_symlink() and (not parent or _plain(real_root, parent) is not None):
+                link.unlink()                       # a link that was not there when frozen: the link itself goes
+                restored.append(f"{item['path']} (추가된 링크 제거)")
+            else:
+                unrestorable.append(item["path"])   # never write through a symlinked path
             continue
         if keep_dir is not None and target.is_file() and item["change"] != "mode" and (
                 item["change"] == "added" or item["row"]["content"] is not None):
@@ -272,6 +283,13 @@ def restore(k: Kernel, goal_id: str, root: Path, keep_dir: Path | None = None) -
             restored.append(f"{item['path']} (실행 권한 되돌림)")
         elif item["change"] == "added":
             target.unlink(missing_ok=True)
+            parent = target.parent      # a directory that only held added files goes with them
+            while parent != real_root and real_root in parent.parents:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
             restored.append(f"{item['path']} (추가된 파일 제거)")
         elif item["row"]["content"] is None:
             unrestorable.append(item["path"])

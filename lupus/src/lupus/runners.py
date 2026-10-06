@@ -17,6 +17,7 @@ import ast
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -75,9 +76,13 @@ def _walk(root: Path, exts: tuple[str, ...]) -> list[str]:
     return out
 
 
-def _tool(name: str, root: Path) -> str:
+def _tool(name: str, root: Path, host: bool = True) -> str:
     """Absolute path of an interpreter/toolchain binary on the sanitized PATH, never one inside
-    the project (a file called `node` or `go` in the project must not become the test runner)."""
+    the project (a file called `node` or `go` in the project must not become the test runner).
+    When the tests will run in a container (`host=False`) the program's plain name is returned:
+    what is installed on this machine does not matter then."""
+    if not host:
+        return name
     real_root = os.path.realpath(root)
     found = shutil.which(name, path=safe_path())
     if found is None or os.path.realpath(found).startswith(real_root + os.sep):
@@ -100,12 +105,21 @@ def _language(root: Path) -> str | None:
     return "python" if _walk(root, (".py",)) else None
 
 
-def _python(root: Path) -> dict:
+_PYTEST_STYLE = re.compile(r"^(?:def test_\w*\(|import pytest\b|from pytest\b|@pytest\.)", re.M)
+
+
+def _python(root: Path, host: bool = True) -> dict:
     test_dirs = [d for d in ("tests", "test") if (root / d).is_dir()]
     loose = sorted(p.name for p in root.glob("test_*.py")) + sorted(p.name for p in root.glob("*_test.py"))
+    candidates = loose + [str(p.relative_to(root)) for d in test_dirs for p in sorted((root / d).rglob("*.py"))][:200]
     uses_pytest = any((root / f).is_file() for f in ("pytest.ini", "conftest.py")) or (
-        (root / "pyproject.toml").is_file() and "[tool.pytest" in (root / "pyproject.toml").read_text(errors="ignore"))
-    if uses_pytest:
+        (root / "pyproject.toml").is_file() and "[tool.pytest" in (root / "pyproject.toml").read_text(errors="ignore")) or any(
+        # no configuration, but the tests are written the pytest way (plain functions, fixtures):
+        # unittest would import such a file and run nothing
+        _PYTEST_STYLE.search((root / rel).read_text(errors="ignore")) for rel in candidates)
+    if uses_pytest and not host:
+        argv, runner = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider"], "pytest"
+    elif uses_pytest:
         # Not run inside the project and with the scrubbed environment: importing pytest there
         # could execute the project's conftest/plugins with the user's credentials.
         probe = subprocess.run([sys.executable, "-m", "pytest", "--version"], capture_output=True,
@@ -114,7 +128,7 @@ def _python(root: Path) -> dict:
             raise LupusError("TEST_RUNNER_UNAVAILABLE", "the project is configured for pytest but pytest is not installed")
         argv, runner = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], "pytest"
     else:
-        argv, runner = [sys.executable, "-m", "unittest", "discover", "-q"], "unittest"
+        argv, runner = [sys.executable if host else "python3", "-m", "unittest", "discover", "-q"], "unittest"
     tests = loose + [str(p.relative_to(root)) for d in test_dirs for p in sorted((root / d).rglob("test*.py"))]
     # "src layout": the package lives in src/ and is not importable from the project root unless
     # it is installed. The tests are run against the source in front of us, not an installed copy.
@@ -132,27 +146,57 @@ def _python(root: Path) -> dict:
             "test_dir": test_dirs[0] if test_dirs else "", **({"env": {"PYTHONPATH": "src"}} if src else {})}
 
 
-def _node(root: Path) -> dict:
-    node = _tool("node", root)
+_SHELL = re.compile(r"[|&;<>$`(){}*?~]|^\w+=")
+
+
+def _node_argv(node: str, script: str) -> tuple[str, str, list[str]]:
+    """(runner, entry file inside node_modules or "", argv) for a package.json test script. The
+    script's own options are kept (a custom --config decides what the tests are); a script that is
+    more than one plain command is not something to guess at."""
+    try:
+        words = shlex.split(script)
+    except ValueError:
+        words = ["?"]
+    if not script or "no test specified" in script:
+        return "node", "", [node, "--test", "--test-reporter=tap"]
+    if words[0] in ("npx", "pnpm", "yarn") and len(words) > 1 and words[1] in ("jest", "vitest"):
+        words = words[1:]
+    if any(_SHELL.search(w) for w in words):
+        words = ["?"]
+    if words[0] == "vitest":
+        rest = [w for w in words[1:] if w not in ("run", "watch", "dev", "--watch", "-w")]
+        return "vitest", "node_modules/vitest/vitest.mjs", [node, "node_modules/vitest/vitest.mjs", "run", *rest]
+    if words[0] == "jest":
+        rest = [w for w in words[1:] if w not in ("--watch", "--watchAll", "--ci")]
+        return "jest", "node_modules/jest/bin/jest.js", [node, "node_modules/jest/bin/jest.js", "--ci", *rest]
+    if words[0] == "node" and "--test" in words:
+        rest = [w for w in words[1:] if w != "--test" and not w.startswith("--test-reporter") and w != "--watch"]
+        return "node", "", [node, "--test", "--test-reporter=tap", *rest]      # options before any file argument
+    raise LupusError("TEST_RUNNER_UNKNOWN", f"package.json runs tests with {script[:80]!r}, which Lupus will not guess at; "
+                                            "name the command yourself: --check \"npm test\"")
+
+
+def _node(root: Path, host: bool = True) -> dict:
+    node = _tool("node", root, host)
     try:
         package = json.loads((root / "package.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         package = {}
     script = str((package.get("scripts") or {}).get("test", "")) if isinstance(package, dict) else ""
     tests = [rel for rel in _walk(root, SOURCE_EXT["node"]) if is_test_file("node", rel)]
-    if "vitest" in script:
-        runner, entry = "vitest", "node_modules/vitest/vitest.mjs"
-        argv = [node, entry, "run"]
-    elif "jest" in script:
-        runner, entry = "jest", "node_modules/jest/bin/jest.js"
-        argv = [node, entry, "--ci"]
-    elif not script or "node --test" in script or "no test specified" in script:
-        runner, entry, argv = "node", "", [node, "--test", "--test-reporter=tap"]
-    else:
-        raise LupusError("TEST_RUNNER_UNKNOWN", f"package.json runs tests with {script[:60]!r}; name the command "
-                                                "yourself with --check")
+    runner, entry, argv = _node_argv(node, script)
     if entry and not (root / entry).is_file():
         raise LupusError("TEST_RUNNER_UNAVAILABLE", f"{runner} is not installed in this project ({entry})")
+    # Whatever the script's options point at (a --config file, a setup file, a directory) decides
+    # which tests run just as much as the well-known config names do: it is frozen with them.
+    referenced: list[str] = []
+    real_root = os.path.realpath(root)
+    for word in argv[1:]:
+        for candidate in {word, word.split("=", 1)[-1]}:
+            target = os.path.realpath(os.path.join(root, candidate))
+            if not candidate.startswith("-") and target.startswith(real_root + os.sep) and os.path.exists(target) \
+                    and "node_modules" not in Path(candidate).parts:
+                referenced.append(os.path.relpath(target, real_root))
     dirs = [d for d in ("test", "tests", "__tests__") if (root / d).is_dir()]
     loose = [t for t in tests if not any(t == d or t.startswith(d + os.sep) for d in dirs)]
     related: list[str] = []
@@ -164,37 +208,39 @@ def _node(root: Path) -> dict:
                 if (root / cand).is_file() and not is_test_file("node", cand) and cand not in related:
                     related.append(cand)
                     break
-    return {"runner": runner, "argv": argv, "protect": dirs + loose, "tests": tests, "related": related,
-            "test_dir": dirs[0] if dirs else "",
+    return {"runner": runner, "argv": argv, "protect": dirs + loose + sorted(set(referenced) - set(dirs)), "tests": tests,
+            "related": related, "test_dir": dirs[0] if dirs else "",
             # jest/vitest are programs inside the project's node_modules: a worker that could rewrite
             # them could print any result. The tree is fingerprinted and must not change.
             **({"frozen_trees": ["node_modules"]} if entry else {})}
 
 
-def _go(root: Path) -> dict:
+def _go(root: Path, host: bool = True) -> dict:
     tests = [rel for rel in _walk(root, (".go",)) if is_test_file("go", rel)]
     related = [t[: -len("_test.go")] + ".go" for t in tests[:8] if (root / (t[: -len("_test.go")] + ".go")).is_file()]
-    return {"runner": "go", "argv": [_tool("go", root), "test", "-v", "-count=1", "./..."], "protect": tests,
+    return {"runner": "go", "argv": [_tool("go", root, host), "test", "-v", "-count=1", "./..."], "protect": tests,
             "tests": tests, "related": related, "test_dir": "",
             # the default build cache is in the home directory, which a verifier may not write
-            "env": {"GOCACHE": os.path.join(os.path.realpath(tempfile.gettempdir()), "lupus-gocache"),
+            "env": {"GOCACHE": os.path.join(os.path.realpath(tempfile.gettempdir()) if host else "/tmp", "lupus-gocache"),
                     "GOFLAGS": "-mod=mod", "GOPROXY": "off"}}
 
 
-def _rust(root: Path) -> dict:
+def _rust(root: Path, host: bool = True) -> dict:
     tests = [rel for rel in _walk(root, (".rs",)) if is_test_file("rust", rel)]
-    return {"runner": "cargo", "argv": [_tool("cargo", root), "test", "--offline"],
+    # --no-fail-fast: every test binary runs, so one run yields both the verdict and the full list of names
+    return {"runner": "cargo", "argv": [_tool("cargo", root, host), "test", "--offline", "--no-fail-fast"],
             "protect": ["tests"] if (root / "tests").is_dir() else [], "tests": tests,
             "related": [f for f in ("src/lib.rs", "src/main.rs") if (root / f).is_file()], "test_dir": "tests"}
 
 
-def detect(root: Path, need_tests: bool = True) -> dict:
-    """Pick the test command and what to freeze, from files only (no model, no guessing)."""
+def detect(root: Path, need_tests: bool = True, host: bool = True) -> dict:
+    """Pick the test command and what to freeze, from files only (no model, no guessing).
+    `host=False`: the tests will run in a container, so programs are named, not looked up here."""
     root = Path(root)
     language = _language(root)
     if language is None:
         raise LupusError("NO_TESTS_FOUND", "no tests and no recognised project file here")
-    found = {"python": _python, "node": _node, "go": _go, "rust": _rust}[language](root)
+    found = {"python": _python, "node": _node, "go": _go, "rust": _rust}[language](root, host)
     # Rust and Go keep unit tests inside source files; those cannot be frozen as files, so only
     # the test files proper count as "has tests" for freezing purposes.
     has_tests = bool(found["tests"]) or (language == "rust" and (root / "src").is_dir() and any(
@@ -357,14 +403,14 @@ def one_file_argv(found: dict, test_path: str) -> list[str]:
     if runner == "pytest":
         return [*argv, test_path]
     if runner == "unittest":
-        return [sys.executable, "-m", "unittest", "-q", test_path]
+        return [argv[0], "-m", "unittest", "-q", test_path]
     if runner in ("node", "jest", "vitest"):
         return [*argv, test_path]
     if runner == "go":
         package = "./" + os.path.dirname(test_path) if os.path.dirname(test_path) else "."
         return [*argv[:-1], "-run", "Lupus", package]
     if runner == "cargo":
-        return [*argv, "--test", Path(test_path).stem]
+        return [*[a for a in argv if a != "--no-fail-fast"], "--test", Path(test_path).stem]
     raise LupusError("TEST_RUNNER_UNKNOWN", runner)
 
 

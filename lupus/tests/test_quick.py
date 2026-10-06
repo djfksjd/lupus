@@ -1,3 +1,4 @@
+import os
 import sys
 
 from lupus import goals, projects, quick, supervisor
@@ -209,3 +210,122 @@ class RequestTests(Env):
         self.assertRefused("USER_AUTHORITY_REQUIRED", quick.draft_check, self.k, self.project, "x 추가", "alpha")
         (self.root / "calc.py").write_text("def add(a, b):\n    return a - b\n")
         self.assertRefused("BASELINE_RED", quick.draft_check, self.k, self.project, "sub 추가", "user")
+
+
+IMPL = CALC + "def sub(a, b):\n    return a - b\n"
+STAGED = ("pathlib.Path('{T}').write_text(%r)\npathlib.Path('.lupus-staged').mkdir()\n"
+          "pathlib.Path('.lupus-staged/calc.py').write_text(%r)\n")
+
+
+class OneCallTests(Env):
+    """`lupus do` in one model call: the implementation is proposed aside, and enters the project
+    only after the user approved the test."""
+
+    def setUp(self):
+        super().setUp()
+        (self.root / "calc.py").write_text(CALC)
+        (self.root / "test_calc.py").write_text(TEST)
+
+    draft = RequestTests.draft
+
+    def attempts(self) -> int:
+        return self.k.one("SELECT COUNT(*) FROM attempt")[0]
+
+    def test_the_proposal_is_applied_after_approval_and_verified_without_another_call(self):
+        d, report, sha = self.draft(STAGED % (GOOD_TEST, IMPL))
+        self.assertTrue(report["done"])
+        self.assertEqual((self.root / "calc.py").read_text(), CALC)        # red was judged on the code as it is
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
+        self.assertEqual(build["staged_applied"], ["calc.py"])
+        self.assertFalse((self.root / ".lupus-staged").exists())
+        done = supervisor.run_goal(self.k, build["goal_id"], fake(WRITE + "raise SystemExit('must not be called')"))
+        self.assertTrue(done["done"], done)
+        self.assertEqual(done["steps"][0]["outcome"], "ALREADY_SATISFIED")
+        self.assertEqual(self.attempts(), 1)                               # the drafting call was the only one
+        self.assertEqual(done["budget"]["attempts"]["used"], 0)
+
+    def test_a_wrong_proposal_costs_one_ordinary_attempt_with_the_real_failure(self):
+        bad = CALC + "def sub(a, b):\n    return a + b\n"
+        d, _, sha = self.draft(STAGED % (GOOD_TEST, bad))
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
+        task = goals.tasks(self.k, build["goal_id"])[0]
+        fix = WRITE + "pathlib.Path('calc.py').write_text(%r)" % IMPL
+        done = supervisor.run_goal(self.k, build["goal_id"], fake(fix))
+        self.assertTrue(done["done"])
+        self.assertEqual(self.attempts(), 2)
+        first = self.k.one("SELECT detail FROM evidence WHERE goal_id = ? AND result = 'FAIL' ORDER BY seq LIMIT 1", build["goal_id"])
+        self.assertIn("AssertionError", first[0])          # what the next attempt was told
+
+    def test_a_proposal_cannot_bring_in_tests_config_links_or_files_outside_the_project(self):
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        body = (STAGED % (GOOD_TEST, IMPL)) + (
+            "import os\ns = pathlib.Path('.lupus-staged')\n"
+            "(s / 'test_calc.py').write_text('import unittest\\n')\n"                      # an existing, frozen test
+            "(s / 'test_more.py').write_text('x = 1\\n')\n"                                # a new test file
+            "(s / 'conftest.py').write_text('collect_ignore = []\\n')\n"                   # runner configuration
+            f"os.symlink({str(outside)!r}, s / 'linkdir')\n"                                # a way out
+            "os.symlink('/etc/hosts', s / 'hosts.py')\n"
+            "(s / 'pkg').mkdir(); (s / 'pkg' / 'new.py').write_text('y = 2\\n')\n")
+        d, report, sha = self.draft(body)
+        self.assertTrue(report["done"], report)
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
+        self.assertEqual(sorted(build["staged_applied"]), ["calc.py", "pkg/new.py"])
+        self.assertEqual((self.root / "test_calc.py").read_text(), TEST)
+        for absent in ("test_more.py", "conftest.py", "hosts.py", "linkdir"):
+            self.assertFalse(os.path.lexists(self.root / absent), absent)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_declining_or_two_step_leaves_no_proposal_behind(self):
+        d, _, sha = self.draft(STAGED % (GOOD_TEST, IMPL))
+        kept = quick.discard_draft(self.k, self.project, d["goal_id"], "user")
+        self.assertFalse((self.root / ".lupus-staged").exists())
+        self.assertFalse((self.root / d["test_path"]).exists())
+        self.assertEqual((self.root / "calc.py").read_text(), CALC)
+        self.assertTrue(kept and os.path.exists(os.path.join(os.path.dirname(kept), "staged", "calc.py")))
+        two = quick.draft_check(self.k, self.project, "다른 요청: mul 추가", "user", stage=False)
+        prompt = goals.tasks(self.k, two["goal_id"])[0]["spec"]["prompt"]
+        self.assertIn("구현은 하지 마라", prompt)
+        self.assertNotIn(".lupus-staged", prompt)
+        # in two-step mode a staged directory is not an exception to the freeze: it is removed
+        script = WRITE + (STAGED % (GOOD_TEST.replace("sub(5, 3), 2", "mul(2, 3), 6"), IMPL)).replace("{T}", two["test_path"])
+        supervisor.run_goal(self.k, two["goal_id"], fake(script))
+        self.assertFalse((self.root / ".lupus-staged").exists())
+
+    def test_a_leftover_staging_directory_is_not_silently_reused(self):
+        (self.root / ".lupus-staged").mkdir()
+        self.assertRefused("CHECK_EXISTS", quick.draft_check, self.k, self.project, "sub 추가", "user")
+
+    def test_the_check_cannot_see_the_proposal_and_links_do_not_redirect_it(self):
+        peeking = ("import os, sys, unittest\nsys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '.lupus-staged'))\n"
+                   "class T(unittest.TestCase):\n    def test_sub(self):\n        import calc\n        self.assertEqual(calc.sub(5, 3), 99)\n")
+        from lupus.util import sandbox_available
+        if sandbox_available():      # the staged calc.py (which has sub) must not be what the red check ran against
+            d, report, _ = self.draft(STAGED % (peeking, IMPL))
+            ev = goals.latest_evidence(self.k, d["goal_id"])["c0"]
+            self.assertNotIn("3 != 99", ev["detail"])
+            quick.discard_draft(self.k, self.project, d["goal_id"], "user")
+        (self.root / "frozen_dir").mkdir()
+        body = (STAGED % (GOOD_TEST, IMPL)) + (
+            "import os\ns = pathlib.Path('.lupus-staged')\n"
+            "os.symlink('frozen_dir', 'alias')\n"                                    # a link inside the project…
+            "(s / 'alias').mkdir(); (s / 'alias' / 'planted.py').write_text('x = 1\\n')\n"   # …and a file addressed through it
+            "os.mkfifo(s / 'pipe.py')\n")
+        d, report, sha = self.draft(body, request="sub 를 다시 추가")
+        self.assertFalse(os.path.lexists(self.root / "alias"))                        # the added link itself was removed
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
+        self.assertEqual(sorted(build["staged_applied"]), ["alias/planted.py", "calc.py"])   # an ordinary folder now, nothing redirected
+        self.assertEqual(list((self.root / "frozen_dir").iterdir()), [])
+        self.assertFalse((self.root / "pipe.py").exists())
+
+    def test_two_step_never_applies_a_folder_it_did_not_ask_for(self):
+        d = quick.draft_check(self.k, self.project, "sub 추가", "user", stage=False)
+        from lupus.util import sha256_bytes
+        script = WRITE + "pathlib.Path(%r).write_text(%r)" % (d["test_path"], GOOD_TEST)
+        self.assertTrue(supervisor.run_goal(self.k, d["goal_id"], fake(script))["done"])
+        (self.root / ".lupus-staged").mkdir()                                        # appears from somewhere else
+        (self.root / ".lupus-staged" / "calc.py").write_text("raise SystemExit('obsolete proposal')\n")
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"],
+                                    sha256_bytes((self.root / d["test_path"]).read_bytes()), "user")
+        self.assertEqual(build["staged_applied"], [])
+        self.assertEqual((self.root / "calc.py").read_text(), CALC)
