@@ -1,0 +1,205 @@
+{
+ "date": "2026-10-06",
+ "approval": "simulated",
+ "driver": "native_codex",
+ "repeats": 3,
+ "rows": [
+  {
+   "run": 0,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 6719,
+   "cached_input": 64768,
+   "output": 675,
+   "turns": 1,
+   "seconds": 19.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 7,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 12951,
+   "cached_input": 60416,
+   "output": 884,
+   "turns": 2,
+   "seconds": 27.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 0,
+   "condition": "E_lupus_do_cheap_draft",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/low"
+   ],
+   "check_tests": 6,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 13193,
+   "cached_input": 78208,
+   "output": 914,
+   "turns": 2,
+   "seconds": 28.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 6654,
+   "cached_input": 64896,
+   "output": 653,
+   "turns": 1,
+   "seconds": 19.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 7,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 12909,
+   "cached_input": 60416,
+   "output": 853,
+   "turns": 2,
+   "seconds": 27.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 1,
+   "condition": "E_lupus_do_cheap_draft",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/low"
+   ],
+   "check_tests": 6,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 12819,
+   "cached_input": 60416,
+   "output": 817,
+   "turns": 2,
+   "seconds": 24.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "A_plain_cli",
+   "holdout_pass": true,
+   "calls": 1,
+   "new_input": 11884,
+   "cached_input": 59520,
+   "output": 582,
+   "turns": 1,
+   "seconds": 17.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "D_lupus_do",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/default"
+   ],
+   "check_tests": 7,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 12933,
+   "cached_input": 60416,
+   "output": 857,
+   "turns": 2,
+   "seconds": 26.9,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  },
+  {
+   "run": 2,
+   "condition": "E_lupus_do_cheap_draft",
+   "check_drafted": true,
+   "draft_variants": [
+    "default/low"
+   ],
+   "check_tests": 7,
+   "lupus_done": true,
+   "attempts": 2,
+   "holdout_pass": true,
+   "calls": 2,
+   "new_input": 12871,
+   "cached_input": 60416,
+   "output": 843,
+   "turns": 2,
+   "seconds": 26.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": []
+  }
+ ],
+ "summary": {
+  "A_plain_cli": {
+   "n": 3,
+   "holdout_pass": 3,
+   "tokens_mean": 72117,
+   "tokens_min": 71986,
+   "tokens_max": 72203,
+   "seconds_mean": 18.6,
+   "list_cost_usd_mean": null
+  },
+  "D_lupus_do": {
+   "n": 3,
+   "holdout_pass": 3,
+   "tokens_mean": 74212,
+   "tokens_min": 74178,
+   "tokens_max": 74251,
+   "seconds_mean": 27.1,
+   "list_cost_usd_mean": null
+  },
+  "E_lupus_do_cheap_draft": {
+   "n": 3,
+   "holdout_pass": 3,
+   "tokens_mean": 80166,
+   "tokens_min": 74052,
+   "tokens_max": 92315,
+   "seconds_mean": 26.2,
+   "list_cost_usd_mean": null
+  }
+ }
+}

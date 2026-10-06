@@ -15,15 +15,20 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import termios
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from .util import GATE, GATE_EXEC_FAILED, LupusError, crash_point, group_alive, safe_path, scrubbed_env, stop_group
+from .util import (
+    GATE, GATE_EXEC_FAILED, SANDBOX_EXEC, LupusError, crash_point, group_alive, safe_path, sandbox_available,
+    sandbox_profile_worker, scrubbed_env, stop_group,
+)
 
 MAX_OUTPUT_BYTES = 20 * 1024 * 1024    # a runaway worker must not exhaust the supervisor's memory
 
@@ -63,6 +68,8 @@ class Adapter:
     auth_mode = "none"
     variant = "default"     # model / effort tier; part of an attempt's identity
     batch = False           # True when one call has a large fixed input, so fewer calls is cheaper
+    interactive = False     # True: the user works in the CLI's own screen (see execute_interactive)
+    os_sandbox: str | None = None   # name of an OS sandbox profile to run the CLI under (util.sandbox_profile_worker)
 
     def argv(self, prompt: str, cwd: Path) -> list[str]:
         raise NotImplementedError
@@ -87,10 +94,17 @@ def execute(
     After the worker exits, anything still alive in its group is killed and reported, so a
     finished run leaves no writer behind (STOP-01).
     """
+    if adapter.interactive:
+        return execute_interactive(adapter, prompt, cwd, on_spawn, timeout_s)
     started = time.monotonic()
+    argv = adapter.argv(prompt, cwd)
+    confined = bool(adapter.os_sandbox) and sandbox_available()
+    if confined:
+        # Enforced by the OS, whatever the CLI's own permission system decides.
+        argv = [SANDBOX_EXEC, "-p", sandbox_profile_worker(cwd, adapter.os_sandbox), *argv]
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         proc = subprocess.Popen(
-            [sys.executable, GATE, *adapter.argv(prompt, cwd)],
+            [sys.executable, GATE, *argv],
             cwd=cwd, stdin=subprocess.PIPE, stdout=out, stderr=err,
             start_new_session=True, env=adapter.env(),
         )
@@ -124,9 +138,93 @@ def execute(
         result.error_class = "unavailable"   # the CLI binary is missing or not executable
     result.duration_ms = int((time.monotonic() - started) * 1000)
     result.leftover_processes = leftover
+    result.raw["os_sandbox"] = confined
     return result
 
 
+
+
+def execute_interactive(adapter: Adapter, prompt: str, cwd: Path, on_spawn: Callable[[int], None],
+                        timeout_s: float) -> AdapterResult:
+    """Hand the terminal to the CLI's own interactive screen, under the same rules as a headless
+    worker: its process group is recorded before it may start (exec gate), it is the foreground
+    job of this terminal while it runs, and the group is emptied before this returns.
+
+    Nothing the user or the model types is seen or stored here, and the host reports no usage
+    for such a session; the caller charges the reservation in full."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        raise LupusError("USER_PRESENCE_REQUIRED", "an interactive session needs a terminal")
+    tty = sys.stdin.fileno()
+    saved = termios.tcgetattr(tty)
+    read_fd, write_fd = os.pipe()
+    started = time.monotonic()
+    proc = subprocess.Popen(
+        [sys.executable, GATE, *adapter.argv(prompt, cwd)], cwd=cwd, pass_fds=(read_fd,), process_group=0,
+        env={**adapter.env(), "LUPUS_GATE_FD": str(read_fd)},
+    )
+    os.close(read_fd)
+    ignored = signal.signal(signal.SIGTTOU, signal.SIG_IGN)      # we are about to become a background job
+    timed_out = False
+    try:
+        on_spawn(proc.pid)
+        os.tcsetpgrp(tty, proc.pid)
+        os.write(write_fd, b"g")
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+    except OSError as exc:
+        raise LupusError("WORKER_SPAWN_FAILED", str(exc)) from exc
+    finally:
+        os.close(write_fd)
+        leftover = group_alive(proc.pid) if not timed_out and proc.returncode is not None else False
+        stop_group(proc.pid)
+        proc.wait()
+        try:      # only now, with nothing of the session left to change it again: take the terminal
+            os.tcsetpgrp(tty, os.getpgrp())      # back and undo whatever screen mode the CLI left behind
+            termios.tcsetattr(tty, termios.TCSADRAIN, saved)
+        except OSError:
+            pass
+        signal.signal(signal.SIGTTOU, ignored)
+    code = None if timed_out else proc.returncode
+    return AdapterResult(
+        exit_code=code, usage=None, leftover_processes=leftover, duration_ms=int((time.monotonic() - started) * 1000),
+        error_class="timeout" if timed_out else ("unavailable" if code == GATE_EXEC_FAILED else None))
+
+
+PROVIDER_ENV_PREFIXES = ("ANTHROPIC_", "OPENAI_", "CODEX_API", "CLAUDE_CODE_USE_", "AWS_BEARER_TOKEN_BEDROCK",
+                         "CLAUDE_CODE_OAUTH_TOKEN")
+
+
+class InteractiveAdapter(Adapter):
+    """The user's own interactive `claude` / `codex`, with their normal configuration, started by
+    Lupus so that the project's writer slot, the frozen verification files and the final
+    verification apply to the session. Provider keys in the environment are still dropped, so a
+    session cannot quietly bill an API account instead of the subscription."""
+
+    interactive = True
+    auth_mode = "subscription"
+
+    def __init__(self, cli: str, extra: list[str] | None = None, notice: str = "", settings: dict | None = None):
+        self.cli = cli
+        self.driver = {"claude": "native_claude", "codex": "native_codex"}[cli]
+        self.extra = list(extra or [])
+        self.notice = notice
+        self.settings = settings
+        self.variant = "interactive"
+
+    def argv(self, prompt: str, cwd: Path) -> list[str]:
+        argv = [resolve_cli(self.cli, cwd)]
+        if self.cli == "claude":
+            if self.settings:      # passed for this one process; no settings file of the user is touched
+                argv += ["--settings", json.dumps(self.settings)]
+            if self.notice:
+                argv += ["--append-system-prompt", self.notice]
+        else:
+            argv += ["-C", str(cwd)]
+        return argv + self.extra
+
+    def env(self) -> dict[str, str]:
+        return {key: value for key, value in os.environ.items() if not key.startswith(PROVIDER_ENV_PREFIXES)}
 
 
 def classify_error(text: str) -> str | None:
@@ -150,11 +248,14 @@ class ClaudeAdapter(Adapter):
 
     driver = "native_claude"
     auth_mode = "subscription"
+    os_sandbox = "claude"
 
-    def __init__(self, model: str | None = None, tools: tuple[str, ...] = ("Read", "Write", "Edit")):
+    def __init__(self, model: str | None = None, tools: tuple[str, ...] = ("Read", "Write", "Edit"),
+                 web: bool = False):
         self.model = model
-        self.tools = tools
-        self.variant = model or "default"
+        self.tools = tools + (("WebSearch", "WebFetch") if web else ())
+        self.web = web
+        self.variant = (model or "default") + ("+web" if web else "")
 
     def argv(self, prompt: str, cwd: Path) -> list[str]:
         argv = [
@@ -165,8 +266,10 @@ class ClaudeAdapter(Adapter):
             "--disable-slash-commands",
             "--permission-mode", "acceptEdits",
             "--no-session-persistence",
-            "--tools", *self.tools,
+            "--tools", *(self.tools or ("",)),
         ]
+        if self.web:      # the user asked for a task that needs to look things up
+            argv += ["--allowedTools", "WebSearch", "WebFetch"]
         if self.model:
             argv += ["--model", self.model]
         return argv
@@ -205,19 +308,22 @@ def _toml(value) -> str:
     return json.dumps(value)
 
 
-def codex_filesystem_profile() -> dict:
+def codex_filesystem_profile(readonly: bool = False) -> dict:
     """What a Codex worker may touch: read the system minimum, the Codex program itself and the
     language toolchains; write only the project and the temp directory. The user's home is NOT
     readable, so keys, tokens and other projects stay out of reach. Measured with a canary by
     `lupus probe --live` (codex-cli 0.160.0: default sandbox read it, this profile did not)."""
-    profile: dict = {":minimal": "read", ":project_roots": {".": "write"}, ":tmpdir": "write"}
+    # `readonly` is for calls that only think (a judge): no write access anywhere, and no access to the
+    # shared temp directory, where other projects may live.
+    profile: dict = ({":minimal": "read", ":project_roots": {".": "read"}} if readonly
+                     else {":minimal": "read", ":project_roots": {".": "write"}, ":tmpdir": "write"})
     cli = shutil.which("codex", path=safe_path())
     if cli:
         real = os.path.realpath(cli)
         packages = real.split("/packages/")[0] + "/packages" if "/packages/" in real else os.path.dirname(real)
         for path in (os.path.dirname(cli), packages):
             profile[path] = "read"
-    for toolchain in ("/opt/homebrew", "/usr/local"):     # interpreters a worker may run when self-checking
+    for toolchain in () if readonly else ("/opt/homebrew", "/usr/local"):     # interpreters a worker may run when self-checking
         if os.path.isdir(toolchain):
             profile[toolchain] = "read"
     return profile
@@ -232,9 +338,10 @@ class CodexAdapter(Adapter):
     auth_mode = "subscription"
     batch = True            # measured: ~30k tokens of fixed input per call
 
-    def __init__(self, model: str | None = None, effort: str | None = None):
+    def __init__(self, model: str | None = None, effort: str | None = None, readonly: bool = False):
         self.model = model
         self.effort = effort
+        self.readonly = readonly
         self.variant = f"{model or 'default'}/{effort or 'default'}"
 
     def argv(self, prompt: str, cwd: Path) -> list[str]:
@@ -245,7 +352,7 @@ class CodexAdapter(Adapter):
             # A named permission profile instead of `--sandbox workspace-write`: that mode lets
             # commands read every file the user can.
             "-c", 'default_permissions="lupus"',
-            "-c", f"permissions.lupus.filesystem={_toml(codex_filesystem_profile())}",
+            "-c", f"permissions.lupus.filesystem={_toml(codex_filesystem_profile(self.readonly))}",
             "-C", str(cwd),
         ]
         if self.model:

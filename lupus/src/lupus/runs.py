@@ -18,6 +18,7 @@ from typing import Mapping
 from . import budget, goals, projects
 from .kernel import Kernel
 from .util import LupusError, canonical_json, group_alive, new_id, proc_start, sha256_json
+from .util import container_alive
 
 BLOCK_STATUSES = ("NEEDS_ANSWER", "NEEDS_APPROVAL", "BUDGET_EXHAUSTED", "EXTERNAL_BLOCKED", "NO_PROGRESS",
                   "FAILED")
@@ -127,8 +128,18 @@ def attach_process(k: Kernel, run_id: str, token: int, pid: int) -> None:
 
 # ---------------------------------------------------------------- auxiliary process groups
 
-def _proc_alive(pid: int, start: str) -> bool:
-    return proc_start(pid) == start or group_alive(pid)
+def _proc_alive(pid: int, start: str, purpose: str = "") -> bool:
+    name = container_of(purpose)
+    return proc_start(pid) == start or group_alive(pid) or (name is not None and container_alive(name))
+
+
+def container_of(purpose: str) -> str | None:
+    return purpose.split(":container:", 1)[1] if ":container:" in purpose else None
+
+
+def aux_recorder(k: Kernel, project_id: str, purpose: str):
+    """on_spawn callback for verify.run: records the process group, and the container it drives."""
+    return lambda pid, tag="": register_aux(k, project_id, pid, purpose + tag)
 
 
 def register_aux(k: Kernel, project_id: str, pid: int, purpose: str) -> None:
@@ -149,7 +160,7 @@ def clear_aux(k: Kernel, pid: int) -> None:
         row = k.one("SELECT * FROM aux_process WHERE pid = ?", pid)
         if row is None:
             return
-        if _proc_alive(row["pid"], row["proc_start"]):
+        if _proc_alive(row["pid"], row["proc_start"], row["purpose"]):
             raise LupusError("WRITER_STILL_ALIVE", f"{row['purpose']} pid {pid}")
         k.run("DELETE FROM aux_process WHERE pid = ?", pid)
 
@@ -159,7 +170,7 @@ def aux_alive(k: Kernel, project_id: str | None = None) -> list[dict]:
     alive = []
     with k.tx():
         for row in k.q("SELECT * FROM aux_process"):
-            if _proc_alive(row["pid"], row["proc_start"]):
+            if _proc_alive(row["pid"], row["proc_start"], row["purpose"]):
                 if project_id is None or row["project_id"] == project_id:
                     alive.append(dict(row))
             else:

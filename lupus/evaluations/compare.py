@@ -125,7 +125,7 @@ def simple(k: Kernel, base: Path, repeats: int) -> list[dict]:
     rows = []
     for driver in ("native_claude", "native_codex"):
         for name, task in TASKS.items():
-            for kind, n in (("A0", 1), ("A", repeats), ("C", repeats), ("CT", repeats)):
+            for kind, n in (("A0", repeats), ("A", repeats), ("C", repeats), ("CT", repeats)):
                 for i in range(n):
                     root = fresh(base, f"{kind}-{driver}-{name}-{i}", task["files"])
                     if kind in ("A0", "A"):

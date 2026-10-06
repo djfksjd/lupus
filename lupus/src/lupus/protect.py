@@ -23,12 +23,13 @@ from pathlib import Path
 
 from . import goals
 from .kernel import Kernel
-from .util import LupusError, atomic_write, find_secret_bytes, sha256_bytes, sha256_file
+from .util import LupusError, atomic_write, find_secret_bytes, sha256_bytes, sha256_file, sha256_json
 
 MAX_KEEP = 512 * 1024
 MAX_KEEP_WHOLE = 8 * 1024 * 1024      # per file when the whole project is frozen (`protect_except`)
 MAX_KEEP_TOTAL = 100 * 1024 * 1024    # beyond this, further files are detect-only (or refused, see freeze)
 MAX_FILES = 5000
+TREE_CACHES = {".cache", ".vite", ".vitest", ".vite-temp"}
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache"}
 
 
@@ -47,6 +48,54 @@ def _excepted(k: Kernel, goal_id: str) -> set[str]:
     for c in goals.criteria(k, goal_id):
         out |= {os.path.normpath(p) for p in c["verifier"].get("protect_except", [])}
     return out
+
+
+def _names(k: Kernel, goal_id: str) -> set[str]:
+    """File names that may not newly appear anywhere in the project (collection hooks such as a
+    nested conftest.py), declared by `forbid_new_names`."""
+    out: set[str] = set()
+    for c in goals.criteria(k, goal_id):
+        out |= set(c["verifier"].get("forbid_new_names", []))
+    return out
+
+
+def _named(root: Path, names: set[str]) -> list[str]:
+    found: list[str] = []
+    if not names:
+        return found
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        found += [os.path.relpath(os.path.join(current, f), root) for f in files if f in names]
+        if len(found) > MAX_FILES:
+            break
+    return found
+
+
+def tree_fingerprint(root: Path, rel: str, strict: bool = False) -> str:
+    """Cheap identity of a large directory (a dependency tree): every entry's size, modification
+    time, change time and mode. The change time cannot be set back by a program, so an edit is
+    seen even if the modification time is restored. Only the caches that test tools are known to
+    write at the top are left out; package stores such as `.pnpm` are part of the tree. Links are
+    recorded with their targets. A link that leads OUT of the tree would put the real files where
+    this does not look: when freezing (`strict`) that is refused, afterwards it counts as a change.
+    Detect only: nothing here can be put back."""
+    base, entries = root / rel, []
+    real_base = os.path.realpath(base)
+    for current, dirs, files in os.walk(base):
+        if Path(current) == base:
+            dirs[:] = [d for d in dirs if d not in TREE_CACHES]
+        dirs.sort()
+        for name in sorted(files) + [d for d in dirs if (Path(current) / d).is_symlink()]:
+            full = os.path.join(current, name)
+            st = os.lstat(full)
+            link = os.readlink(full) if os.path.islink(full) else ""
+            if link and not (os.path.realpath(full) + os.sep).startswith(real_base + os.sep):
+                if strict:
+                    raise LupusError("FROZEN_TREE_LINK", f"{os.path.join(rel, os.path.relpath(full, base))} links outside {rel}; "
+                                     "its contents cannot be watched. Use --container or --check")
+                link = "OUTSIDE:" + link
+            entries.append([os.path.relpath(full, base), st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_mode, link])
+    return "tree:" + sha256_json(entries)
 
 
 def _inside(root: Path, rel: str) -> Path:
@@ -117,7 +166,14 @@ def freeze(k: Kernel, goal_id: str, root: Path, force: bool = False) -> int:
             else:
                 raise LupusError("PROTECTED_PATH_MISSING", rel)
         whole_project = bool(_excepted(k, goal_id))
+        files += _named(root, _names(k, goal_id))       # existing collection hooks are frozen like any test file
         files = sorted({os.path.normpath(f) for f in files} - _excepted(k, goal_id))
+        for c in goals.criteria(k, goal_id):
+            for rel in c["verifier"].get("frozen_trees", []):
+                if _inside(root, rel).is_dir():
+                    k.run("INSERT OR REPLACE INTO protected_file(goal_id, acceptance_revision, path, sha256, content, "
+                          "frozen_at) VALUES (?,?,?,?, NULL, ?)", goal_id, revision, os.path.normpath(rel) + os.sep,
+                          tree_fingerprint(root, rel, strict=True), k.now())
         for c in goals.criteria(k, goal_id):
             for rel in c["verifier"].get("forbid_new", []):
                 # A file that changes which tests run (conftest.py, pytest.ini, …) and does not
@@ -139,8 +195,9 @@ def freeze(k: Kernel, goal_id: str, root: Path, force: bool = False) -> int:
                 raise LupusError("PROTECT_UNRESTORABLE",
                                  f"{rel}: too large or credential-like to keep a restore copy; move it out of the project "
                                  "or use a goal file instead")
-            k.run("INSERT INTO protected_file(goal_id, acceptance_revision, path, sha256, content, frozen_at) "
-                  "VALUES (?,?,?,?,?,?)", goal_id, revision, rel, sha256_bytes(data), data if keep else None, k.now())
+            k.run("INSERT INTO protected_file(goal_id, acceptance_revision, path, sha256, content, frozen_at, mode) "
+                  "VALUES (?,?,?,?,?,?,?)", goal_id, revision, rel, sha256_bytes(data), data if keep else None, k.now(),
+                  _inside(root, rel).stat().st_mode & 0o777)
         if files:
             k.emit("supervisor", "protect.frozen", "goal", goal_id, files=len(files), forced=force)
         return len(files)
@@ -160,7 +217,14 @@ def drift(k: Kernel, goal_id: str, root: Path) -> list[dict]:
         "SELECT * FROM protected_file WHERE goal_id = ? AND acceptance_revision = ?", goal_id, revision)}
     out = []
     real_root = Path(os.path.realpath(root))
+    for rel in _named(root, _names(k, goal_id)):
+        if os.path.normpath(rel) not in rows and os.path.normpath(rel) not in _excepted(k, goal_id):
+            out.append({"path": os.path.normpath(rel), "change": "added", "row": None})
     for rel, row in rows.items():
+        if row["sha256"].startswith("tree:"):
+            if not (root / rel).is_dir() or tree_fingerprint(root, rel.rstrip(os.sep)) != row["sha256"]:
+                out.append({"path": rel, "change": "modified", "row": row})      # detect only: verification fails
+            continue
         path = _plain(real_root, rel)
         if path is None:
             out.append({"path": rel, "change": "redirected", "row": row})     # a symlink now sits on the path
@@ -171,6 +235,8 @@ def drift(k: Kernel, goal_id: str, root: Path) -> list[dict]:
             out.append({"path": rel, "change": "deleted", "row": row})
         elif sha256_file(path) != row["sha256"]:
             out.append({"path": rel, "change": "modified", "row": row})
+        elif (path.stat().st_mode ^ row["mode"]) & 0o111:
+            out.append({"path": rel, "change": "mode", "row": row})      # e.g. a test script made non-executable
     for d in k.q("SELECT path FROM protected_dir WHERE goal_id = ? AND acceptance_revision = ?", goal_id, revision):
         base = _plain(real_root, d["path"])
         if base is not None and base.is_dir():
@@ -196,19 +262,22 @@ def restore(k: Kernel, goal_id: str, root: Path, keep_dir: Path | None = None) -
         if target is None:
             unrestorable.append(item["path"])      # never write through a symlinked path
             continue
-        if keep_dir is not None and target.is_file() and (
+        if keep_dir is not None and target.is_file() and item["change"] != "mode" and (
                 item["change"] == "added" or item["row"]["content"] is not None):
             saved = keep_dir / item["path"]
             saved.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             atomic_write(saved, target.read_bytes())
-        if item["change"] == "added":
+        if item["change"] == "mode":
+            target.chmod(item["row"]["mode"])
+            restored.append(f"{item['path']} (실행 권한 되돌림)")
+        elif item["change"] == "added":
             target.unlink(missing_ok=True)
             restored.append(f"{item['path']} (추가된 파일 제거)")
         elif item["row"]["content"] is None:
             unrestorable.append(item["path"])
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write(target, bytes(item["row"]["content"]), mode=0o644)
+            atomic_write(target, bytes(item["row"]["content"]), mode=item["row"]["mode"])
             restored.append(f"{item['path']} ({'삭제' if item['change'] == 'deleted' else '수정'} 되돌림)")
     if restored or unrestorable:
         k.emit("supervisor", "protect.restored", "goal", goal_id, restored=restored, unrestorable=unrestorable,

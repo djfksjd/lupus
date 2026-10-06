@@ -9,6 +9,7 @@ State machine (docs/CONTRACT.md has the full table):
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +47,7 @@ TASK_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "CANCELLED": (),
 }
 
-VERIFIER_KINDS = ("file_contains", "file_sha256", "command", "red_test")
+VERIFIER_KINDS = ("file_contains", "file_sha256", "command", "red_test", "document", "judge", "user_approval")
 EXECUTING_KINDS = ("command", "red_test")
 
 
@@ -108,6 +109,9 @@ def wait_reasons(k: Kernel, goal_id: str) -> list[dict]:
 
 # ---------------------------------------------------------------- creation
 
+_IMAGE = re.compile(r"[a-z0-9][a-z0-9._/-]{0,200}(?::[A-Za-z0-9._-]{1,100})?(?:@sha256:[0-9a-f]{64})?")
+
+
 def _validate_criteria(items: list[dict]) -> list[dict]:
     if not items:
         raise LupusError("ACCEPTANCE_EMPTY", "a goal needs at least one measurable criterion")
@@ -122,8 +126,26 @@ def _validate_criteria(items: list[dict]) -> list[dict]:
             # A command's evidence is tied to the files it declares; without them it could never
             # be recognised as out of date.
             raise LupusError("CRITERION_INVALID", f"{cid}: command verifier needs argv and paths")
+        if verifier["kind"] in ("document", "judge", "user_approval") and not verifier.get("path"):
+            raise LupusError("CRITERION_INVALID", f"{cid}: {verifier['kind']} needs a path")
+        if verifier["kind"] == "judge":
+            rubric = verifier.get("rubric")
+            if (not isinstance(rubric, list) or not 1 <= len(rubric) <= 12 or not isinstance(verifier.get("driver"), str)
+                    or any(not isinstance(r, str) or not r.strip() or len(r) > 300 for r in rubric)):
+                raise LupusError("CRITERION_INVALID", f"{cid}: judge needs a driver and a rubric of 1..12 short items")
+        image = verifier.get("container")
+        if image is not None and (not isinstance(image, str) or not _IMAGE.fullmatch(image)):
+            raise LupusError("CRITERION_INVALID", f"{cid}: container must be an image name")
+        env = verifier.get("env", {})
+        if not isinstance(env, dict) or any(
+                not isinstance(n, str) or not isinstance(v, str) or not n.replace("_", "").isalnum()
+                or n in ("PATH", "HOME", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES") for n, v in env.items()):
+            raise LupusError("CRITERION_INVALID", f"{cid}: env must map plain variable names to strings")
         declared = [verifier[key] for key in ("path",) if key in verifier] + list(verifier.get("paths", [])) + list(
-            verifier.get("protect", [])) + list(verifier.get("protect_except", [])) + list(verifier.get("forbid_new", []))
+            verifier.get("protect", [])) + list(verifier.get("protect_except", [])) + list(verifier.get("forbid_new", [])) + list(
+            verifier.get("frozen_trees", []))
+        if any(not isinstance(n, str) or not n or "/" in n or n in (".", "..") for n in verifier.get("forbid_new_names", [])):
+            raise LupusError("CRITERION_INVALID", f"{cid}: forbid_new_names are plain file names")
         for rel in declared:
             # Project-relative only. An absolute path or a ".." could point verification, protection
             # or restoration at something outside the project.
@@ -153,6 +175,11 @@ def submit(
         if k.one("SELECT 1 FROM project WHERE project_id = ?", project_id) is None:
             raise LupusError("PROJECT_NOT_FOUND", project_id)
         goal_id = new_id("goal")
+        if parent_budget_id is None:
+            # Shared caps the user set for this project or for everything (see alpha.py).
+            shared = k.one("SELECT budget_id FROM alpha WHERE project_id = ? AND budget_id IS NOT NULL", project_id) or k.one(
+                "SELECT budget_id FROM alpha WHERE scope = 'global' AND budget_id IS NOT NULL")
+            parent_budget_id = shared["budget_id"] if shared else None
         budget_id = budget.create(k, f"goal:{goal_id}", caps, parent_budget_id)
         now = k.now()
         k.run(
@@ -351,7 +378,9 @@ def revise_acceptance(
             raise LupusError("USER_AUTHORITY_REQUIRED", f"criteria changed or removed: {','.join(changed)}")
         executing = [cid for cid, c in new.items() if cid not in old and (
             c["verifier"]["kind"] in EXECUTING_KINDS or c["verifier"].get("protect") or c["verifier"].get("env_pass")
-            or "protect_except" in c["verifier"] or c["verifier"].get("sandbox") is False)]
+            or "protect_except" in c["verifier"] or c["verifier"].get("sandbox") is False
+            or c["verifier"]["kind"] in ("judge", "user_approval") or c["verifier"].get("env")
+            or c["verifier"].get("container"))]
         if executing and changed_by != "user":
             # A command verifier is arbitrary code execution on this machine; `protect` decides which
             # files get restored; `env_pass` hands out secrets. None of that is a supervisor's call.

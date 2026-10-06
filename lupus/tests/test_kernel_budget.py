@@ -43,9 +43,11 @@ class KernelTests(Env):
         from lupus.kernel import SCHEMA_VERSION
         goal = self.goal()
         # Rebuild this database as it looked before the memory graph existed (schema v1).
-        for table in ("protected_file", "protected_dir", "recall", "edge", "node_tombstone", "node_fts", "node"):
+        for table in ("session", "job", "alpha", "service_call", "protected_file", "protected_dir", "recall", "edge",
+                      "node_tombstone", "node_fts", "node"):
             self.k.conn.execute(f"DROP TABLE {table}")
         self.k.conn.execute("ALTER TABLE project DROP COLUMN allow_unconfined_reads")
+        self.k.conn.execute("ALTER TABLE goal DROP COLUMN priority")
         self.k.conn.execute("DELETE FROM schema_migration WHERE version > 1")
         self.reopen()
         self.assertEqual(self.k.one("SELECT MAX(version) FROM schema_migration")[0], SCHEMA_VERSION)

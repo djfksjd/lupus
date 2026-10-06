@@ -1,0 +1,1415 @@
+{
+ "date": "2026-10-06",
+ "part": "simple",
+ "cli_versions": {
+  "native_claude": "2.1.290 (Claude Code)",
+  "native_codex": "codex-cli 0.160.0"
+ },
+ "repeats": 3,
+ "rows": [
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 21801,
+   "cached_input": 106335,
+   "output": 1272,
+   "turns": 5,
+   "seconds": 16.2,
+   "list_cost_usd": 0.2211,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 22001,
+   "cached_input": 106555,
+   "output": 1435,
+   "turns": 5,
+   "seconds": 17.3,
+   "list_cost_usd": 0.226,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 21895,
+   "cached_input": 106472,
+   "output": 1180,
+   "turns": 5,
+   "seconds": 15.4,
+   "list_cost_usd": 0.22,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4403,
+   "cached_input": 13439,
+   "output": 936,
+   "turns": 4,
+   "seconds": 12.0,
+   "list_cost_usd": 0.0566,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4359,
+   "cached_input": 13439,
+   "output": 876,
+   "turns": 4,
+   "seconds": 12.2,
+   "list_cost_usd": 0.0551,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "A",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4314,
+   "cached_input": 13439,
+   "output": 797,
+   "turns": 4,
+   "seconds": 10.9,
+   "list_cost_usd": 0.0531,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4303,
+   "cached_input": 7942,
+   "output": 327,
+   "turns": 2,
+   "seconds": 6.4,
+   "list_cost_usd": 0.0425,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4345,
+   "cached_input": 7942,
+   "output": 369,
+   "turns": 2,
+   "seconds": 6.5,
+   "list_cost_usd": 0.0437,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "C",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4341,
+   "cached_input": 7942,
+   "output": 365,
+   "turns": 2,
+   "seconds": 6.6,
+   "list_cost_usd": 0.0436,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11685,
+   "cached_input": 20616,
+   "output": 2107,
+   "turns": 3,
+   "seconds": 19.9,
+   "list_cost_usd": 0.0359,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 12446,
+   "cached_input": 33176,
+   "output": 3202,
+   "turns": 4,
+   "seconds": 30.3,
+   "list_cost_usd": 0.0442,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11766,
+   "cached_input": 20261,
+   "output": 2177,
+   "turns": 3,
+   "seconds": 20.5,
+   "list_cost_usd": 0.0364,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 22383,
+   "cached_input": 106013,
+   "output": 1591,
+   "turns": 8,
+   "seconds": 19.6,
+   "list_cost_usd": 0.2321,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 22509,
+   "cached_input": 106119,
+   "output": 1672,
+   "turns": 8,
+   "seconds": 20.1,
+   "list_cost_usd": 0.2347,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 22195,
+   "cached_input": 106147,
+   "output": 1569,
+   "turns": 6,
+   "seconds": 19.5,
+   "list_cost_usd": 0.2301,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4624,
+   "cached_input": 13338,
+   "output": 978,
+   "turns": 5,
+   "seconds": 11.9,
+   "list_cost_usd": 0.0592,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4627,
+   "cached_input": 13338,
+   "output": 1056,
+   "turns": 5,
+   "seconds": 12.6,
+   "list_cost_usd": 0.0608,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4539,
+   "cached_input": 13338,
+   "output": 924,
+   "turns": 5,
+   "seconds": 11.4,
+   "list_cost_usd": 0.0574,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4335,
+   "cached_input": 7959,
+   "output": 338,
+   "turns": 2,
+   "seconds": 6.4,
+   "list_cost_usd": 0.043,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4243,
+   "cached_input": 7959,
+   "output": 246,
+   "turns": 2,
+   "seconds": 5.3,
+   "list_cost_usd": 0.0404,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4359,
+   "cached_input": 7959,
+   "output": 362,
+   "turns": 2,
+   "seconds": 6.4,
+   "list_cost_usd": 0.0437,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11654,
+   "cached_input": 42015,
+   "output": 1970,
+   "turns": 5,
+   "seconds": 17.5,
+   "list_cost_usd": 0.0373,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11618,
+   "cached_input": 30703,
+   "output": 1943,
+   "turns": 5,
+   "seconds": 19.1,
+   "list_cost_usd": 0.036,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11347,
+   "cached_input": 30966,
+   "output": 1669,
+   "turns": 4,
+   "seconds": 16.8,
+   "list_cost_usd": 0.0341,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 22093,
+   "cached_input": 106359,
+   "output": 1378,
+   "turns": 4,
+   "seconds": 16.6,
+   "list_cost_usd": 0.2255,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A0",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 22072,
+   "cached_input": 106245,
+   "output": 1434,
+   "turns": 4,
+   "seconds": 17.1,
+   "list_cost_usd": 0.2265,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A0",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 22383,
+   "cached_input": 139096,
+   "output": 1717,
+   "turns": 6,
+   "seconds": 19.9,
+   "list_cost_usd": 0.2412,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3975,
+   "cached_input": 13014,
+   "output": 702,
+   "turns": 3,
+   "seconds": 9.6,
+   "list_cost_usd": 0.0484,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3996,
+   "cached_input": 13014,
+   "output": 727,
+   "turns": 3,
+   "seconds": 10.1,
+   "list_cost_usd": 0.0491,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "A",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3975,
+   "cached_input": 13014,
+   "output": 690,
+   "turns": 3,
+   "seconds": 9.8,
+   "list_cost_usd": 0.0482,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3985,
+   "cached_input": 7750,
+   "output": 204,
+   "turns": 2,
+   "seconds": 5.3,
+   "list_cost_usd": 0.0375,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 3985,
+   "cached_input": 7750,
+   "output": 204,
+   "turns": 2,
+   "seconds": 4.9,
+   "list_cost_usd": 0.0375,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "C",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 4082,
+   "cached_input": 7750,
+   "output": 301,
+   "turns": 2,
+   "seconds": 6.3,
+   "list_cost_usd": 0.0402,
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 10315,
+   "cached_input": 9217,
+   "output": 993,
+   "turns": 2,
+   "seconds": 9.7,
+   "list_cost_usd": 0.0265,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 10237,
+   "cached_input": 9217,
+   "output": 1220,
+   "turns": 2,
+   "seconds": 9.4,
+   "list_cost_usd": 0.0275,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_claude",
+   "task": "report",
+   "condition": "CT",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 10388,
+   "cached_input": 9217,
+   "output": 1090,
+   "turns": 2,
+   "seconds": 8.7,
+   "list_cost_usd": 0.0271,
+   "models": [
+    "claude-haiku-4-5-20251001"
+   ],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "haiku"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 8003,
+   "cached_input": 72960,
+   "output": 446,
+   "turns": 1,
+   "seconds": 18.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 8022,
+   "cached_input": 72960,
+   "output": 449,
+   "turns": 1,
+   "seconds": 19.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A0",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 7950,
+   "cached_input": 72960,
+   "output": 411,
+   "turns": 1,
+   "seconds": 18.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6484,
+   "cached_input": 65024,
+   "output": 401,
+   "turns": 1,
+   "seconds": 15.9,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 12014,
+   "cached_input": 59520,
+   "output": 416,
+   "turns": 1,
+   "seconds": 17.3,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "A",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6518,
+   "cached_input": 65024,
+   "output": 413,
+   "turns": 1,
+   "seconds": 17.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 201
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5898,
+   "cached_input": 29952,
+   "output": 171,
+   "turns": 1,
+   "seconds": 9.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5858,
+   "cached_input": 29952,
+   "output": 99,
+   "turns": 1,
+   "seconds": 7.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "C",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5940,
+   "cached_input": 29952,
+   "output": 180,
+   "turns": 1,
+   "seconds": 9.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5937,
+   "cached_input": 29952,
+   "output": 172,
+   "turns": 1,
+   "seconds": 15.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5933,
+   "cached_input": 29952,
+   "output": 171,
+   "turns": 1,
+   "seconds": 10.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "slugify",
+   "condition": "CT",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11282,
+   "cached_input": 24576,
+   "output": 173,
+   "turns": 1,
+   "seconds": 9.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 14773,
+   "cached_input": 66176,
+   "output": 366,
+   "turns": 1,
+   "seconds": 16.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 8610,
+   "cached_input": 73472,
+   "output": 434,
+   "turns": 1,
+   "seconds": 19.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A0",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 8582,
+   "cached_input": 73472,
+   "output": 432,
+   "turns": 1,
+   "seconds": 16.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6605,
+   "cached_input": 64896,
+   "output": 363,
+   "turns": 1,
+   "seconds": 15.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6589,
+   "cached_input": 64896,
+   "output": 361,
+   "turns": 1,
+   "seconds": 14.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "A",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 12161,
+   "cached_input": 59392,
+   "output": 377,
+   "turns": 1,
+   "seconds": 16.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 144
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5962,
+   "cached_input": 29952,
+   "output": 159,
+   "turns": 1,
+   "seconds": 9.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5971,
+   "cached_input": 29952,
+   "output": 165,
+   "turns": 1,
+   "seconds": 8.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "C",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5969,
+   "cached_input": 29952,
+   "output": 162,
+   "turns": 1,
+   "seconds": 9.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5955,
+   "cached_input": 29952,
+   "output": 175,
+   "turns": 1,
+   "seconds": 10.2,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11352,
+   "cached_input": 24576,
+   "output": 165,
+   "turns": 1,
+   "seconds": 8.7,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "bugfix",
+   "condition": "CT",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11334,
+   "cached_input": 24576,
+   "output": 179,
+   "turns": 1,
+   "seconds": 9.3,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A0",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 7847,
+   "cached_input": 72704,
+   "output": 444,
+   "turns": 1,
+   "seconds": 23.4,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A0",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 14616,
+   "cached_input": 65920,
+   "output": 417,
+   "turns": 1,
+   "seconds": 26.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A0",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 14608,
+   "cached_input": 65920,
+   "output": 421,
+   "turns": 1,
+   "seconds": 16.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6263,
+   "cached_input": 47360,
+   "output": 488,
+   "turns": 1,
+   "seconds": 22.1,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6463,
+   "cached_input": 64896,
+   "output": 430,
+   "turns": 1,
+   "seconds": 18.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "A",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 6209,
+   "cached_input": 47360,
+   "output": 417,
+   "turns": 1,
+   "seconds": 14.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "human_prompt_chars": 219
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "C",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11100,
+   "cached_input": 24576,
+   "output": 198,
+   "turns": 1,
+   "seconds": 10.0,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "C",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5830,
+   "cached_input": 29824,
+   "output": 175,
+   "turns": 1,
+   "seconds": 9.3,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "C",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 11086,
+   "cached_input": 24576,
+   "output": 181,
+   "turns": 1,
+   "seconds": 12.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/default"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "CT",
+   "run": 0,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5797,
+   "cached_input": 29824,
+   "output": 136,
+   "turns": 1,
+   "seconds": 7.8,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "CT",
+   "run": 1,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5852,
+   "cached_input": 29824,
+   "output": 189,
+   "turns": 1,
+   "seconds": 10.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  },
+  {
+   "driver": "native_codex",
+   "task": "report",
+   "condition": "CT",
+   "run": 2,
+   "passed": true,
+   "calls": 1,
+   "new_input": 5798,
+   "cached_input": 29824,
+   "output": 135,
+   "turns": 1,
+   "seconds": 8.6,
+   "list_cost_usd": null,
+   "models": [],
+   "errors": [],
+   "attempts": 1,
+   "variants": [
+    "default/low"
+   ]
+  }
+ ]
+}

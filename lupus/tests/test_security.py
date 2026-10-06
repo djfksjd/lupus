@@ -1,7 +1,12 @@
 """Security properties: what a worker, a verifier or planted text must not be able to reach."""
 
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 from unittest import mock
 
 from lupus import adapters, goals, memory, supervisor, verify
@@ -200,3 +205,115 @@ class VerifierSandboxTests(Env):
         with mock.patch.object(verify, "sandbox_available", return_value=False):
             self.assertRefused("VERIFIER_SANDBOX_UNAVAILABLE", verify.run, v, self.root)
             self.assertEqual(verify.run({**v, "sandbox": False}, self.root)[0], "PASS")     # explicit, user-only opt-out
+
+
+class WorkerSandboxTests(Env):
+    """A headless Claude worker runs inside an OS sandbox of its own."""
+
+    def setUp(self):
+        super().setUp()
+        from lupus.util import sandbox_available
+        if not sandbox_available():
+            self.skipTest("no OS sandbox on this machine")
+        self.canary_dir = Path(tempfile.mkdtemp(prefix=".lupus-test-canary-", dir=Path.home()))
+        self.addCleanup(shutil.rmtree, self.canary_dir, True)
+        (self.canary_dir / "canary.txt").write_text("CANARY")
+
+    def worker(self, script: str):
+        from lupus import adapters
+        a = adapters.FakeAdapter(script)
+        a.os_sandbox = "claude"
+        return adapters.execute(a, "p", self.root, lambda pid: None, 30)
+
+    def test_the_worker_cannot_read_or_write_the_home_directory_or_lupus_state(self):
+        script = (f"import pathlib\nout = []\nfor p, mode in (({str(self.canary_dir / 'canary.txt')!r}, 'r'), "
+                  f"({str(self.canary_dir / 'w.txt')!r}, 'w'), ({str(self.home / 'runtime' / 'lupus.db')!r}, 'rb')):\n"
+                  "    try:\n        open(p, mode).close(); out.append('OPEN')\n    except PermissionError:\n        out.append('DENIED')\n"
+                  "pathlib.Path('inside.txt').write_text(' '.join(out))\n")
+        result = self.worker(script)
+        self.assertTrue(result.raw["os_sandbox"])
+        self.assertEqual((self.root / "inside.txt").read_text(), "DENIED DENIED DENIED")
+        self.assertFalse((self.canary_dir / "w.txt").exists())
+
+    def test_the_network_stays_open_for_the_cli_and_its_own_files_stay_usable(self):
+        from lupus.util import sandbox_profile_worker
+        profile = sandbox_profile_worker(self.root, "claude")
+        self.assertNotIn("deny network", profile)
+        self.assertIn("/.claude\")", profile)
+        for secretish in ("/.ssh", "/.aws", "/.codex", "/.config\")", "/.gnupg"):
+            self.assertNotIn(secretish, profile)
+        # the CLI's state is writable, but nothing that decides what a later ordinary session runs
+        deny = [line for line in profile.splitlines() if line.startswith("(deny file-write* (subpath")]
+        self.assertTrue(profile.index("(allow file-write*") < profile.index(deny[-1]))       # later rule wins
+        for planted in ("/.claude/settings.json", "/.claude/hooks", "/.claude/commands", "/.claude/plugins", "/.claude.json"):
+            self.assertIn(planted + '")', deny[-1])
+
+    def test_codex_is_left_to_its_own_sandbox(self):
+        from lupus import adapters
+        self.assertIsNone(adapters.CodexAdapter().os_sandbox)       # a sandbox cannot be applied inside another one
+        self.assertEqual(adapters.ClaudeAdapter().os_sandbox, "claude")
+
+
+DOCKER = shutil.which("docker")
+
+
+def _image(name: str) -> bool:
+    return bool(DOCKER) and subprocess.run([DOCKER, "image", "inspect", name], capture_output=True).returncode == 0
+
+
+@unittest.skipUnless(_image("node:24"), "docker with the node:24 image is not available")
+class ContainerVerifierTests(Env):
+    def test_tests_run_in_a_container_with_no_network_and_only_the_project(self):
+        (self.root / "package.json").write_text('{"name": "demo", "type": "module"}\n')
+        (self.root / "t.test.mjs").write_text(
+            "import test from 'node:test'; import assert from 'node:assert'; import fs from 'node:fs'; import os from 'node:os';\n"
+            "test('isolated', async () => {\n"
+            "  assert.equal(fs.existsSync('/work/package.json'), true);\n"
+            f"  assert.equal(fs.existsSync({str(self.home)!r}), false);\n"
+            "  assert.notEqual(os.platform(), 'darwin');\n"
+            "  await assert.rejects(fetch('https://example.com', {signal: AbortSignal.timeout(3000)}));\n});\n")
+        v = {"kind": "command", "argv": ["node", "--test", "--test-reporter=tap"], "paths": ["."], "require_tests": "node",
+             "container": "node:24", "timeout_s": 120}
+        self.assertEqual(verify.run(v, self.root)[::2], ("PASS", "exit 0"))
+        left = subprocess.run([DOCKER, "ps", "-aq", "--filter", "label=lupus=verifier"], capture_output=True, text=True)
+        self.assertEqual(left.stdout.strip(), "")
+
+    def test_only_the_user_can_ask_for_a_container_and_the_image_name_is_checked(self):
+        from lupus import goals
+        g = self.goal()
+        v = {"kind": "command", "argv": ["true"], "paths": ["a.txt"], "container": "node:24"}
+        crits = goals.criteria(self.k, g["goal_id"]) + [{"id": "cx", "text": "x", "verifier": v}]
+        self.assertRefused("USER_AUTHORITY_REQUIRED", goals.revise_acceptance, self.k, g["goal_id"], crits, "supervisor", "r", 1)
+        bad = [{"id": "c0", "text": "x", "verifier": {**v, "container": "node:24 --privileged"}}]
+        self.assertRefused("CRITERION_INVALID", goals.submit, self.k, self.project["project_id"], "o", bad, {"calls": 1, "attempts": 1, "active_ms": 1})
+
+
+class ContainerRecordTests(Env):
+    def test_the_container_name_is_recorded_with_the_process_group(self):
+        from lupus import runs
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True)
+        self.addCleanup(lambda: (proc.kill(), proc.wait()))
+        runs.aux_recorder(self.k, self.project["project_id"], "verifier")(proc.pid, ":container:lupus-0123abcd")
+        row = runs.aux_alive(self.k)[0]
+        self.assertEqual(runs.container_of(row["purpose"]), "lupus-0123abcd")
+        self.assertIsNone(runs.container_of("verifier"))
+        proc.kill(); proc.wait()
+        with mock.patch("lupus.runs.container_alive", return_value=True):      # the client is gone, the container is not
+            self.assertEqual(len(runs.aux_alive(self.k)), 1)
+            self.assertRefused("WRITER_STILL_ALIVE", runs.clear_aux, self.k, proc.pid)
+        with mock.patch("lupus.runs.container_alive", return_value=False):
+            self.assertEqual(runs.aux_alive(self.k), [])
+
+
+class HookRecordTests(Env):
+    def test_the_in_session_check_is_recorded_like_any_verifier(self):
+        from lupus import hook, session
+        (self.root / "test_calc.py").write_text("import unittest\nclass T(unittest.TestCase):\n    def test_a(self): self.fail('x')\n")
+        goal_id = session.start(self.k, self.project, "user")["goal_id"]
+        session.adapter(self.k, goal_id, "claude")
+        seen = []
+        real = verify.run
+        with mock.patch.object(verify, "run", lambda v, root, on_spawn=None, on_exit=None: (seen.append((on_spawn, on_exit)), real(v, root, on_spawn, on_exit))[1]):
+            self.assertEqual(hook.stop(self.k, goal_id, {})[0], 2)
+        self.assertTrue(all(callable(a) and callable(b) for a, b in seen) and seen)
+        self.assertEqual(self.k.one("SELECT COUNT(*) FROM aux_process")[0], 0)        # recorded while running, cleared when gone

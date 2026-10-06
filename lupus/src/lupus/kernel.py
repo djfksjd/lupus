@@ -34,6 +34,7 @@ DEFAULT_POLICY = {
     "batch_max_tasks": 3,               # tasks one worker call may cover on drivers that batch; 1 = off
     "context_inline_bytes": 12_000,     # task files handed over in the prompt; 0 = off
     "memory_min_overlap": 2,            # distinct topic tokens a node must share with the task
+    "session_stop_blocks": 3,           # times an interactive session's own check may send the model back to work
 }
 
 

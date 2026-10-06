@@ -11,16 +11,16 @@
 [English](./README.md) · [한국어](./README.ko.md) · [简体中文](./README.zh-CN.md) · [日本語](./README.ja.md)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-1f2937?style=flat-square)](./LICENSE)
-![Stage](https://img.shields.io/badge/stage-v0.1%20alpha-d69526?style=flat-square)
+![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-224%20passing-2ea043?style=flat-square)
+![Tests](https://img.shields.io/badge/offline%20tests-275%20passing-2ea043?style=flat-square)
 
 </div>
 
-Lupus runs the `claude` and `codex` CLIs you already have (with your existing subscription login) as workers, and decides "done" itself: a goal is complete only when deterministic checks pass, never because a model says so. It keeps goals, budgets, attempts, checkpoints and project knowledge in a local SQLite database, so work survives crashes, quota limits and switching from one AI to the other.
+Lupus runs the `claude` and `codex` CLIs you already have (with your existing subscription login) as workers, and decides "done" itself: a goal is complete only when checks the worker cannot influence pass, never because a model said so.
 
-**This is `v0.1 alpha`.** It is a single-user tool for macOS, it has no sandbox (workers run with your user's permissions), and the measurements below are small. Do not use it on sensitive material.
+**This is `v0.2 alpha`.** A single-user tool for macOS. Workers and verifiers run in OS sandboxes, not in a VM. The measurements below are small. Do not use it on sensitive material.
 
 ## What it does
 
@@ -28,39 +28,53 @@ Lupus runs the `claude` and `codex` CLIs you already have (with your existing su
 |---|---|
 | **Evidence-only completion** | DONE requires passing checks bound to the current acceptance criteria. A worker's "I fixed it" is not evidence. |
 | **Frozen tests** | Test files and runner config are frozen before a worker starts. Edited, deleted or skipped tests are put back before verification. |
+| **Python, Node, Go, Rust — or any command** | unittest, pytest, node:test, jest, vitest, `go test`, `cargo test` are recognised from the project's files. Anything else: `--check "<your test command>"`. |
+| **One line for any request** | `lupus fix-tests` turns the red tests it observes into the goal. `lupus do "<request>"` drafts a failing test, you approve it, then it implements. |
+| **Documents, plans, research** | `lupus write`: a rubric you approve first, a judge that is a different AI and must quote the document for every item it accepts, then your sign-off on the exact version. |
+| **Your normal interactive session** | `lupus session` starts your usual `claude` / `codex` screen with your own configuration, freezes the tests, and verifies by itself when you exit. |
 | **Claude ↔ Codex handoff** | When one AI stops (quota, crash, your choice), the other continues from a validated checkpoint. Finished steps are not redone; budgets and attempt counts are not reset. |
+| **Several projects, in the background** | `lupus alpha-run` advances every open goal in turn under shared budgets and switches AI when one runs out of quota. `--background` keeps it running after the terminal closes. |
 | **Budgets and loop control** | Calls, attempts, time and tokens are reserved before work starts. Repeating the same failed attempt is refused before any model is called. |
 | **Crash-safe checkpoints** | Recovery objects are written durably before the database commit; tested by killing the process at every boundary. |
-| **Lean launches** | Workers start without the plugins, hooks, MCP servers and skill descriptions a task does not need; task files are placed in the prompt. |
-| **Memory graph** | Project knowledge as typed, linked nodes with provenance. Each recall is tied to an attempt and scored by that attempt's verified outcome. |
-| **One command for failing tests** | `lupus fix-tests` needs no goal file: the supervisor observes the red tests itself and that failure becomes the goal. |
+| **OS-level confinement** | The Claude worker and every verifier run inside a macOS sandbox applied by Lupus; verifiers can run in a Docker container instead. |
+| **Memory that has to earn its place** | Project knowledge as typed, linked nodes. `lupus learn` proposes procedures from recorded failures; they stay candidates until later verified outcomes promote or retire them. |
 
-## Measured on one Mac (2026-10-05)
+## Measured on one Mac (2026-10-06)
 
-Same tasks, same checks, fresh directory per run. Claude Code 2.1.289, codex-cli 0.160.0. Every run passed its checks. Tokens = new input + cached input + output.
+Same tasks, same checks, fresh directory per run, 3 runs per cell, every run passed. Claude Code 2.1.290, codex-cli 0.160.0. Tokens = new input + cached input + output, summed over the 3 tasks; mean of 3 runs.
 
-| Situation | Your CLI as configured | Lupus |
+| 3 one-shot coding tasks | Your CLI as configured | Same CLI, plugins/MCP off | Lupus |
+|---|---|---|---|
+| Claude | 400,640 tokens · 53.9 s | 55,290 · 33.5 s | **37,216 · 18.0 s** |
+| Codex | 244,458 tokens · 58.7 s | 203,780 · 50.6 s | **107,931 · 28.5 s** |
+
+| Other situations | Without Lupus | Lupus |
 |---|---|---|
-| 3 one-shot coding tasks, Claude | 135,729 tokens · 15.0 s | 12,166 tokens · 6.2 s |
-| 3 one-shot coding tasks, Codex | 88,530 tokens · 26.2 s | 36,298 tokens · 12.2 s |
-| 4-step project, Claude | 298,327 tokens · 52.0 s | 70,768 tokens · 42.5 s |
-| Same project, interrupted, other AI takes over | 337,133 tokens · 82.0 s · 1,139 chars of re-explanation | 138,989 tokens · 64.1 s · none |
-| Fix failing tests, Claude | 136,712 tokens · 16.2 s | 12,817 tokens · 5.7 s · one command |
+| 4-step project, Claude (1–2 runs, 2026-10-05) | 298,327 tokens · 52.0 s | 70,768 · 42.5 s |
+| Same project interrupted, other AI takes over (2026-10-05) | 337,133 tokens · 82.0 s · 1,139 chars of re-explanation | 138,989 · 64.1 s · none |
+| 4-step project, Codex, one call per step vs batched | 185,278 tokens · 89.0 s | 122,595 · 53.1 s |
+| Feature request via `lupus do` vs one plain lean call, Claude (3 runs) | 17,497 tokens · 9.5 s | 28,852 · 17.4 s |
+| Same, Codex (3 runs) | 72,117 tokens · 18.6 s | 74,212 · 27.1 s |
+
+**On a real project.** Three changes the maintainers of [hukkin/tomli](https://github.com/hukkin/tomli) really made (a bug fix, a TOML 1.1 feature, a hardening change): source as it was before the commit, tests as they were after it, nothing else given. `lupus fix-tests` finished all three on the first attempt with both Claude (36k–64k tokens, 10–21 s) and Codex (82k–119k tokens, 16–21 s), judged by the upstream tests, which no run tried to edit.
+
+**Judging documents.** A document missing a rubric item and a document that tells the judge to pass it were both rejected by both judges; the complete one was accepted (6 of 6 as expected, one run each).
 
 Read these honestly:
 
-- **Most of the saving comes from not loading unneeded configuration and from the prompt technique** (files in the prompt, single pass). A plain CLI call using the same technique without Lupus used the same tokens on one-shot tasks. What the supervisor adds there is verified completion, not cheaper tokens.
-- Defining a goal with checks costs about 1.9× the typing of a plain prompt (except `fix-tests`).
-- In the interrupted scenario the Codex leg used 33% **more** than the plain CLI, because Lupus calls once per step and Codex has a large fixed input per call.
-- 1–2 runs per cell. On three harder tasks with hidden holdout tests, all 36 runs passed and there were no false passes, so the benchmark could not show that frozen tests reduce false completion.
+- **Most of the saving against "your CLI as configured" comes from not loading plugins, MCP servers and skill descriptions**, which you can also get without Lupus (middle column). What Lupus adds on top is the prompt technique and the verification.
+- **`lupus do` costs more than a plain call** (1.65× tokens on Claude, about the same on Codex, 1.5–1.8× time) and all holdout tests passed either way. What it buys is a check you approved, not a better result on these tasks. Drafting the test with a lighter model was tried and cost more, so it is not used.
+- `--cheap-first` did not save tokens on Claude in this measurement (107,738 vs 37,216).
+- Three runs per cell, one machine, small tasks. Timings in the first table were taken while other CLI calls were running.
+- On three harder tasks with hidden holdout tests (2026-10-05), all 36 runs passed with and without Lupus, so that benchmark could not show that frozen tests reduce false completion.
 
 Raw data and scripts: [`lupus/docs/`](./lupus/docs) · [`lupus/evaluations/`](./lupus/evaluations) · full record in [docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](./docs/design/LUPUS-IMPLEMENTATION-REVIEW.md).
 
 ## When to use it, and when not
 
-**Use it** for work that has (or can have) a machine check: failing tests, multi-step tasks with tests, long jobs that may be interrupted or moved between Claude and Codex, projects with conventions worth recording once.
+**Use it** for failing tests, feature work that deserves a check you have read, multi-step or long jobs that may be interrupted or moved between Claude and Codex, documents that someone other than the writer should judge, and interactive sessions in which you want the tests to stay untouched.
 
-**Use the plain CLI** for one-off questions, exploratory back-and-forth, anything that needs your plugins/MCP servers, and work that cannot be checked by a program (planning, research, prose, design).
+**Use the plain CLI** for one-off questions and quick exploration: there Lupus only adds steps.
 
 ## Quick start
 
@@ -74,24 +88,26 @@ python3 -m pip install -e .          # or: export PYTHONPATH=src and use `python
 lupus init                           # creates ~/.lupus (database + vault)
 lupus probe --live                   # measures what your installed CLIs support (2 tiny calls)
 
-cd ~/work/my-project                 # a project with failing tests
+cd ~/work/my-project
 lupus fix-tests --driver claude      # observe red -> freeze tests -> fix -> verify
 lupus do "add a --json flag to the export command" --driver claude
-                                     # any request: drafts a failing test, you approve it, then implements
+                                     # drafts a failing test, you approve it, then implements
+lupus session --driver claude        # your usual interactive Claude Code, tests frozen, verified on exit
+lupus write "migration plan for the billing tables" --out docs/plan.md --driver claude
+                                     # rubric you approve -> written -> judged by the other AI -> your sign-off
 ```
 
-A goal with your own checks:
+Several goals, unattended:
 
 ```bash
-lupus project-add ~/work/site --name site --providers anthropic,openai
-lupus goal-submit <project_id> goal.json
-lupus run <goal_id> --driver claude
-lupus status <goal_id>               # state, budget, can it resume, and why not
-lupus run <goal_id> --driver codex   # continue with the other AI (validated handoff)
-lupus graph --open                   # knowledge graph view
+lupus alpha-budget --calls 300 --attempts 40 --minutes 600     # one cap for everything
+lupus alpha-run --drivers claude,codex --background            # all open goals in turn; switches AI on quota
+lupus jobs        # what is running          lupus logs <job>        lupus stop <job>
+lupus alpha-status                                             # every project at a glance
+lupus learn --driver claude                                    # candidate procedures from recorded failures
 ```
 
-`goal.json` format and all commands: [`lupus/README.md`](./lupus/README.md).
+A goal with your own checks, other languages, containers, the knowledge graph and every command: [`lupus/README.md`](./lupus/README.md).
 
 ## How it works
 
@@ -106,7 +122,7 @@ lupus graph --open                   # knowledge graph view
 
 - The supervisor is ordinary code. No model call decides routing, budgets, retries or completion.
 - Workers get a prompt and a directory. They never get the database, the CLI or any authority.
-- Nothing global is modified: no hooks, no PATH changes, no edits to `~/.claude` or `~/.codex`.
+- Nothing global is modified: no PATH changes, no edits to `~/.claude` or `~/.codex`. The hooks of `lupus session` are passed to that one process.
 
 <div align="center">
 <img src="./asset/screenshots/graph.png" alt="Lupus knowledge graph viewer" width="760" />
@@ -115,11 +131,14 @@ lupus graph --open                   # knowledge graph view
 
 ## Limits you should know
 
-- **No VM or container.** Verifiers run in the macOS sandbox and workers are confined by each CLI's own controls, but the CLIs run as you. Protected or customer data must not be given to it. Reads are confined as far as each CLI allows and this is measured with a canary file: Codex is launched with a permission profile that hides your home directory and gives commands no network. A driver whose confinement is not verified needs explicit per-project consent. See [SECURITY.md](./SECURITY.md).
-- Not connected to your normal `claude` / `codex` sessions; you run `lupus` explicitly. No interactive mode.
-- Only Python `unittest`/`pytest` projects are supported by `fix-tests`.
-- Young code. Eight external review rounds found and fixed 60 defects; assume more remain.
-- Subscription quota actually consumed cannot be observed; token counts are what the CLIs report.
+- **Not a VM.** The Claude worker and verifiers run in a macOS sandbox (home directory unreadable except what the CLI itself needs, no writes outside the project and temp, Lupus's own state out of reach); Codex uses its own sandbox with a profile Lupus sets; verifiers can use Docker. The temp directory is shared, the worker's network is open, and an interactive session is not sandboxed at all. Do not give it protected or customer data.
+- **You start it.** `lupus session` wraps your interactive CLI; nothing activates Lupus when you type `claude` yourself. Token usage of an interactive session is not reported by the CLIs, so it is charged at its full reservation.
+- **A judge is an opinion.** The quote check stops unsupported passes, not wrong facts. That is why your sign-off is the last condition. Images and visual design cannot be judged.
+- **Tests are run by the code they test.** Output parsing resists accidents and cheap tricks; code that sets out to forge a runner's whole summary from inside the test process is not something Lupus can detect. Rust unit tests inside source files cannot be frozen (their names are pinned, their bodies are not).
+- **One worker at a time.** `alpha-run` takes goals in turn; it does not run projects in parallel.
+- Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set, and Prime itself is not connected.
+- jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
+- Young code. Eleven external review rounds found and fixed 83 defects; assume more remain.
 
 ## Documentation
 

@@ -16,31 +16,41 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import adapters, budget, goals, handoff, memory, projects, protect, recovery, runs, usage, verify
+from . import adapters, budget, goals, handoff, judging, memory, projects, protect, recovery, runs, service, usage, verify
 from .adapters import Adapter
 from .kernel import Kernel
-from .util import LupusError, crash_point, find_secret_bytes, proc_start, sha256_json
+from .util import LupusError, container_stop, crash_point, find_secret_bytes, proc_start, sha256_json
 
 MAX_SNAPSHOT_BYTES = 256 * 1024
 
 
 def _verify_reserve(criteria: list[dict]) -> dict[str, int]:
-    """Safety reservation for one attempt: the worst-case time of its verifiers, plus one call
-    held back for a safe shutdown/rollback step."""
-    return {"calls": 1, "active_ms": math.ceil(sum(verify.timeout_s(c["verifier"]) for c in criteria) * 1000)}
+    """Safety reservation for one attempt: the worst-case time of its verifiers, one call per
+    judge among them, plus one call held back for a safe shutdown/rollback step."""
+    return {"calls": 1 + sum(c["verifier"]["kind"] == "judge" for c in criteria),
+            "active_ms": math.ceil(sum(verify.timeout_s(c["verifier"]) for c in criteria) * 1000)}
 
 
-def _timed_verify(k: Kernel, project_id: str, criteria: list[dict], root: Path) -> tuple[list[tuple], int]:
-    """Run verifiers. Command verifiers are registered as process groups of the project before
-    they start and cleared only after their group is confirmed empty."""
+def _timed_verify(k: Kernel, goal: dict, criteria: list[dict], root: Path) -> tuple[list[tuple], int, int]:
+    """Run verifiers; returns (results, elapsed ms, model calls made by judges). Command verifiers
+    are registered as process groups of the project before they start and cleared only after
+    their group is confirmed empty."""
     started = time.monotonic()
-    checked = [
-        (c, *verify.run(c["verifier"], root,
-                        on_spawn=lambda pid: runs.register_aux(k, project_id, pid, "verifier"),
-                        on_exit=lambda pid: runs.clear_aux(k, pid)))
-        for c in criteria
-    ]
-    return checked, int((time.monotonic() - started) * 1000)
+    checked, calls = [], 0
+    for c in criteria:
+        if c["verifier"]["kind"] == "judge" and any(v != "PASS" for _, v, _, _ in checked):
+            # A judge costs a model call; it is not asked about a document that already failed a
+            # mechanical check in the same pass.
+            verdict, digest, detail = "FAIL", verify.artifact_hash(c["verifier"], root), "not judged: an earlier check failed"
+        elif c["verifier"]["kind"] in ("judge", "user_approval"):
+            verdict, digest, detail, n = judging.run(k, goal, c, root)
+            calls += n
+        else:
+            verdict, digest, detail = verify.run(
+                c["verifier"], root, on_spawn=runs.aux_recorder(k, goal["project_id"], "verifier"),
+                on_exit=lambda pid: runs.clear_aux(k, pid))
+        checked.append((c, verdict, digest, detail))
+    return checked, int((time.monotonic() - started) * 1000), calls
 
 ENV_ERRORS = ("quota", "rate_limit", "auth", "unavailable")
 
@@ -65,6 +75,8 @@ def _recover(k: Kernel, stop_stale_writer: bool) -> dict[str, Any]:
         ours = proc_start(aux["pid"]) == aux["proc_start"]
         if stop_stale_writer and ours:
             adapters.stop_group(aux["pid"])
+        if stop_stale_writer and runs.container_of(aux["purpose"]):
+            container_stop(runs.container_of(aux["purpose"]))      # the name is random and ours alone
     alive += [{"aux_pid": a["pid"], "purpose": a["purpose"]} for a in runs.aux_alive(k)]
     for run in runs.unstopped(k):
         if run["pid"] is None:
@@ -87,6 +99,7 @@ def _recover(k: Kernel, stop_stale_writer: bool) -> dict[str, Any]:
             closed.append(run["run_id"])
         except LupusError:
             alive.append({"run_id": run["run_id"], "pid": run["pid"]})
+    service.close_interrupted(k)
     return {"runs_closed": closed, "writers_alive": alive, "holds_settled": budget.settle_unowned(k),
             **recovery.reconcile(k)}
 
@@ -273,16 +286,17 @@ def _already_satisfied(k: Kernel, goal: dict, task: dict, criteria: list[dict], 
     charged like any other."""
     goal_id = goal["goal_id"]
     try:
+        held = _verify_reserve(criteria)
         hold = budget.reserve(k, goal["budget_id"], "safety", "pre-attempt verification",
-                              {"active_ms": _verify_reserve(criteria)["active_ms"]}, run_id)
+                              {"active_ms": held["active_ms"], "calls": held["calls"] - 1}, run_id)
     except LupusError:
         return None
     try:
-        checked, verify_ms = _timed_verify(k, goal["project_id"], criteria, root)
+        checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
     except LupusError:
         budget.settle(k, hold, None, "estimated")
         return None
-    budget.settle(k, hold, {"active_ms": verify_ms}, "measured")
+    budget.settle(k, hold, {"active_ms": verify_ms, "calls": judge_calls}, "measured")
     with k.tx():
         runs.guard(k, run_id, token)
         for c, verdict, digest, detail in checked:
@@ -443,19 +457,21 @@ def run_task(
         # Whatever the worker did to the protected files is undone BEFORE verifying, so the
         # checks that run are the ones that were frozen.
         undone = protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id)
-        checked, verify_ms = _timed_verify(k, goal["project_id"], criteria, root)
+        checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
         # Running the checks can itself write into protected paths (a test with side effects):
         # leave the project as frozen, not as the verifier left it.
         protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "after-verify")
     except LupusError as exc:
-        return _abandon(k, run_id, token, attempt_id, task_id, exc, work_actual, observation)
+        # Verification was cut short (e.g. a judge could not answer). What it had already spent is not
+        # known here, so its whole reservation is charged.
+        return _abandon(k, run_id, token, attempt_id, task_id, exc, work_actual, observation, dict(safety))
     if undone["unrestorable"]:
         why = "보호된 검증 파일이 바뀌었고 되돌릴 수 없다: " + ", ".join(undone["unrestorable"])
         checked = [(c, "FAIL", digest, why) for c, _, digest, _ in checked]
     elif undone["restored"]:
         note_undo = "보호된 검증 파일을 건드려 되돌렸다(수정 금지): " + ", ".join(undone["restored"]) + ". "
         checked = [(c, v, digest, (note_undo + detail) if v == "FAIL" else detail) for c, v, digest, detail in checked]
-    safety_actual = {"calls": 0, "active_ms": verify_ms}
+    safety_actual = {"calls": judge_calls, "active_ms": verify_ms}
     verdicts = {c["id"]: verdict for c, verdict, _, _ in checked}
     all_pass = all(v == "PASS" for v in verdicts.values())
     if result.error_class in ENV_ERRORS and not all_pass:
@@ -510,7 +526,7 @@ def run_task(
     return {"status": task_status, "task_id": task_id, "outcome": outcome, "verdicts": verdicts,
             "variant": adapter.variant, "batched_with": [f["task_id"] for f in followers],
             "error_class": result.error_class, "usage_observed": result.usage is not None,
-            "leftover_processes": result.leftover_processes}
+            "os_sandbox": bool(result.raw.get("os_sandbox")), "leftover_processes": result.leftover_processes}
 
 
 def _abandon(k: Kernel, run_id: str, token: int, attempt_id: str, task_id: str, exc: LupusError,
@@ -578,16 +594,17 @@ def _final_verification(k: Kernel, goal_id: str, root: Path) -> str | None:
     if not todo:
         return None
     try:
+        held = _verify_reserve(todo)
         hold = budget.reserve(k, goal["budget_id"], "safety", "final verification",
-                              {"active_ms": _verify_reserve(todo)["active_ms"]})
+                              {"active_ms": held["active_ms"], "calls": held["calls"] - 1})
     except LupusError as exc:
         return exc.code
     try:
-        checked, verify_ms = _timed_verify(k, goal["project_id"], todo, root)
+        checked, verify_ms, judge_calls = _timed_verify(k, goal, todo, root)
     except LupusError as exc:
         budget.settle(k, hold, None, "estimated")      # interrupted: charged in full
         return exc.code
-    budget.settle(k, hold, {"active_ms": verify_ms}, "measured")
+    budget.settle(k, hold, {"active_ms": verify_ms, "calls": judge_calls}, "measured")
     try:
         with k.tx():      # all or nothing; authority is re-checked at integration time
             blockers = _final_blockers(k, goal_id)
@@ -599,6 +616,20 @@ def _final_verification(k: Kernel, goal_id: str, root: Path) -> str | None:
     except LupusError as exc:
         return f"{exc.code}:{exc.detail}"
     return None
+
+
+def finish(k: Kernel, goal_id: str) -> dict[str, Any]:
+    """Decide completion without running a worker (e.g. right after the user approved a document)."""
+    with k.supervisor_lock():
+        done = False
+        if goals.get(k, goal_id)["status"] == "ACTIVE":
+            _final_verification(k, goal_id, goals.project_root(k, goal_id))
+            if not _final_blockers(k, goal_id) and not goals.completion_blockers(k, goal_id):
+                goals.complete(k, goal_id)
+                done = True
+        return {"goal_id": goal_id, "done": done, "goal_status": goals.get(k, goal_id)["status"],
+                "completion_blockers": [] if done else list(dict.fromkeys(
+                    goals.completion_blockers(k, goal_id) + _final_blockers(k, goal_id)))}
 
 
 def run_goal(k: Kernel, goal_id: str, adapter: Adapter, *, max_steps: int = 20,
@@ -674,6 +705,7 @@ def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout
         "goal_id": goal_id, "done": done, "goal_status": view["status"], "steps": steps,
         "waiting": view["waiting"], "budget": budget.snapshot(k, goal["budget_id"]),
         "usage": usage.totals(k, goal_id),
+        "judge_usage": service.totals(k, goal_id),
         "memory": memory.summary(k, goal_id),
         "completion_blockers": [] if done else list(dict.fromkeys(
             goals.completion_blockers(k, goal_id) + _final_blockers(k, goal_id))),

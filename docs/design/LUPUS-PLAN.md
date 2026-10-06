@@ -2,7 +2,7 @@
 
 작성일: 2026-10-04 · 버전: 1.8 기억 그래프·전용 Vault·경량 실행 경로 보완본 (2026-10-05)
 
-상태: 1.5 설계에 구현 전 검토(1.6)의 결정을 반영했다. supervisor 코어(상태·예산·복구·인계)와 native CLI adapter는 [lupus/](../../lupus/)에 구현되어 실행 시험을 통과했다. 보안 격리, CLI 자동 활성화, Prime 기반 학습, 기본 CLI 대비 이득은 아직 구현하거나 검증하지 않았다. 구현 범위와 근거는 [LUPUS-IMPLEMENTATION-REVIEW.md](LUPUS-IMPLEMENTATION-REVIEW.md)에 있다.
+상태: 1.5 설계에 구현 전 검토(1.6)의 결정을 반영했다. supervisor 코어(상태·예산·복구·인계)와 native CLI adapter는 [lupus/](../../lupus/)에 구현되어 실행 시험을 통과했다. v0.2에서 OS 샌드박스, 대화형 세션 연결, 여러 프로젝트 조율(Alpha), CLI 기반 학습(Prime 자체는 연결하지 않음)을 구현했고 기본 CLI 대비 이득을 측정했다. worker의 VM 격리와 CLI 자동 활성화는 구현하지 않았다. 구현 범위와 근거는 [LUPUS-IMPLEMENTATION-REVIEW.md](LUPUS-IMPLEMENTATION-REVIEW.md)에 있다.
 
 ## 1. 목적과 확정된 사용자 요구
 
