@@ -19,6 +19,7 @@ import). Files too large to keep, or that look like credentials, are detected bu
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 from . import goals
@@ -71,6 +72,32 @@ def _named(root: Path, names: set[str]) -> list[str]:
     return found
 
 
+ENV_DIRS = (".venv", "venv", "env")
+
+
+def env_snapshot(root: Path) -> set[str]:
+    return {name for name in ENV_DIRS if os.path.lexists(Path(root) / name)}
+
+
+def env_restore(root: Path, before: set[str], keep_dir: Path | None = None) -> list[str]:
+    """A virtual environment that appeared while a worker or a check ran is taken out of the
+    project: the next command would otherwise take its `python` for the project's test runner.
+    Only an actual environment (it has a pyvenv.cfg) is touched, and it is moved aside, not deleted."""
+    removed = []
+    for name in ENV_DIRS:
+        path = Path(root) / name
+        if name in before or path.is_symlink() or not (path / "pyvenv.cfg").is_file():
+            continue
+        if keep_dir is not None:
+            keep_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            shutil.rmtree(keep_dir / name, ignore_errors=True)
+            shutil.move(str(path), str(keep_dir / name))
+        else:
+            shutil.rmtree(path, ignore_errors=True)
+        removed.append(name)
+    return removed
+
+
 def tree_fingerprint(root: Path, rel: str, strict: bool = False) -> str:
     """Cheap identity of a large directory (a dependency tree): every entry's size, modification
     time, change time and mode. The change time cannot be set back by a program, so an edit is
@@ -90,10 +117,14 @@ def tree_fingerprint(root: Path, rel: str, strict: bool = False) -> str:
             st = os.lstat(full)
             link = os.readlink(full) if os.path.islink(full) else ""
             if link and not (os.path.realpath(full) + os.sep).startswith(real_base + os.sep):
-                if strict:
+                if os.path.isfile(full):      # e.g. a virtualenv's bin/python -> the system interpreter
+                    there = os.stat(full)
+                    link += f"|{there.st_size}|{there.st_mtime_ns}|{there.st_ctime_ns}"
+                elif strict:
                     raise LupusError("FROZEN_TREE_LINK", f"{os.path.join(rel, os.path.relpath(full, base))} links outside {rel}; "
                                      "its contents cannot be watched. Use --container or --check")
-                link = "OUTSIDE:" + link
+                else:
+                    link = "OUTSIDE:" + link
             entries.append([os.path.relpath(full, base), st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_mode, link])
     return "tree:" + sha256_json(entries)
 

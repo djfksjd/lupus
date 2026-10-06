@@ -329,3 +329,36 @@ class OneCallTests(Env):
                                     sha256_bytes((self.root / d["test_path"]).read_bytes()), "user")
         self.assertEqual(build["staged_applied"], [])
         self.assertEqual((self.root / "calc.py").read_text(), CALC)
+
+
+class RedBaselineTests(Env):
+    """A project whose own tests are not all green can still take a request: the tests failing now
+    are accepted by name, and nothing else may fail afterwards."""
+
+    def setUp(self):
+        super().setUp()
+        (self.root / "calc.py").write_text(CALC)
+        (self.root / "test_calc.py").write_text(TEST)
+        (self.root / "test_legacy.py").write_text("import unittest\nclass L(unittest.TestCase):\n    def test_old(self): self.fail('known')\n")
+
+    def flow(self, impl):
+        from lupus.util import sha256_bytes
+        self.assertRefused("BASELINE_RED", quick.draft_check, self.k, self.project, "sub 추가", "user")
+        d = quick.draft_check(self.k, self.project, "sub 추가", "user", allow_failing=True)
+        self.assertEqual(d["already_failing"], ["test_legacy.L.test_old"])
+        script = WRITE + "pathlib.Path(%r).write_text(%r)" % (d["test_path"], GOOD_TEST)
+        self.assertTrue(supervisor.run_goal(self.k, d["goal_id"], fake(script))["done"])
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"],
+                                    sha256_bytes((self.root / d["test_path"]).read_bytes()), "user")
+        return build, supervisor.run_goal(self.k, build["goal_id"], fake(WRITE + impl))
+
+    def test_the_same_named_failures_may_remain(self):
+        build, report = self.flow("pathlib.Path('calc.py').write_text(%r)" % IMPL)
+        self.assertTrue(report["done"], report["steps"])
+        self.assertIn("1개 외에는 실패가 없다", goals.criteria(self.k, build["goal_id"])[1]["text"])
+
+    def test_a_new_failure_is_still_a_failure(self):
+        broke = "def add(a, b):\n    return a - b\ndef sub(a, b):\n    return a - b\n"      # sub works, add now broken
+        build, report = self.flow("pathlib.Path('calc.py').write_text(%r)" % broke)
+        self.assertFalse(report["done"])
+        self.assertEqual(goals.latest_evidence(self.k, build["goal_id"])["c1"]["result"], "FAIL")

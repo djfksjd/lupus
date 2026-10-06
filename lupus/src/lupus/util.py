@@ -220,7 +220,7 @@ def _python_prefix(executable: str | None, home: str) -> list[str]:
     return sorted(set(out))
 
 
-def sandbox_profile(project: Path, executable: str | None = None) -> str:
+def sandbox_profile(project: Path, executable: str | None = None, extra_read: tuple[str, ...] = ()) -> str:
     """Seatbelt profile for code that a model wrote and a verifier is about to run:
       * no network except this machine (localhost), so nothing can be sent out
       * writes only inside the project and the temp directories
@@ -233,7 +233,7 @@ def sandbox_profile(project: Path, executable: str | None = None) -> str:
     tmp = os.path.realpath(os.environ.get("TMPDIR", "/tmp"))
     writable = [root, tmp, "/private/tmp", "/private/var/folders", "/dev"]
     readable = [root] + [os.path.join(home, t) for t in _HOME_TOOLCHAINS if os.path.isdir(os.path.join(home, t))]
-    readable += _python_prefix(executable, home)
+    readable += _python_prefix(executable, home) + [os.path.realpath(p) for p in extra_read]
     state = sorted(os.path.realpath(p) for p in PROTECTED_STATE)
     return "\n".join([
         "(version 1)", "(allow default)",
@@ -247,6 +247,8 @@ def sandbox_profile(project: Path, executable: str | None = None) -> str:
         f"(allow file-read-metadata (subpath {_sb(home)}))",
         "(allow file-read* " + " ".join(f"(subpath {_sb(p)})" for p in readable) + ")",
         *[f"(deny file-read* file-write* (subpath {_sb(p)}))" for p in [*state, os.path.join(root, STAGE_DIR)]],
+        # Git metadata can make git run things (hooks, config). Code under test does not get to write it.
+        f"(deny file-write* (subpath {_sb(os.path.join(root, '.git'))}))",
     ])
 
 
@@ -314,7 +316,7 @@ def sandbox_profile_worker(project: Path, cli: str) -> str:
         f"(deny file-read* (subpath {_sb(home)}))",
         f"(allow file-read-metadata (subpath {_sb(home)}))",
         f"(allow file-read* (literal {_sb(home)}) {rule(readable)})",
-        f"(deny file-write* {rule([literal(r) for r in own['never_write']])})",
+        f"(deny file-write* {rule([literal(r) for r in own['never_write']] + [os.path.join(root, '.git')])})",
         *[f"(deny file-read* file-write* (subpath {_sb(p)}))" for p in state],
     ])
 

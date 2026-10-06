@@ -124,7 +124,7 @@ def _run_gated(verifier: Mapping, root: Path, on_spawn, on_exit) -> tuple[int | 
         # not an option; only the user can switch it off for a criterion (`sandbox: false`).
         if not sandbox_available():
             raise LupusError("VERIFIER_SANDBOX_UNAVAILABLE", "the OS sandbox cannot be applied on this machine")
-        argv = [SANDBOX_EXEC, "-p", sandbox_profile(root, argv[0]), *argv]
+        argv = [SANDBOX_EXEC, "-p", sandbox_profile(root, argv[0], tuple(verifier.get("sandbox_read", ()))), *argv]
     with tempfile.TemporaryFile() as out, tempfile.TemporaryDirectory(prefix="lupus-pyc-") as pyc:
         proc = subprocess.Popen(
             [sys.executable, GATE, *argv], cwd=root, stdout=out, stderr=subprocess.STDOUT,
@@ -253,5 +253,12 @@ def judge_command(verifier: Mapping, root: Path, code: int | None, output: str, 
                 # fewer tests ran than the approved check contains: something deselected them
                 return "FAIL", digest, f"only {count} of at least {verifier['min_tests']} tests ran"
         return "PASS", digest, "exit 0"
+    allowed = verifier.get("allowed_failures")
+    if allowed:
+        # The project's tests were not all passing when the request was made. The same named
+        # tests may still fail; any other failure, or a run that names none, is a failure.
+        failed = runners.failed_ids(runner, output)
+        if failed and failed <= set(allowed):
+            return "PASS", digest, f"exit {code}: only tests that already failed before the request still fail ({len(failed)})"
     # Enough of the failure for the next attempt to act on, not the whole log.
     return "FAIL", digest, f"exit {code}: {tail}"

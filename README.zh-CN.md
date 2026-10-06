@@ -14,7 +14,7 @@
 ![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-299%20passing-2ea043?style=flat-square)
+![Tests](https://img.shields.io/badge/offline%20tests-318%20passing-2ea043?style=flat-square)
 
 </div>
 
@@ -36,6 +36,7 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 | **多个项目、后台运行** | `lupus alpha-run` 在共享预算下轮流推进所有未完成的目标，并在某个 AI 额度用尽时切换到另一个。`--background` 让它在终端关闭后继续运行。 |
 | **预算与循环控制** | 调用、尝试、时间和 token 在开始前预留。重复同一个失败的尝试会在调用模型之前被拒绝。 |
 | **崩溃安全的 checkpoint** | 恢复对象先于数据库提交持久化；已在每个边界处杀进程测试。 |
+| **你的工作区保持原样** | `--isolated` 在已提交 HEAD 的独立检出中工作。`lupus diff` 查看结果，`lupus accept` 以一个提交带回（仅快进，并对该提交本身再次检查），`lupus discard` 丢弃。 |
 | **操作系统级约束** | Claude worker 和所有验证器都在 Lupus 施加的 macOS 沙箱中运行；验证器也可以改在 Docker 容器中运行。 |
 | **必须证明自己价值的记忆** | 项目知识以带类型、带链接的节点保存。`lupus learn` 从记录下来的失败中提出做法，在后续经过验证的结果将其晋升或淘汰之前，它们一直是候选。 |
 
@@ -58,6 +59,16 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 
 **在真实项目上。** 选取 [hukkin/tomli](https://github.com/hukkin/tomli) 维护者实际做过的 3 处改动（一个缺陷修复、一个 TOML 1.1 功能、一处加固）：源码取该提交之前的状态，测试取提交之后的状态，除此之外什么都不给。`lupus fix-tests` 用 Claude（36k–64k token，10–21 秒）和 Codex（82k–119k token，16–21 秒）都在第一次尝试就完成了全部 3 项，由上游测试判定，没有任何一次运行试图修改这些测试。
 
+**它能把更多请求做对吗？一次小规模试验的回答是：不能。** 取自 5 个项目（sqlparse、more-itertools、tomli、packaging、click）的 20 个真实上游提交：worker 只拿到提交之前的仓库和提交说明；上游测试被隐藏并用于评分。`lupus do` 起草的检查被自动批准，这并不是它的正常用法。
+
+| 隐藏的上游测试通过数 | 普通调用 | `lupus do` |
+|---|---|---|
+| Codex，20 个实例 | 13 | 11（其中 4 个因项目自身测试未全部通过而拒绝开始；用 `--allow-failing` 重跑这 4 个，通过 1 个） |
+| Codex，实际运行的 16 个 | 11 | 11 |
+| Claude，7 个实例（`do` 每个耗时 6.5 分钟，提前停止） | 7 | 4 |
+
+当 Lupus 报告 DONE 时，隐藏测试失败的情况：Codex 14 次中有 5 次，Claude 5 次中有 1 次。**DONE 表示你批准的检查通过了，并不表示请求被正确理解。** 由同一个模型根据同一句请求写出的检查，带有同样的误解；这个流程增加的是由你阅读（或修改）该检查的那一刻，而本次试验没有测量有人这样做的情形。
+
 **评判文档。** 缺少一项标准内容的文档，以及指示评判者放行的文档，两个评判者都予以拒绝；完整的文档被接受（6 项中 6 项符合预期，各 1 次）。
 
 请如实看待这些数字：
@@ -76,6 +87,8 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 
 **用普通 CLI 更好**：一次性提问和快速探索——在这些场合 Lupus 只会增加步骤。
 
+**它不能替代**：集成在编辑器里的助手（Cline、Cursor）、拥有自己的智能体循环和广泛模型选择的工具（Aider、OpenHands），以及多智能体工作区（Claude Squad、claude-flow）。Lupus 是 macOS 上面向有明确边界的 Claude Code / Codex 任务的监督器：可复现的检查、可审阅的改动、中断恢复。
+
 ## 快速开始
 
 要求：macOS；Python **3.12+**，且其 SQLite 为 **3.51.3+ 并带 FTS5**（Homebrew 的 Python 即可）；已安装并登录 `claude` 和/或 `codex`。
@@ -92,6 +105,7 @@ cd ~/work/my-project
 lupus fix-tests --driver claude      # 观测失败 -> 冻结测试 -> 修复 -> 验证
 lupus do "给 export 命令增加 --json 选项" --driver claude
                                      # 一次调用：失败的测试 + 单独存放的方案 -> 你批准测试 -> 应用并验证
+lupus do "…" --driver claude --isolated   # 同样的流程，在独立检出中进行；之后：lupus diff | accept | discard <goal>
 lupus session --driver claude        # 你平时的交互式 Claude Code，测试已冻结，退出时验证
 lupus write "账单表迁移计划" --out docs/plan.md --driver claude
                                      # 你批准标准 -> 撰写 -> 另一个 AI 评判 -> 你签字
@@ -131,6 +145,7 @@ lupus learn --driver claude                                    # 从记录的失
 
 ## 需要了解的限制
 
+- **它不会让模型更聪明。** 以隐藏测试衡量，它并不比普通调用更好（见上面的试验）。它给你的是：按你同意的方式检查过的结果、不在你工作区里进行的工作，以及中断后可以继续的进度。
 - **不是虚拟机。** Claude worker 和验证器在 macOS 沙箱中运行（主目录中除 CLI 自身所需之外都不可读，项目和临时目录之外不可写，Lupus 自身的状态不可触及）；Codex 使用它自己的沙箱，配置由 Lupus 设定；验证器可以使用 Docker。临时目录是共享的，worker 的网络是开放的，交互式会话则完全不在沙箱内。不要把受保护的资料或客户资料交给它。
 - **需要你来启动。** `lupus session` 包裹你的交互式 CLI；你自己直接输入 `claude` 时 Lupus 不会介入。CLI 不报告交互式会话的 token 用量，因此按预留的全额计费。
 - **评判者给出的是意见。** 引用检查能挡住没有依据的放行，挡不住错误的事实。所以你的签字是最后一个条件。图片和视觉设计无法评判。
@@ -139,7 +154,7 @@ lupus learn --driver claude                                    # 从记录的失
 - 学习功能只提出候选，由后续经过验证的结果来决定；没有固定的评估集，也没有接入 Prime 本身。
 - jest 和 vitest 用真实安装验证过；Go 和 Rust 用为验证临时安装的工具链验证过。Linux 和 Windows 上没有操作系统沙箱支持。
 - 任何等待状态都有出路：`lupus status <goal>` 说明原因，再用 `resolve`、`refreeze`、`approve`、`revise`、`revalidate`、`budget-raise` 继续。`lupus prune` 清理旧的遗留文件。
-- 代码还很年轻。12 轮外部评审发现并修复了 90 个缺陷，一次可用性审查又发现并修复了 16 个，应当假定仍有遗漏。
+- 代码还很年轻。14 轮外部评审发现并修复了 108 个缺陷，一次可用性审查又发现并修复了 16 个，应当假定仍有遗漏。
 
 ## 文档
 

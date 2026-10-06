@@ -13,12 +13,14 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import signal
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
-from . import adapters, alpha, author, budget, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, session, supervisor, vault
+from . import adapters, alpha, author, budget, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, session, supervisor, vault
 from .kernel import Kernel
 from .util import LupusError
 
@@ -45,6 +47,11 @@ def _summary(report: dict) -> str:
     for key, label in (("result", ""), ("check", "승인한 검사"), ("implementation", "구현"), ("out", "결과물"), ("tests", "테스트")):
         if report.get(key):
             lines.append(f"  {label + ': ' if label else ''}{report[key]}")
+    for check in report.get("checks") or []:
+        mark = {"PASS": "✔", "FAIL": "✘"}.get(check["result"], "·")
+        lines.append(f"  {mark} {check['text'][:110]}")
+    if done and report.get("checks"):
+        lines.append("  (확인한 것은 위 검사뿐입니다. 검사가 다루지 않는 동작은 확인하지 않았습니다)")
     for i, step in enumerate(report["steps"], 1):
         verdicts = " ".join(f"{cid}={v}" for cid, v in (step.get("verdicts") or {}).items())
         why = step.get("reason") or step.get("blockers") or ""
@@ -73,11 +80,28 @@ def _summary(report: dict) -> str:
         blockers = report.get("completion_blockers") or []
         if blockers:
             lines.append("  남은 것: " + ", ".join(blockers[:6]))
+        if report.get("final_verification_not_run"):
+            why = str(report["final_verification_not_run"])
+            lines.append(f"  마지막 검증을 실행하지 못했습니다: {why[:160]}"
+                         + ("  → lupus budget-raise 로 상한을 올리면 이어집니다" if "BUDGET" in why else ""))
         goal_id = report.get("goal_id")
         lines.append(f"  다음: {report['next']}" if report.get("next") else
                      f"  다음: lupus status {goal_id}   (원인 확인 후 lupus run {goal_id} --driver <claude|codex>)")
-    lines.append("  (전체 내용: 같은 명령에 --json)")
+    if done and report.get("next"):
+        lines.append(f"  다음: {report['next']}")
+    lines.append(f"  목표 {report.get('goal_id', '')} · 전체 내용은 같은 명령에 --json")
     return "\n".join(lines)
+
+
+def _ask(what: str, choices: tuple[str, ...]) -> str:
+    """A question only a person at the terminal can answer. Anything but a listed word is "no"."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        raise LupusError("USER_PRESENCE_REQUIRED", f"'{what}' needs an interactive terminal")
+    try:
+        answer = input(f"{what}\n{' / '.join(choices)} 중 입력: ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return "no"
+    return answer if answer in choices else "no"
 
 
 def _confirm_user(what: str) -> None:
@@ -87,8 +111,26 @@ def _confirm_user(what: str) -> None:
         raise LupusError("USER_DECLINED", what)
 
 
-def _adapter(name: str, model: str | None) -> adapters.Adapter:
+def _adapter(name: str, model: str | None, shell: bool = False) -> adapters.Adapter:
+    if name == "claude" and shell:
+        return adapters.ClaudeAdapter(model, shell=True)
     return adapters.native({"claude": "native_claude", "codex": "native_codex"}[name], model)
+
+
+def _isolate(k: Kernel, project: dict, args: argparse.Namespace) -> dict:
+    if not getattr(args, "isolated", False):
+        return project
+    isolated = gitx.isolate(k, project, "user")
+    print(f"격리된 체크아웃에서 작업합니다(커밋 {isolated['base'][:8]} 기준). 지금 작업 폴더의 파일은 건드리지 않습니다."
+          + (" 커밋하지 않은 변경은 이 작업에 포함되지 않습니다." if isolated["origin_has_uncommitted_changes"] else ""), file=sys.stderr)
+    return isolated
+
+
+def _after_isolated(k: Kernel, report: dict) -> None:
+    if gitx.info(k, goals.get(k, report["goal_id"])["project_id"]):
+        goal_id = report["goal_id"]
+        report["next"] = (f"lupus diff {goal_id}   (결과 보기)   ·   lupus accept {goal_id}   (내 저장소에 커밋 하나로 반영)   ·   "
+                          f"lupus discard {goal_id}   (버리기)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -127,6 +169,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cheap-first", action="store_true",
                    help="try a lighter model/effort first; use the default only if verification fails")
     p.add_argument("--background", action="store_true", help="keep running after this terminal closes; see `lupus jobs`")
+    p.add_argument("--shell", action="store_true", help="let the worker run commands to check its own work (inside the sandbox)")
+    for name, text in (("diff", "what a goal changed"), ("accept", "bring an isolated goal's verified result into your repository as one commit"),
+                       ("discard", "drop an isolated goal's checkout and branch")):
+        sub.add_parser(name, help=text).add_argument("goal_id")
 
     sub.add_parser("alpha-status", help="every project at a glance: open goals, what they wait for, shared budgets")
     p = sub.add_parser("alpha-run", help="advance every unfinished goal in turn; switch AI when one is out of quota")
@@ -158,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--driver", choices=("claude", "codex"), required=True)
     p.add_argument("--model")
     p.add_argument("--timeout", type=float, default=600)
+    p.add_argument("--isolated", action="store_true",
+                   help="work in a separate checkout of the committed HEAD; your files are untouched until `lupus accept`")
+    p.add_argument("--shell", action="store_true", help="let the worker run commands to check its own work (inside the sandbox)")
     p.add_argument("--check", help="your own test command for a project Lupus does not recognise; its exit status decides")
     p.add_argument("--protect", action="append", default=[], help="with --check: a file or folder workers may not change")
     p.add_argument("--container", metavar="IMAGE", help="run the tests in a Docker container of this image (no network) "
@@ -189,6 +238,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("do", help="one line, any request: draft a failing test, you approve it, then implement")
     p.add_argument("request")
+    p.add_argument("--isolated", action="store_true",
+                   help="work in a separate checkout of the committed HEAD; your files are untouched until `lupus accept`")
+    p.add_argument("--shell", action="store_true", help="let the worker run commands to check its own work (inside the sandbox)")
+    p.add_argument("--allow-failing", action="store_true",
+                   help="start even though some existing tests fail now; those same tests may keep failing, no others")
     p.add_argument("--two-step", action="store_true",
                    help="write the implementation in a separate call after you approved the test (default: proposed "
                         "in the same call, kept aside until you approve)")
@@ -295,7 +349,7 @@ NEXT_STEP = {
     "NO_TESTS_FOUND": "name your test command: --check \"<command>\"",
     "TEST_RUNNER_UNKNOWN": "name your test command: --check \"<command>\"",
     "TEST_RUNNER_UNAVAILABLE": "install the test runner, or name your test command with --check, or run it in a container with --container <image>",
-    "BASELINE_RED": "lupus fix-tests --driver <claude|codex>",
+    "BASELINE_RED": "lupus fix-tests --driver <claude|codex>   or repeat the command with --allow-failing",
     "PROJECT_ROOT_OVERLAP": "lupus project-list, then `lupus project-remove <id>` for a registration made by mistake",
     "UNCONFINED_READS_NOT_ALLOWED": "lupus probe --live, or `lupus project-allow-unconfined <project_id>`",
     "PROVIDER_NOT_APPROVED": "register the project with that provider: lupus project-add <root> --name <n> --providers anthropic,openai",
@@ -358,7 +412,7 @@ def _run(k: Kernel, args: argparse.Namespace) -> dict:
         report = supervisor.recover(k, args.stop_stale_writer)
         if report["writers_alive"]:
             raise LupusError("WRITER_NOT_STOPPED", json.dumps(report["writers_alive"]))
-        adapter = getattr(args, "adapter", None) or _adapter(args.driver, args.model)
+        adapter = getattr(args, "adapter", None) or _adapter(args.driver, args.model, getattr(args, "shell", False))
         stale = _stale(k, args.driver, adapter.driver)
         if stale:
             raise LupusError("CAPABILITY_STALE", stale)
@@ -621,16 +675,31 @@ def _dispatch(args: argparse.Namespace) -> int:
                 raise LupusError("PROVIDER_NOT_APPROVED", args.driver)
             if not getattr(args, "fresh_project", None):
                 _confirm_user(f"실패하는 테스트를 고칩니다: {project['canonical_root']} ({args.driver})")
+            project = _isolate(k, project, args)
             made = quick.fix_tests(k, project, "user", check=args.check, protect_paths=args.protect,
                                    container=args.container)
             if "goal_id" not in made:
+                if gitx.info(k, project["project_id"]):      # nothing to do: the checkout made for it goes again
+                    found = gitx.info(k, project["project_id"])
+                    gitx.run(found["origin_root"], "worktree", "remove", "--force", found["path"], check=False)
+                    gitx.run(found["origin_root"], "branch", "-D", found["branch"], check=False)
                 _out(made)
                 return 0
             args.goal_id = made["goal_id"]
             _started(args)
             report = _run(k, args)
             report["vault"] = vault.sync(k)
+            _after_isolated(k, report)
             _out(report)
+        elif args.cmd == "diff":
+            print(gitx.diff(k, args.goal_id))
+        elif args.cmd == "accept":
+            goal = goals.get(k, args.goal_id)
+            _confirm_user(f"검증된 결과를 내 저장소에 커밋 하나로 반영합니다(빨리 감기 병합만, 강제 없음): {goal['objective'][:80]}")
+            _out(gitx.accept(k, args.goal_id, "user"))
+        elif args.cmd == "discard":
+            _confirm_user(f"격리된 체크아웃과 브랜치를 버립니다(되돌릴 수 없음): {args.goal_id}")
+            _out(gitx.discard(k, args.goal_id, "user"))
         elif args.cmd == "write":
             return _write(k, args)
         elif args.cmd == "session":
@@ -638,7 +707,11 @@ def _dispatch(args: argparse.Namespace) -> int:
         elif args.cmd == "do":
             project = _project_here(k, "요청 구현", args)
             _confirm_user(f"요청: {args.request}\n먼저 이 요청을 판정할 테스트를 작성합니다 ({args.driver})")
-            draft = quick.draft_check(k, project, args.request, "user", stage=not args.two_step)
+            project = _isolate(k, project, args)
+            draft = quick.draft_check(k, project, args.request, "user", stage=not args.two_step, allow_failing=args.allow_failing)
+            if draft["already_failing"]:
+                print(f"지금 실패하는 기존 테스트 {len(draft['already_failing'])}개는 그대로 실패해도 되는 것으로 봅니다: "
+                      + ", ".join(draft["already_failing"][:5]) + (" …" if len(draft["already_failing"]) > 5 else ""), file=sys.stderr)
             _started(args)
             args.goal_id = draft["goal_id"]
             try:
@@ -654,16 +727,25 @@ def _dispatch(args: argparse.Namespace) -> int:
                 raise
             if not first["done"]:
                 kept = quick.discard_draft(k, project, draft["goal_id"], "user")
+                if getattr(args, "isolated", False):
+                    gitx.discard(k, draft["goal_id"], "user")
                 _out({"stage": "check", "result": "유효한 검사를 만들지 못했습니다", "draft_kept_in": kept, **first})
                 return 1
             test_file = Path(project["canonical_root"]) / draft["test_path"]
-            content = test_file.read_bytes()
-            print(f"\n----- {draft['test_path']} (현재 코드에서 실패함을 확인했습니다) -----\n"
-                  f"{content.decode('utf-8', errors='replace')}\n-----")
-            try:
-                _confirm_user("이 테스트가 통과하면 요청이 완료된 것으로 보겠습니까?")
-            except (LupusError, KeyboardInterrupt, EOFError):     # declined, Ctrl-C or closed input
+            while True:
+                content = test_file.read_bytes()
+                print(f"\n----- {draft['test_path']} (현재 코드에서 실패함을 확인했습니다) -----\n"
+                      f"{content.decode('utf-8', errors='replace')}\n-----")
+                answer = _ask("이 테스트가 통과하면 요청이 완료된 것으로 보겠습니까?", ("yes", "edit", "no"))
+                if answer != "edit":
+                    break
+                # The check is yours: change it until it says what you mean. It is checked again
+                # (it must still fail on the current code) and the version you approve is the one frozen.
+                subprocess.call([*shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"), str(test_file)])
+            if answer != "yes":
                 kept = quick.discard_draft(k, project, draft["goal_id"], "user")
+                if getattr(args, "isolated", False):
+                    gitx.discard(k, draft["goal_id"], "user")
                 _out({"stage": "approval", "result": "승인하지 않아 검사를 치웠습니다", "draft_kept_in": kept})
                 return 1
             try:
@@ -680,6 +762,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             for key, value in first["usage"]["totals"].items():      # the request cost both steps
                 report["usage"]["totals"][key] = report["usage"]["totals"].get(key, 0) + value
             report["model_calls"] = len(first["steps"]) + sum(s.get("outcome") != "ALREADY_SATISFIED" for s in report["steps"])
+            _after_isolated(k, report)
             report["vault"] = vault.sync(k)
             _out(report)
         elif args.cmd == "run" and args.background:

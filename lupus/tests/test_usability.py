@@ -273,6 +273,7 @@ class SummaryOutputTests(unittest.TestCase):
         self.assertIn("c0=PASS c1=PASS", done)
         self.assertIn("토큰 12,707", done)
         self.assertLess(len(done.splitlines()), 8)
+        self.assertIn("goal_x", done)
         stuck = cli._summary({"goal_id": "goal_x", "done": False, "goal_status": "NO_PROGRESS",
                               "steps": [{"status": "NO_PROGRESS", "outcome": "NO_PROGRESS", "verdicts": {"c0": "FAIL"}}],
                               "waiting": [{"status": "NO_PROGRESS", "reason": "no valid progress in 2 consecutive attempts"}],

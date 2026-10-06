@@ -14,7 +14,7 @@
 ![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-299%20passing-2ea043?style=flat-square)
+![Tests](https://img.shields.io/badge/offline%20tests-318%20passing-2ea043?style=flat-square)
 
 </div>
 
@@ -36,6 +36,7 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 | **여러 프로젝트, 백그라운드** | `lupus alpha-run`은 열려 있는 모든 목표를 공유 예산 아래 차례로 진행하고, 한 AI의 한도가 떨어지면 다른 AI로 넘깁니다. `--background`는 터미널을 닫아도 계속 실행합니다. |
 | **예산과 반복 통제** | 호출·시도·시간·토큰을 시작 전에 예약합니다. 같은 실패의 반복은 모델을 부르기 전에 거부합니다. |
 | **중단에 안전한 checkpoint** | 복구 자료를 DB commit보다 먼저 내구 저장합니다. 모든 경계에서 프로세스를 죽여 시험했습니다. |
+| **작업 폴더는 그대로** | `--isolated`는 커밋된 HEAD의 별도 체크아웃에서 작업합니다. `lupus diff`로 결과를 보고, `lupus accept`로 커밋 하나로 가져오고(빨리 감기만, 그 커밋 자체를 다시 검사), `lupus discard`로 버립니다. |
 | **OS 수준의 가두기** | Claude worker와 모든 검증기는 Lupus가 적용한 macOS 샌드박스 안에서 실행됩니다. 검증기는 Docker 컨테이너에서 돌릴 수도 있습니다. |
 | **자리를 증명해야 하는 기억** | 프로젝트 지식을 유형과 연결이 있는 노드로 둡니다. `lupus learn`은 기록된 실패에서 절차를 제안하고, 이후의 검증 결과가 승격하거나 은퇴시킬 때까지 후보로 남습니다. |
 
@@ -58,6 +59,16 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 
 **실제 프로젝트에서.** [hukkin/tomli](https://github.com/hukkin/tomli)의 관리자가 실제로 만든 변경 3건(버그 수정, TOML 1.1 기능, 보안 강화)을 골라, 소스는 그 커밋 직전 상태로, 테스트는 커밋 직후 상태로 두고 폴더만 줬습니다. `lupus fix-tests`는 3건 모두 첫 시도에 끝냈습니다(Claude 36k~64k 토큰·10~21초, Codex 82k~119k 토큰·16~21초). 판정은 upstream의 테스트로 했고, 어떤 실행도 그 테스트를 고치려 하지 않았습니다.
 
+**요청을 더 잘 해내는가? 파일럿 결과는 "아니오"입니다.** 5개 프로젝트(sqlparse, more-itertools, tomli, packaging, click)의 실제 upstream 커밋 20건으로 시험했습니다. worker는 커밋 직전의 저장소와 커밋 메시지만 받았고, upstream 테스트는 숨겨 두었다가 채점에 썼습니다. `lupus do`가 만든 검사는 자동으로 승인했습니다. 실제 사용 방식과는 다릅니다.
+
+| 숨긴 upstream 테스트 통과 | 평범한 호출 | `lupus do` |
+|---|---|---|
+| Codex, 20건 | 13 | 11 (4건은 프로젝트 자체 테스트가 통과 상태가 아니라 시작을 거부. `--allow-failing`으로 다시 돌린 그 4건은 1건 통과) |
+| Codex, 실제로 실행된 16건 | 11 | 11 |
+| Claude, 7건 (`do`가 건당 6.5분 걸려 중단) | 7 | 4 |
+
+Lupus가 DONE이라고 보고했을 때 숨긴 테스트가 실패한 경우가 Codex 14건 중 5건, Claude 5건 중 1건이었습니다. **DONE은 승인한 검사가 통과했다는 뜻이지, 요청을 제대로 이해했다는 뜻이 아닙니다.** 같은 모델이 같은 한 줄 요청으로 쓴 검사는 같은 오해를 담습니다. 이 흐름이 더하는 것은 그 검사를 사용자가 읽고(또는 고치고) 승인하는 순간인데, 이 파일럿은 사람이 그렇게 하는 경우를 재지 않았습니다.
+
 **문서 판정.** 기준 한 항목이 빠진 문서와 평가자에게 통과를 지시하는 문서는 두 평가자 모두 불합격시켰고, 완전한 문서는 합격시켰습니다(6건 중 6건 기대대로, 각 1회).
 
 정직하게 읽어야 할 점:
@@ -76,6 +87,8 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 
 **기본 CLI가 나은 경우**: 일회성 질문과 가벼운 탐색. 거기서는 Lupus가 단계만 늘립니다.
 
+**대체하지 못하는 것**: 편집기에 통합된 도구(Cline, Cursor), 자체 에이전트 루프와 폭넓은 모델 선택을 가진 도구(Aider, OpenHands), 여러 에이전트를 함께 다루는 작업 공간(Claude Squad, claude-flow). Lupus는 macOS에서 범위가 정해진 Claude Code / Codex 작업을 감독하는 도구입니다: 재현 가능한 검사, 리뷰할 수 있는 변경, 중단 복구.
+
 ## 빠른 시작
 
 요구 사항: macOS, SQLite가 **3.51.3 이상이고 FTS5를 포함한** Python **3.12+**(Homebrew Python이면 됩니다), 그리고 설치·로그인된 `claude` 또는 `codex`.
@@ -92,6 +105,7 @@ cd ~/work/my-project
 lupus fix-tests --driver claude      # 실패 관측 -> 테스트 고정 -> 수정 -> 검증
 lupus do "export 명령에 --json 옵션 추가" --driver claude
                                      # 한 번 호출: 실패하는 테스트 + 따로 보관한 구현안 -> 테스트 승인 -> 적용·검증
+lupus do "…" --driver claude --isolated   # 같은 일을 별도 체크아웃에서. 이후: lupus diff | accept | discard <goal>
 lupus session --driver claude        # 평소의 대화형 Claude Code, 테스트 고정, 종료 시 검증
 lupus write "결제 테이블 이전 계획" --out docs/plan.md --driver claude
                                      # 기준 승인 -> 작성 -> 다른 AI가 평가 -> 최종 승인
@@ -131,6 +145,7 @@ lupus learn --driver claude                                    # 기록된 실�
 
 ## 알아야 할 한계
 
+- **모델을 더 똑똑하게 만들지 않습니다.** 숨긴 테스트 기준으로는 평범한 호출보다 낫지 않았습니다(위 파일럿). 얻는 것은 합의한 방식으로 검사된 결과, 내 작업 폴더가 아닌 곳에서의 작업, 중단되어도 이어지는 진행입니다.
 - **VM이 아닙니다.** Claude worker와 검증기는 macOS 샌드박스 안에서 실행됩니다(홈 디렉터리는 CLI 자체에 필요한 것 외에 읽을 수 없고, 프로젝트와 임시 폴더 밖에는 쓸 수 없으며, Lupus의 상태에는 닿지 못합니다). Codex는 Lupus가 정한 프로필로 자체 샌드박스를 쓰고, 검증기는 Docker를 쓸 수 있습니다. 임시 폴더는 공유되고, worker의 네트워크는 열려 있으며, 대화형 세션은 샌드박스 밖입니다. 보호가 필요한 자료나 고객 자료를 주지 마세요.
 - **직접 시작해야 합니다.** `lupus session`이 대화형 CLI를 감쌉니다. `claude`를 직접 실행하면 Lupus는 관여하지 않습니다. 대화형 세션의 토큰 사용량은 CLI가 보고하지 않으므로 예약 전액으로 청구합니다.
 - **평가자의 판정은 의견입니다.** 인용 확인은 근거 없는 통과를 막을 뿐 사실의 오류는 막지 못합니다. 그래서 사용자의 승인이 마지막 조건입니다. 이미지와 시각 디자인은 판정하지 못합니다.
@@ -139,7 +154,7 @@ lupus learn --driver claude                                    # 기록된 실�
 - 학습은 후보를 제안하고 이후의 검증 결과에 판단을 맡깁니다. 고정 평가셋은 없으며 Prime 자체는 연결하지 않았습니다.
 - jest와 vitest는 실제 설치본으로, Go와 Rust는 확인을 위해 임시로 설치한 도구로 검증했습니다. Linux와 Windows에서는 OS 샌드박스를 지원하지 않습니다.
 - 대기 상태에는 항상 빠져나올 명령이 있습니다. `lupus status <goal>`이 이유를 알려 주고 `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise`로 이어갑니다. `lupus prune`은 오래된 잔여 파일을 지웁니다.
-- 코드가 젊습니다. 외부 리뷰 12회에서 결함 90건을, 사용성 점검에서 16건을 더 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
+- 코드가 젊습니다. 외부 리뷰 14회에서 결함 108건을, 사용성 점검에서 16건을 더 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
 
 ## 문서
 
