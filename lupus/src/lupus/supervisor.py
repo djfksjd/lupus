@@ -19,7 +19,7 @@ from typing import Any
 from . import adapters, budget, economy, gitx, goals, handoff, judging, memory, projects, protect, recovery, review, runs, service, usage, verify
 from .adapters import Adapter
 from .kernel import Kernel
-from .util import LupusError, container_stop, crash_point, find_secret_bytes, proc_start, sha256_json
+from .util import LupusError, container_stop, crash_point, find_secret, find_secret_bytes, proc_start, sha256_json
 
 MAX_SNAPSHOT_BYTES = 256 * 1024
 
@@ -300,6 +300,7 @@ def _checkpoint(k: Kernel, goal_id: str, next_action: str, paths: list[str], roo
 
 
 UNCHANGED = "다시 실행하지 않았다: 직전에 이 검사가 실패한 뒤로 프로젝트의 파일이 하나도 바뀌지 않았다(보호된 파일의 수정은 되돌려진다). "
+STILL = "직전에 이 검사가 실패한 뒤로 프로젝트의 파일이 하나도 바뀌지 않았다(검사는 다시 실행했다). "
 _NOT_A_RESULT = ("verifier timed out", "verifier command could not be started")
 
 
@@ -319,13 +320,20 @@ def _remember_failure(k: Kernel, task_id: str, criteria: list[dict], revision: i
     change the project are not remembered at all. A check that timed out or could not start says
     nothing about the files and is never remembered either.
     The memory is this supervisor process's own: a later `lupus run` checks for real, since what
-    changed in between may be outside the project (an installed tool, a service)."""
+    changed in between may be outside the project (an installed tool, a service). And it is never
+    used for the attempt after which the task would be parked (see `run_task`)."""
     failed = [detail for _, verdict, _, detail in checked if verdict != "PASS"]
-    if mark is None or not failed or any(detail.removeprefix(UNCHANGED).startswith(_NOT_A_RESULT) for detail in failed):
+    if mark is None or not failed or any(detail.removeprefix(UNCHANGED).removeprefix(STILL).startswith(_NOT_A_RESULT) for detail in failed):
         return
+    if any(find_secret(detail) for detail in failed):
+        return      # such output is stored redacted; nothing the next worker could be told would be the verifier's words
     k.emit("supervisor", "verify.failed_at", "task", task_id, mark=mark, revision=revision, supervisor=_ME(),
-           results=[[c["id"], sha256_json(c["verifier"]), verdict, digest, detail.removeprefix(UNCHANGED)]
+           results=[[c["id"], sha256_json(c["verifier"]), verdict, digest, detail.removeprefix(UNCHANGED).removeprefix(STILL)]
                     for c, verdict, digest, detail in checked])
+
+
+def _reuses(k: Kernel, task_id: str) -> int:
+    return k.one("SELECT COUNT(*) FROM event WHERE type = 'verify.reused' AND aggregate_id = ?", task_id)[0]
 
 
 def _same_failure(k: Kernel, task_id: str, criteria: list[dict], revision: int, mark: str | None) -> list[tuple] | None:
@@ -471,7 +479,10 @@ def run_task(
             baseline_hash=baseline,
             # What the worker is told is part of the attempt's identity: a retry that carries the
             # verifier's failure output is not a repeat of the attempt that produced that failure.
-            change_scope=sha256_json([task["spec"], _last_failures(k, task, criteria), goals.resolutions(k, task_id)]),
+            # (and so is the fact that the last verdict was a remembered one: whatever text it left
+            # behind, the try that follows it is not a repeat of any earlier try)
+            change_scope=sha256_json([task["spec"], _last_failures(k, task, criteria), goals.resolutions(k, task_id),
+                                      *([f"after-reuse:{reused}"] if (reused := _reuses(k, task_id)) else [])]),
             verifier_version=verify.VERSION,
             env_hash=f"{adapter.driver}:{adapter.variant}",
             new_evidence=f"task attempt {task['attempt_count'] + 1} from artifact state {baseline[:12]}",
@@ -529,18 +540,43 @@ def run_task(
         # checks that run are the ones that were frozen.
         undone = protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id)
         gitx.unguard(k, root, taken, goal_id)      # hooks/config a worker left in .git never get to run
-        mark = review.fingerprint(root)
+        # A remembered failure is an inference ("same files, so same result"), and it is wrong for a
+        # check that depends on something outside the project or on chance. It may save a run, but
+        # it must never be what parks a task: the attempt that would do that is checked for real.
+        # "Would park" is every way the supervisor refuses a further try: the no-progress limit and
+        # the number of distinct tries allowed for one approach. A retry identical to an earlier one
+        # is refused too, and a reuse hands the next worker the same words every time; so a
+        # remembered failure is used once per task and never again, which keeps every retry that
+        # follows a reuse distinct from all earlier ones.
+        tries = k.one("SELECT COUNT(DISTINCT fingerprint) FROM attempt WHERE task_id = ? AND hypothesis_id = "
+                      "(SELECT hypothesis_id FROM attempt WHERE attempt_id = ?)", task_id, attempt_id)[0]
+        again = _reuses(k, task_id) > 0
+        decisive = (task["no_progress_streak"] + 1 >= k.policy["no_progress_limit"]
+                    or tries >= k.policy["max_attempts_per_hypothesis"] or again)
+        # Reading every file of the project is only paid for when it can be used: a failure was
+        # remembered for this task, or this one could be reused by a later attempt that is not the
+        # last. With the default limit of two attempts neither is ever the case.
+        reusable_later = (task["no_progress_streak"] + 2 < k.policy["no_progress_limit"]
+                          and tries + 1 < k.policy["max_attempts_per_hypothesis"])
+        remembered = k.one("SELECT 1 FROM event WHERE type = 'verify.failed_at' AND aggregate_id = ?", task_id) is not None
+        mark = review.fingerprint(root) if remembered or reusable_later else None
         checked = _same_failure(k, task_id, criteria, attempt["acceptance_revision"], mark)
-        if checked is not None:
+        unchanged = checked is not None
+        if unchanged and not decisive:
             verify_ms = judge_calls = 0          # nothing was run, so nothing is charged
+            with k.tx():                         # recorded as a fact of its own, not read back out of evidence text
+                k.emit("supervisor", "verify.reused", "task", task_id, attempt=attempt_id)
         else:
             checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
+            if unchanged:      # still worth telling the user and the next worker: nothing was changed
+                checked = [(c, v, digest, (STILL + detail) if v != "PASS" else detail) for c, v, digest, detail in checked]
             # Running the checks can itself write into protected paths (a test with side effects):
             # leave the project as frozen, not as the verifier left it.
             protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "after-verify")
             # A verdict is remembered only for the state it was given on: if running the checks (or
             # putting protected files back) changed anything, the next run starts from other files.
-            if mark is not None and any(v != "PASS" for _, v, _, _ in checked) and review.fingerprint(root) != mark:
+            if not reusable_later or (mark is not None and any(v != "PASS" for _, v, _, _ in checked)
+                                      and review.fingerprint(root) != mark):
                 mark = None
     except LupusError as exc:
         # Verification was cut short (e.g. a judge could not answer). What it had already spent is not

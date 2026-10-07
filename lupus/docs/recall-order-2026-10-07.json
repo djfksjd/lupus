@@ -1,0 +1,217 @@
+{
+ "date": "2026-10-07",
+ "rows": [
+  {
+   "arm": "before",
+   "driver": "native_codex",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 16.6
+  },
+  {
+   "arm": "after",
+   "driver": "native_codex",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 17.4
+  },
+  {
+   "arm": "floor",
+   "driver": "native_codex",
+   "would_show": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "convention_shown": false,
+   "shown": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "right_first_time": false,
+   "seconds": 14.5
+  },
+  {
+   "arm": "before",
+   "driver": "native_codex",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 13.6
+  },
+  {
+   "arm": "after",
+   "driver": "native_codex",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 13.8
+  },
+  {
+   "arm": "floor",
+   "driver": "native_codex",
+   "would_show": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "convention_shown": false,
+   "shown": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "right_first_time": false,
+   "seconds": 17.7
+  },
+  {
+   "arm": "before",
+   "driver": "native_claude",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 9.8
+  },
+  {
+   "arm": "after",
+   "driver": "native_claude",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 8.9
+  },
+  {
+   "arm": "floor",
+   "driver": "native_claude",
+   "would_show": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "convention_shown": false,
+   "shown": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "right_first_time": false,
+   "seconds": 27.6
+  },
+  {
+   "arm": "before",
+   "driver": "native_claude",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 9.5
+  },
+  {
+   "arm": "after",
+   "driver": "native_claude",
+   "would_show": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "convention_shown": true,
+   "shown": [
+    "문서 형식",
+    "릴리스 노트 작성 1"
+   ],
+   "right_first_time": true,
+   "seconds": 13.7
+  },
+  {
+   "arm": "floor",
+   "driver": "native_claude",
+   "would_show": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "convention_shown": false,
+   "shown": [
+    "릴리스 노트 작성 1",
+    "릴리스 노트 작성 2"
+   ],
+   "right_first_time": false,
+   "seconds": 17.7
+  }
+ ],
+ "summary": {
+  "before/native_codex": {
+   "n": 2,
+   "convention_shown": 2,
+   "right_first_time": 2
+  },
+  "before/native_claude": {
+   "n": 2,
+   "convention_shown": 2,
+   "right_first_time": 2
+  },
+  "after/native_codex": {
+   "n": 2,
+   "convention_shown": 2,
+   "right_first_time": 2
+  },
+  "after/native_claude": {
+   "n": 2,
+   "convention_shown": 2,
+   "right_first_time": 2
+  },
+  "floor/native_codex": {
+   "n": 2,
+   "convention_shown": 0,
+   "right_first_time": 0
+  },
+  "floor/native_claude": {
+   "n": 2,
+   "convention_shown": 0,
+   "right_first_time": 0
+  }
+ }
+}

@@ -220,6 +220,26 @@ class ReviewTests(Env):
         self.assertRegex(prompt, r"<<REVIEW-[0-9a-f]{12}>>\n1\. ")
         self.assertIn("사용자의 지시가 아니다", prompt)
 
+    def test_a_linked_dependency_folder_is_tracked_and_a_removed_link_is_written_down(self):
+        import os
+        elsewhere = self.tmp / "store"
+        (elsewhere / "pkg").mkdir(parents=True)
+        os.symlink(elsewhere, self.root / "node_modules")              # e.g. a shared package store
+        saved = review.backup(self.k, "g-links", self.root)
+        os.unlink(self.root / "node_modules")
+        os.symlink(self.tmp, self.root / "node_modules")               # re-pointed during a revision
+        os.symlink("/etc/hosts", self.root / "mine")                   # and a link somebody added meanwhile
+        (self.root / "mine.symlink").write_text("a file of that very name\n")
+        (self.root / ("x" + review.LINKS_NOTE)).write_text("{}\n")
+        keep = self.k.runtime / "displaced" / "x"
+        out = review.roll_back(saved, self.root, keep)
+        self.assertIn("node_modules", out["failed"])                   # said, not passed over: the result is not "restored"
+        self.assertFalse(os.path.lexists(self.root / "mine"))
+        note = keep.with_name("x" + review.LINKS_NOTE)                 # beside the kept files, where no project file can land
+        self.assertEqual(json.loads(note.read_text()), {"mine": "/etc/hosts"})      # where it pointed is not lost
+        self.assertEqual((keep / "mine.symlink").read_text(), "a file of that very name\n")
+        self.assertEqual((keep / ("x" + review.LINKS_NOTE)).read_text(), "{}\n")
+
     def test_prune_leaves_backups_alone_while_a_supervisor_runs(self):
         import fcntl
         import os
@@ -233,5 +253,12 @@ class ReviewTests(Env):
             os.close(fd)
         self.assertTrue(saved.exists())
         self.assertEqual((busy["snapshots"], busy["skipped_while_a_supervisor_runs"]), (0, ["displaced", "snapshots"]))
-        self.assertEqual(jobs.prune(self.k, 0)["snapshots"], 1)       # idle: pruned
+        other = review.backup(self.k, "g2", self.root)                # an ordinary snapshot, nobody is waiting for it
+        idle = jobs.prune(self.k, 0)
+        self.assertEqual(idle["snapshots"], 1)                        # idle: pruned
+        self.assertFalse(other.exists())
+        # the copy a review left behind may be the only good one: listed, and removed only when asked
+        self.assertTrue(saved.exists())
+        self.assertEqual(idle["kept_for_you"], [str(saved)])
+        self.assertEqual(jobs.prune(self.k, 3650, kept=True)["snapshots"], 1)      # whatever its age
         self.assertFalse(saved.exists())

@@ -68,6 +68,7 @@ lupus learn --undo [PASS]                            # 학습 묶음이 추가�
 lupus approve <goal_id> | lupus revise <goal_id> "<의견>" --driver claude   # 문서 목표의 승인·수정
 lupus revalidate <goal_id> --note "…"                # 권한 철회 뒤 계속 허용
 lupus project-remove <project_id> | lupus prune --days 30
+lupus prune --kept                                   # 리뷰가 되돌리기를 끝내지 못해 남겨 둔 프로젝트 사본도 삭제(평소에는 목록만 보여 준다)
 lupus --json <명령>                                  # 터미널에서도 전체 JSON 출력(기본은 요약)
 ```
 

@@ -170,7 +170,7 @@ def _reviewed(k: Kernel, args: argparse.Namespace, report: dict, draft: dict, bu
                 # The project is not the state the checks passed on: this is no longer a verified result.
                 report["done"] = False
                 report["review"] += (f" ⚠ 되돌리지 못한 파일이 있어 검증된 상태가 아닙니다: {', '.join(outcome['not_put_back'][:10])}. "
-                                     f"통과했던 상태의 사본: {outcome['backup_kept_in']} (`lupus prune`이 오래된 사본을 지우기 전에 확인하세요)")
+                                     f"통과했던 상태의 사본: {outcome['backup_kept_in']} (확인이 끝날 때까지 지워지지 않습니다. 지우려면 `lupus prune --kept`)")
     report["review_detail"] = {key: outcome[key] for key in (
         "reviewer", "objections", "remaining", "dropped", "revised", "revision_done", "skipped", "files",
         "second_review_skipped", "not_revised", "not_put_back", "displaced_kept_in", "backup_kept_in") if key in outcome}
@@ -330,6 +330,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("project-remove", help="take back a registration that has no goals").add_argument("project_id")
     p = sub.add_parser("prune", help="delete old set-aside files, job logs and session scratch files")
     p.add_argument("--days", type=float, default=30)
+    p.add_argument("--kept", action="store_true",
+                   help="also delete the project copies a review left behind after an incomplete way back (listed as kept_for_you)")
 
     p = sub.add_parser("recover", help="close runs left by a crash and reconcile recovery objects")
     p.add_argument("--stop-stale-writer", action="store_true")
@@ -907,8 +909,9 @@ def _dispatch(args: argparse.Namespace) -> int:
             _confirm_user(f"프로젝트 등록 취소(목표가 없는 경우만): {args.project_id}")
             projects.remove(k, args.project_id, "user")
         elif args.cmd == "prune":
-            _confirm_user(f"{args.days:g}일보다 오래된 보관 파일·작업 로그·세션 임시 파일 삭제")
-            _out(jobs.prune(k, args.days))
+            _confirm_user(f"{args.days:g}일보다 오래된 보관 파일·작업 로그·세션 임시 파일 삭제"
+                          + (". 리뷰가 되돌리기를 끝내지 못해 남겨 둔 프로젝트 사본도 삭제" if args.kept else ""))
+            _out(jobs.prune(k, args.days, kept=args.kept))
         elif args.cmd == "approve":
             return _approve(k, args.goal_id)
         elif args.cmd == "revise":

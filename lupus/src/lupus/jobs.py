@@ -129,10 +129,14 @@ def stop(k: Kernel, job_id: str, wait_s: float = 20.0) -> dict:
     return {"job_id": job_id, "stopped": True, "was_running": True}
 
 
-def prune(k: Kernel, days: float) -> dict:
+def prune(k: Kernel, days: float, kept: bool = False) -> dict:
     """Delete what only accumulates: files set aside when a frozen file was put back, logs and
     records of finished background jobs, session scratch files — older than `days`. Goals, evidence
-    and the audit trail are history and are not touched."""
+    and the audit trail are history and are not touched.
+
+    A copy of a project that a review left behind (`…-verified`) is there because the way back to
+    the verified state was incomplete or was cut short: it may be the only good copy. Age does
+    not make it disposable. It is listed, and deleted only when the user says so (`kept`)."""
     cutoff = time.time() - days * 86_400
     removed = {"displaced": 0, "logs": 0, "session_files": 0, "jobs": 0, "snapshots": 0}
     live = {row["goal_id"] for row in k.q("SELECT goal_id FROM goal WHERE status NOT IN ('DONE','CANCELLED')")}
@@ -149,8 +153,15 @@ def prune(k: Kernel, days: float) -> dict:
             base = k.runtime / name
             for entry in (sorted(base.iterdir()) if base.is_dir() and (idle or name == "sessions") else []):
                 owner = entry.name.removesuffix(".json").removesuffix("-verified")
+                for_the_user = name == "base" and entry.name.endswith("-verified") and not entry.is_symlink()
                 if entry.is_symlink() or owner in live or any(owner == r["run_id"] for r in k.q(
-                        "SELECT run_id FROM run WHERE status <> 'STOPPED'")) or entry.stat().st_mtime > cutoff:
+                        "SELECT run_id FROM run WHERE status <> 'STOPPED'")) or (
+                        entry.stat().st_mtime > cutoff and not (for_the_user and kept)):
+                    if for_the_user:
+                        removed.setdefault("kept_for_you", []).append(str(entry))
+                    continue
+                if for_the_user and not kept:
+                    removed.setdefault("kept_for_you", []).append(str(entry))
                     continue
                 shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
                 removed[key] += 1

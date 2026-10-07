@@ -6,7 +6,7 @@ import time
 
 from lupus import alpha, goals, projects, runs
 from lupus.adapters import FakeAdapter
-from lupus.kernel import SupervisorStopping
+from lupus.kernel import Stop, SupervisorStopping
 from lupus.util import group_alive
 
 from .helpers import CAPS, WRITER, Env, contains
@@ -116,7 +116,7 @@ class Parallel(Env):
 
 class Fork(Env):
     def test_a_fork_exists_only_under_the_supervisors_lock_and_goes_quiet_when_told_to_stop(self):
-        stop = threading.Event()
+        stop = Stop()
         self.assertRefused("SUPERVISOR_LOCK_REQUIRED", self.k.fork, stop)
         with self.k.supervisor_lock():
             own = self.k.fork(stop)
@@ -131,3 +131,29 @@ class Fork(Env):
         self.assertRefused("SUPERVISOR_LOCK_REQUIRED", own.supervisor_lock().__enter__)      # its supervisor is gone
         self.assertEqual(self.k.one("SELECT COUNT(*) FROM event WHERE type = 'probe.recorded'")[0], 1)
         self.assertEqual(runs.unstopped(self.k), [])
+
+    def test_once_stop_has_returned_nothing_more_is_committed_even_by_a_transaction_already_writing(self):
+        stop = Stop()
+        reached, release, outcome = threading.Event(), threading.Event(), []
+
+        def writer():
+            own = self.k.fork(stop)
+            try:
+                with own.tx():
+                    own.emit("supervisor", "probe.recorded", "runtime", "late")
+                    reached.set()
+                    release.wait(10)          # still inside the transaction when the stop is set
+                outcome.append("committed")
+            except SupervisorStopping:
+                outcome.append("refused")
+            finally:
+                own.close()
+        with self.k.supervisor_lock():
+            thread = threading.Thread(target=writer)
+            thread.start()
+            reached.wait(10)
+            stop.set()                        # returns only when no commit is under way
+            release.set()
+            thread.join(10)
+        self.assertEqual(outcome, ["refused"])
+        self.assertEqual(self.k.one("SELECT COUNT(*) FROM event WHERE aggregate_id = 'late'")[0], 0)

@@ -43,6 +43,7 @@ MAX_BACKUP_FILES = 20_000
 MAX_BACKUP_BYTES = 512 * 1024 * 1024
 MANIFEST = "manifest.json"
 MAX_FINGERPRINT_BYTES = 64 * 1024 * 1024
+LINKS_NOTE = "-removed-links.json"      # beside a keep_dir: the links roll_back removed and where they pointed
 DEPENDENCY_DIRS = {"node_modules", ".venv", "venv"}      # too large to copy: watched by fingerprint, like a frozen tree
 # Files that hold credentials by convention. The worker's own provider already sees the project;
 # a reviewer is a second provider, and gets none of these, whatever their content looks like.
@@ -121,7 +122,7 @@ def _every_file(root: Path) -> tuple[list[str], dict[str, str], dict[str, str]]:
     for current, dirs, files in os.walk(root):
         for name in sorted(dirs + files):
             path = Path(current) / name
-            if path.is_symlink() and name not in protect.SKIP_DIRS:
+            if path.is_symlink():      # whatever it is called: a linked `node_modules` or `.venv` is a link like any other
                 links[os.path.relpath(path, root)] = os.readlink(path)
             elif name in DEPENDENCY_DIRS and path.is_dir() and not path.is_symlink():
                 rel = os.path.relpath(path, root)
@@ -234,15 +235,31 @@ def roll_back(saved: Path, root: Path, keep_dir: Path) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {"restored": [], "removed": [], "failed": []}
     # A dependency tree is not copied. If it is not what it was, that cannot be undone here, only said.
     out["failed"] += [rel + os.sep for rel in sorted(set(trees) | set(trees_now)) if trees.get(rel) != trees_now.get(rel)]
+    # Links that were not there go, the link itself. One may be the user's own addition, so where
+    # each pointed is written down first, like a displaced file is kept: as one list NEXT TO the
+    # kept files (not among them, where a file of the same name would overwrite it, and not as
+    # links: nothing in the runtime should lead out of it).
+    added = {rel: points_to for rel, points_to in links_now.items() if rel not in links and (
+        not os.path.dirname(rel) or protect._plain(real_root, os.path.dirname(rel)) is not None)}
+    noted = not added
+    if added:
+        try:
+            keep_dir.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            atomic_write(keep_dir.with_name(keep_dir.name + LINKS_NOTE), json.dumps(added, ensure_ascii=False, indent=1).encode() + b"\n")
+            noted = True
+        except OSError:
+            pass
     for rel, points_to in sorted(links_now.items()):
         if links.get(rel) == points_to:
             continue
-        parent = os.path.dirname(rel)
-        if rel not in links and (not parent or protect._plain(real_root, parent) is not None):
-            os.unlink(os.path.join(real_root, rel))      # a link that was not there: the link itself goes
-            out["removed"].append(f"{rel} -> {points_to}")
+        if rel in added and noted:
+            try:
+                os.unlink(os.path.join(real_root, rel))
+                out["removed"].append(f"{rel} -> {points_to}")
+            except OSError:
+                out["failed"].append(rel)
         else:
-            out["failed"].append(rel)                    # a link that changed: not ours to re-point
+            out["failed"].append(rel)                    # a link that changed (not ours to re-point), or could not be noted
     for rel, points_to in sorted(links.items()):
         if rel in links_now:
             continue

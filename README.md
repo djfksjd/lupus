@@ -162,7 +162,7 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 - Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set.
 - jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
 - A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
-- Young code. Twenty external review rounds found 125 defects, 124 of them fixed, and a usability audit another 16; assume more remain.
+- Young code. Twenty-three external review rounds found 130 defects, all of them fixed, and a usability audit another 16; assume more remain.
 
 ## Adapted from other projects
 
@@ -170,11 +170,11 @@ Lupus is its own code (Python, standard library only), but five parts of it are 
 
 | From | What Lupus took | What Lupus changed |
 |---|---|---|
-| [Ruflo](https://github.com/ruvnet/ruflo) | Bounded parallel workers, each writer in its own working tree; integration of results in order; recall diversity (MMR), a floor for BM25 on small stores, duplicate notes, prompt-injection patterns | Slots refill as they free; one writer per project is still enforced by the kernel; a combined result is checked again before it is accepted |
+| [Ruflo](https://github.com/ruvnet/ruflo) | Bounded parallel workers, each writer in its own working tree; integration of results in order; recall diversity (MMR), duplicate notes, prompt-injection patterns | Slots refill as they free; one writer per project is still enforced by the kernel; a combined result is checked again before it is accepted |
 | [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent) | A failed check is not re-run over unchanged files; a learning pass is recorded and taken back as a unit | Whole-project fingerprint instead of git status, same supervisor process only; learning can only add candidates that later verified outcomes judge |
 | [Ponytail](https://github.com/DietrichGebert/ponytail) | The implementation-economy guidance (bundled unmodified) and its mode filter | Three sections only, below the request and never a reason to build less; off by default |
 
-Measured on 2026-10-07: two goals of one repository took 19.7 s in turn and 9.0 s side by side on Codex (18.1 s and 11.1 s on Claude), one run each. `--lean` did not change which hidden tests passed (Codex 7 of 8 either way, Claude 5 of 6 either way) and used more tokens on most tasks, so it stays opt-in. The memory changes have offline tests only.
+Measured on 2026-10-07 with the real CLIs: two goals of one repository took a median of 18.9 s in turn and 9.8 s side by side on Codex (18.3 s and 10.8 s on Claude), three runs each. `--lean` did not change which hidden tests passed (Codex 7 of 8 either way, Claude 5 of 6 either way) and used more tokens on most tasks, so it stays opt-in. Of the memory changes, the recall order made no difference on the one task it was measured on (4 of 4 right either way), and a fourth change taken from Ruflo, a relevance floor for small stores, made that task fail 4 times out of 4 and was switched off. The duplicate-note and injection-pattern changes have offline tests only.
 
 ## Documentation
 
