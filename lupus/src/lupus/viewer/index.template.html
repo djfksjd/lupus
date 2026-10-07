@@ -2,62 +2,223 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:">
 <title>Lupus 지식 그래프</title>
 <style>
-  :root { --bg:#ffffff; --panel:#f6f8fa; --line:#d0d7de; --text:#1f2328; --muted:#656d76; --accent:#0969da; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#16181d; --panel:#1e2127; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; }
+  /* Palette from the Lupus mark: ink navy and moonlit steel. Kind colours are read by viewer.js. */
+  :root {
+    --ground:#f3f6fa; --panel:#ffffff; --raised:#eef2f8; --line:#d3dbe7; --line-strong:#b3bfd1;
+    --ink:#0e1a2c; --muted:#52627a; --faint:#c9d2df; --accent:#1d5cb5; --accent-ink:#ffffff; --edge:#9aa8bd; --danger:#c8373f;
+    --k-project:#56657c; --k-goal:#2b6bdc; --k-lesson:#a06f00; --k-decision:#7648d2; --k-fact:#1b8a51;
+    --k-procedure:#c93b42; --k-preference:#c25f17;
+    --side:348px;
   }
-  html, body { height:100%; margin:0; background:var(--bg); color:var(--text);
-               font:13px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-  #graph { position:fixed; inset:0 320px 0 0; cursor:grab; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) {
+      --ground:#0b121e; --panel:#101a2a; --raised:#172438; --line:#22314a; --line-strong:#33466a;
+      --ink:#e9eff8; --muted:#93a4bf; --faint:#2a3a55; --accent:#9cc4f2; --accent-ink:#0b121e; --edge:#55688a; --danger:#f0787a;
+      --k-project:#c4cfe0; --k-goal:#6ea8ff; --k-lesson:#e2b54a; --k-decision:#b594f5; --k-fact:#5fca8f;
+      --k-procedure:#f0787a; --k-preference:#f2995a;
+    }
+  }
+  :root[data-theme=dark] {
+    --ground:#0b121e; --panel:#101a2a; --raised:#172438; --line:#22314a; --line-strong:#33466a;
+    --ink:#e9eff8; --muted:#93a4bf; --faint:#2a3a55; --accent:#9cc4f2; --accent-ink:#0b121e; --edge:#55688a; --danger:#f0787a;
+    --k-project:#c4cfe0; --k-goal:#6ea8ff; --k-lesson:#e2b54a; --k-decision:#b594f5; --k-fact:#5fca8f;
+    --k-procedure:#f0787a; --k-preference:#f2995a;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; background:var(--ground); color:var(--ink);
+               font:13px/1.55 "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+               font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased; }
+  ::selection { background:var(--accent); color:var(--accent-ink); }
+  * { scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  svg { display:block; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+
+  #graph { position:fixed; inset:0 var(--side) 0 0; cursor:grab; }
   #graph:active { cursor:grabbing; }
-  #side { position:fixed; top:0; right:0; bottom:0; width:320px; box-sizing:border-box; padding:14px 14px 20px;
-          border-left:1px solid var(--line); background:var(--panel); overflow:auto; }
-  h1 { font-size:15px; margin:0 0 10px; letter-spacing:.04em; }
-  h2 { font-size:12px; margin:18px 0 6px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
-  input[type=search], select { width:100%; box-sizing:border-box; padding:6px 8px; border:1px solid var(--line); border-radius:6px;
-          background:var(--bg); color:var(--text); font:inherit; }
-  label.row { display:flex; align-items:center; gap:8px; margin:6px 0; }
-  label.slide { display:grid; grid-template-columns:86px 1fr; align-items:center; gap:8px; margin:6px 0; color:var(--muted); }
-  input[type=range] { width:100%; accent-color:var(--accent); }
-  button { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); cursor:pointer; }
-  button:hover { border-color:var(--accent); }
-  #d-title { font-size:15px; font-weight:600; margin:0 0 6px; word-break:break-word; }
-  dl { margin:0; } dt { color:var(--muted); font-size:11px; margin-top:8px; } dd { margin:1px 0 0; white-space:pre-wrap; word-break:break-word; }
-  a { color:var(--accent); }
-  .legend span { display:inline-block; margin:2px 10px 2px 0; } .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
-  .muted { color:var(--muted); font-size:11px; }
-  #hint { position:fixed; left:14px; bottom:12px; color:var(--muted); font-size:11px; pointer-events:none; }
+  #empty { position:fixed; inset:0 var(--side) 0 0; display:grid; place-content:center; justify-items:center; gap:6px; padding:24px;
+           text-align:center; pointer-events:none; }
+  #empty[hidden] { display:none; }
+  #empty strong { font-size:15px; font-weight:600; }
+  #empty span { color:var(--muted); max-width:38ch; text-wrap:balance; }
+  #hint { position:fixed; left:16px; bottom:14px; color:var(--muted); font-size:11.5px; pointer-events:none; }
+  kbd { display:inline-block; min-width:16px; padding:0 4px; border:1px solid var(--line-strong); border-radius:4px; font:inherit;
+        font-size:10.5px; line-height:15px; text-align:center; }
+  #tools { position:fixed; right:calc(var(--side) + 14px); bottom:14px; display:flex; flex-direction:column;
+           border:1px solid var(--line); border-radius:8px; background:var(--panel); overflow:hidden; }
+  #tools button { width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:0; background:none; color:var(--muted); }
+  #tools button + button { border-top:1px solid var(--line); }
+  #tools button:hover { background:var(--raised); color:var(--ink); }
+  #tools svg { width:16px; height:16px; }
+
+  #side { position:fixed; top:0; right:0; bottom:0; width:var(--side); display:flex; flex-direction:column;
+          border-left:1px solid var(--line); background:var(--panel); }
+  #side > header { display:flex; align-items:center; gap:10px; padding:16px 16px 12px; }
+  #side > header svg.mark { width:22px; height:22px; stroke:none; fill:var(--accent); flex:none; }
+  h1 { flex:1; margin:0; font-size:14px; font-weight:600; white-space:nowrap; }
+  h1 b { font-weight:700; letter-spacing:.3em; margin-right:.25em; }
+  .icon { width:30px; height:30px; display:grid; place-items:center; padding:0; border:1px solid transparent; border-radius:7px;
+          background:none; color:var(--muted); cursor:pointer; }
+  .icon:hover { background:var(--raised); color:var(--ink); }
+  .icon svg { width:16px; height:16px; }
+  :root:not([data-dark]) .icon .sun, :root[data-dark] .icon .moon { display:none; }
+
+  .find { position:relative; margin:0 16px; }
+  .find svg { position:absolute; left:10px; top:9px; width:15px; height:15px; color:var(--muted); pointer-events:none; }
+  .find input { width:100%; height:34px; padding:0 62px 0 32px; border:1px solid var(--line); border-radius:8px; background:var(--ground);
+                color:var(--ink); font:inherit; }
+  .find input::placeholder { color:var(--muted); }
+  .find input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .find output { position:absolute; right:10px; top:8px; font-size:11.5px; color:var(--muted); }
+  .find output.none { color:var(--danger); }
+
+  #scroll { flex:1; overflow:auto; padding:4px 16px 16px; }
+  h2 { margin:22px 0 8px; font-size:12px; font-weight:600; color:var(--muted); }
+  .kinds { display:flex; flex-wrap:wrap; gap:6px; }
+  .kinds button { display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 9px 0 8px; border:1px solid var(--line);
+                  border-radius:13px; background:none; color:var(--ink); font:inherit; font-size:12px; cursor:pointer;
+                  transition:background-color .15s, opacity .15s; }
+  .kinds button:hover { background:var(--raised); }
+  .kinds button[aria-pressed=false] { color:var(--muted); opacity:.62; }
+  .kinds button[aria-pressed=false] i { background:none !important; box-shadow:inset 0 0 0 1.5px var(--muted); }
+  .kinds i, .dot { width:9px; height:9px; border-radius:50%; flex:none; }
+  .kinds i.project { border-radius:1px; transform:rotate(45deg) scale(.86); }
+  .kinds i.goal { border-radius:2px; }
+  .kinds small { font-size:11px; color:var(--muted); }
+  select { width:100%; height:32px; margin-top:10px; padding:0 8px; border:1px solid var(--line); border-radius:8px; background:var(--ground);
+           color:var(--ink); font:inherit; }
+  label.row { display:flex; align-items:center; gap:8px; margin:8px 0 0; cursor:pointer; }
+  input[type=checkbox], input[type=range] { accent-color:var(--accent); margin:0; }
+  input[type=range] { width:100%; }
+
+  #detail { border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--ground); }
+  #detail.idle { border-style:dashed; background:none; color:var(--muted); }
+  #d-kind { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  #d-kind[hidden] { display:none; }
+  #d-title { margin:6px 0 0; font-size:15px; line-height:1.4; font-weight:600; word-break:break-word; text-wrap:balance; }
+  #detail.idle #d-title { margin:0; font-size:13px; font-weight:400; }
+  #d-body { margin:8px 0 0; white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
+  #d-use { display:grid; grid-template-columns:repeat(3, 1fr); margin:12px 0 0; padding:10px 0 0; border-top:1px solid var(--line); }
+  #d-use div { display:flex; flex-direction:column-reverse; }
+  #d-use dt { font-size:11px; color:var(--muted); } #d-use dd { margin:0; font-size:15px; font-weight:600; }
+  #d-meta { margin:10px 0 0; font-size:12px; color:var(--muted); }
+  #d-links { list-style:none; margin:12px 0 0; padding:8px 0 0; border-top:1px solid var(--line); }
+  #d-links button { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:8px; width:calc(100% + 12px); margin:0 -6px;
+                    padding:5px 6px; border:0; border-radius:6px; background:none; color:var(--ink); font:inherit; text-align:left; cursor:pointer; }
+  #d-links button:hover { background:var(--raised); }
+  #d-links span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #d-links small { font-size:11px; color:var(--muted); }
+  #d-page { display:inline-flex; align-items:center; gap:6px; margin-top:12px; color:var(--accent); text-decoration:underline;
+            text-underline-offset:3px; text-decoration-color:color-mix(in srgb, var(--accent) 40%, transparent); }
+  #d-page:hover { text-decoration-color:var(--accent); }
+  #d-page svg { width:13px; height:13px; }
+  [hidden] { display:none !important; }
+
+  details { margin-top:22px; border-top:1px solid var(--line); }
+  summary { display:flex; align-items:center; justify-content:space-between; padding:12px 0 4px; font-size:12px; font-weight:600;
+            color:var(--muted); cursor:pointer; list-style:none; }
+  summary::-webkit-details-marker { display:none; }
+  summary svg { width:14px; height:14px; transition:transform .2s cubic-bezier(.16,1,.3,1); }
+  details[open] summary svg { transform:rotate(90deg); }
+  label.slide { display:grid; grid-template-columns:72px 1fr; align-items:center; gap:10px; margin:8px 0 0; color:var(--muted); font-size:12px; }
+  .text { margin-top:10px; height:28px; padding:0 10px; border:1px solid var(--line); border-radius:7px; background:none; color:var(--ink);
+          font:inherit; font-size:12px; cursor:pointer; }
+  .text:hover { background:var(--raised); border-color:var(--line-strong); }
+  .key { display:grid; grid-template-columns:34px 1fr; align-items:center; gap:4px 10px; margin:10px 0 0; font-size:12px; color:var(--muted); }
+  .key svg { width:34px; height:12px; }
+  footer { padding:10px 16px 12px; border-top:1px solid var(--line); font-size:11px; line-height:1.6; color:var(--muted); }
+  footer p { margin:0; } footer span { white-space:nowrap; }
+
+  @media (max-width: 760px) {
+    #graph, #empty { inset:0 0 46% 0; }
+    #side { top:54%; width:100%; border-left:0; border-top:1px solid var(--line); }
+    #side > header { padding:10px 16px 8px; }
+    #scroll { display:flex; flex-direction:column; }
+    #scroll > .picked { order:-1; }      /* what was just tapped is read first */
+    #scroll > .picked h2 { margin-top:12px; }
+    footer p + p { display:none; }
+    #tools { right:12px; bottom:calc(46% + 12px); }
+    #hint { display:none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 </head>
 <body>
-<div id="graph"></div>
-<div id="hint">끌어서 이동 · 휠로 확대 · 노드를 끌면 주변이 따라옵니다 · 더블클릭: 문서 열기</div>
-<div id="side">
-  <h1>LUPUS 지식 그래프</h1>
-  <input type="search" id="search" placeholder="노드 검색…" autocomplete="off">
-  <h2>보기</h2>
-  <select id="scope"></select>
-  <label class="row"><input type="checkbox" id="recalls" checked> 회상 연결 표시</label>
-  <label class="row"><input type="checkbox" id="retired"> 은퇴한 노드 표시</label>
-  <label class="row"><input type="checkbox" id="pin"> 끌어다 놓은 위치에 고정</label>
-  <div><button id="unpin">고정 모두 해제</button> <button id="fit">화면에 맞추기</button></div>
-  <h2>힘</h2>
-  <label class="slide">반발력<input type="range" id="f-repel" min="20" max="400" value="120"></label>
-  <label class="slide">연결 거리<input type="range" id="f-link" min="40" max="320" value="130"></label>
-  <label class="slide">중심 인력<input type="range" id="f-center" min="0" max="100" value="18"></label>
-  <label class="slide">노드 크기<input type="range" id="f-size" min="4" max="24" value="9"></label>
-  <h2>선택한 노드</h2>
-  <div id="d-title">노드를 선택하세요</div>
-  <dl id="d-fields"></dl>
-  <p><a id="d-page" hidden>Vault 문서 열기</a></p>
-  <h2>범례</h2>
-  <div class="legend" id="legend"></div>
-  <p class="muted"><span id="count"></span><br>운영 DB에서 생성한 읽기 전용 보기 · 생성 <span id="generated"></span><br>
-  그래프 렌더링: vis-network (Apache-2.0 / MIT), 수정 없이 포함.</p>
+<div id="graph" role="application" aria-label="지식 그래프"></div>
+<div id="empty" hidden><strong id="empty-title"></strong><span id="empty-text"></span></div>
+<div id="hint">끌어서 이동 · 휠로 확대 · 더블클릭하면 문서 열기 · <kbd>/</kbd> 검색 · <kbd>Esc</kbd> 선택 해제</div>
+<div id="tools">
+  <button id="zoom-in" title="확대" aria-label="확대"><svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+  <button id="zoom-out" title="축소" aria-label="축소"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button>
+  <button id="fit" title="화면에 맞추기" aria-label="화면에 맞추기"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
 </div>
+<aside id="side">
+  <header>
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a10.5 10.5 0 1 0 0 21 10.5 10.5 0 0 0 0-21Zm1.6 2.6a8.6 8.6 0 1 1 0 17.2 8.6 8.6 0 0 1 0-17.2Z"/></svg>
+    <h1><b>LUPUS</b>지식 그래프</h1>
+    <button class="icon" id="theme" title="밝게 / 어둡게" aria-label="밝게 또는 어둡게 전환">
+      <svg class="moon" viewBox="0 0 16 16"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8Z"/></svg>
+      <svg class="sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1"/></svg>
+    </button>
+  </header>
+  <div class="find">
+    <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="m10.2 10.2 3.3 3.3"/></svg>
+    <input type="search" id="search" placeholder="제목과 내용에서 찾기" autocomplete="off" spellcheck="false" aria-label="노드 검색">
+    <output id="s-count" for="search"></output>
+  </div>
+  <div id="scroll">
+    <h2 id="kinds-title">종류</h2>
+    <div class="kinds" id="kinds"></div>
+    <select id="scope" aria-label="범위"></select>
+    <label class="row"><input type="checkbox" id="recalls" checked> 회상된 곳으로 가는 연결 표시</label>
+    <label class="row"><input type="checkbox" id="retired"> 은퇴한 노드 표시</label>
+
+    <div class="picked">
+    <h2>선택한 노드</h2>
+    <section id="detail" class="idle" aria-live="polite">
+      <div id="d-kind" hidden><i class="dot" id="d-dot"></i><span id="d-kind-text"></span></div>
+      <p id="d-title">노드를 누르면 내용과 연결이 여기에 표시됩니다.</p>
+      <p id="d-body" hidden></p>
+      <dl id="d-use" hidden>
+        <div><dt>회상</dt><dd id="d-recalled"></dd></div>
+        <div><dt>도움 됨</dt><dd id="d-helped"></dd></div>
+        <div><dt>도움 안 됨</dt><dd id="d-unhelped"></dd></div>
+      </dl>
+      <p id="d-meta" hidden></p>
+      <ul id="d-links" hidden></ul>
+      <a id="d-page" hidden>Vault 문서 열기<svg viewBox="0 0 16 16"><path d="M6 3.5h6.5V10M12.5 3.5 4 12"/></svg></a>
+    </section>
+    </div>
+
+    <details id="layout">
+      <summary>배치 조정<svg viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></summary>
+      <label class="slide">반발력<input type="range" id="f-repel" min="20" max="400" value="180"></label>
+      <label class="slide">연결 거리<input type="range" id="f-link" min="40" max="320" value="165"></label>
+      <label class="slide">중심 인력<input type="range" id="f-center" min="0" max="100" value="18"></label>
+      <label class="slide">노드 크기<input type="range" id="f-size" min="4" max="24" value="9"></label>
+      <label class="row"><input type="checkbox" id="pin"> 끌어다 놓은 위치에 고정</label>
+      <button class="text" id="unpin">고정 모두 해제</button>
+    </details>
+
+    <details id="legend">
+      <summary>표기<svg viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></summary>
+      <div class="key">
+        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4" fill="currentColor" stroke="var(--ink)" stroke-width="2"/></svg><span>사용자가 확인한 지식</span>
+        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4.4" fill="currentColor" stroke="none"/></svg><span>반복해서 쓰인 지식</span>
+        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4" stroke-dasharray="2.2 2"/></svg><span>아직 검증되지 않은 지식</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h28M27 3l4 3-4 3" stroke-width="1.8"/></svg><span>지식 사이의 관계</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h28M27 3l4 3-4 3" stroke="var(--danger)" stroke-width="1.8"/></svg><span>서로 상충</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h30" stroke-width="1"/></svg><span>기록된 목표</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h30" stroke-width="1" stroke-dasharray="3 3"/></svg><span>회상된 목표</span>
+      </div>
+    </details>
+  </div>
+  <footer><p><span id="count"></span> · 읽기 전용 · <span id="generated"></span> 생성</p>
+  <p>vis-network (Apache-2.0 / MIT)를 수정 없이 포함</p></footer>
+</aside>
 <script type="application/json" id="data">__DATA__</script>
 <script src="vis-network.min.js"></script>
 <script src="viewer.js"></script>
