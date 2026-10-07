@@ -1,0 +1,2771 @@
+{
+ "driver": "native_claude",
+ "reviewer": null,
+ "arms": [
+  "do"
+ ],
+ "date": "2026-10-07",
+ "rows": [
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import ast\n\nimport sqlparse\n\n\ndef _python_value(formatted):\n    \"\"\"Evaluate the right-hand side of a generated Python assignment.\"\"\"\n    return ast.literal_eval(formatted.split('=', 1)[1].strip())\n\n\ndef test_python_backslash_in_string_literal():\n    sql = \"select 'a\\\\b'\"\n    f = sqlparse.format(sql, output_format='python')\n    assert f == \"sql = 'select \\\\'a\\\\\\\\b\\\\''\"\n    assert _python_value(f) == sql\n\n\ndef test_python_double_backslash():\n    sql = \"select 'a\\\\\\\\b'\"\n    f = sqlparse.format(sql, output_format='python')\n    assert f == \"sql = 'select \\\\'a\\\\\\\\\\\\\\\\b\\\\''\"\n    assert _python_value(f) == sql\n\n\ndef test_python_backslash_before_closing_quote():\n    sql = \"select '\\\\'\"\n    f = sqlparse.format(sql, output_format='python')\n    assert f == \"sql = 'select \\\\'\\\\\\\\\\\\''\"\n    assert _python_value(f) == sql\n\n\ndef test_python_backslash_multiline():\n    sql = \"select 'a\\\\b'\\nfrom foo\"\n    f = sqlparse.format(sql, output_format='python')\n    assert f.startswith('sql = (')\n    assert \"\\\\'a\\\\\\\\b\\\\'\" in f\n    assert _python_value(f) == \"select 'a\\\\b' from foo\"\n\n\ndef test_php_backslash_in_string_literal():\n    sql = \"select 'a\\\\b'\"\n    f = sqlparse.format(sql, output_format='php')\n    assert f == '$sql = \"select \\'a\\\\\\\\b\\'\";'\n\n\ndef test_php_backslash_with_double_quotes():\n    sql = 'select \"a\\\\b\"'\n    f = sqlparse.format(sql, output_format='php')\n    assert f == '$sql = \"select \\\\\"a\\\\\\\\b\\\\\"\";'\n\n\ndef test_php_backslash_before_closing_quote():\n    sql = \"select '\\\\'\"\n    f = sqlparse.format(sql, output_format='php')\n    assert f == '$sql = \"select \\'\\\\\\\\\\'\";'\n\n\ndef test_php_backslash_multiline():\n    sql = \"select 'a\\\\b'\\nfrom foo\"\n    f = sqlparse.format(sql, output_format='php')\n    assert f == '$sql  = \"select \\'a\\\\\\\\b\\' \";\\n$sql .= \"from foo\";'\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "출력이 sql = 'select \\'a\\\\b\\'' 이고, 우변을 ast.literal_eval 하면 원래 SQL과 같다",
+       "input": "sqlparse.format(\"select 'a\\b'\", output_format='python') (SQL에 백슬래시 1개)",
+       "quote": "Escape backslashes in output formatters.",
+       "quote_in_request": true,
+       "rule": "python 출력에서 백슬래시는 두 개로 이스케이프된다",
+       "source": "explicit_request",
+       "test": "test_python_backslash_in_string_literal",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "출력에 백슬래시 4개(sql = 'select \\'a\\\\\\\\b\\'')가 나오고, literal_eval 결과가 원래 SQL과 같다",
+       "input": "sqlparse.format(\"select 'a\\\\b'\", output_format='python') (SQL에 백슬래시 2개 연속)",
+       "quote": "Escape backslashes in output formatters.",
+       "quote_in_request": true,
+       "rule": "백슬래시는 하나하나 각각 이스케이프된다",
+       "source": "explicit_request",
+       "test": "test_python_double_backslash",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "따옴표를 먼저 이스케이프한 뒤 백슬래시를 이스케이프(결과: \\\\' 로 리터럴이 깨짐)",
+       "choice": "백슬래시와 따옴표를 모두 이스케이프해 유효한 Python 리터럴로 원문이 복원되게 함",
+       "differs_on": "select '\\'",
+       "expected": "출력이 sql = 'select \\'\\\\\\'' 이고, literal_eval 결과가 원래 SQL과 같다",
+       "input": "sqlparse.format(\"select '\\'\", output_format='python') (닫는 따옴표 바로 앞의 백슬래시)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "백슬래시를 먼저 이스케이프한 뒤 작은따옴표를 이스케이프한다(따옴표 이스케이프용 백슬래시가 다시 두 배가 되지 않는다)",
+       "source": "worker_choice",
+       "test": "test_python_backslash_before_closing_quote",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "출력이 'sql = (' 로 시작하고 \\'a\\\\b\\' 를 포함하며, literal_eval 결과가 \"select 'a\\b' from foo\" 이다",
+       "input": "sqlparse.format(\"select 'a\\b'\\nfrom foo\", output_format='python')",
+       "quote": "Escape backslashes in output formatters.",
+       "quote_in_request": true,
+       "rule": "여러 줄 문장에서도 백슬래시가 이스케이프된다",
+       "source": "explicit_request",
+       "test": "test_python_backslash_multiline",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "줄바꿈이 괄호로 묶인 인접 문자열 리터럴로 바뀌고, 앞 줄 끝에 공백이 붙어 값이 'select ... from foo' 로 이어진다",
+       "input": "sqlparse.format(\"select 'a\\b'\\nfrom foo\", output_format='python')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "여러 줄 python 출력의 기존 형식은 유지된다",
+       "source": "existing_contract",
+       "test": "test_python_backslash_multiline",
+       "test_in_file": true,
+       "where": "sqlparse/filters/output.py OutputPythonFilter._process (has_nl 분기, \" '\" 로 줄 닫기)"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "$sql = \"select 'a\\\\b'\";",
+       "input": "sqlparse.format(\"select 'a\\b'\", output_format='php')",
+       "quote": "Escape backslashes in output formatters.",
+       "quote_in_request": true,
+       "rule": "php 출력에서 백슬래시는 두 개로 이스케이프된다",
+       "source": "explicit_request",
+       "test": "test_php_backslash_in_string_literal",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "큰따옴표 먼저, 그다음 백슬래시 이스케이프(결과: \\\\\" 로 PHP 문자열이 일찍 닫힘)",
+       "choice": "백슬래시 먼저, 그다음 큰따옴표 이스케이프",
+       "differs_on": "select \"a\\b\"",
+       "expected": "$sql = \"select \\\"a\\\\b\\\"\";",
+       "input": "sqlparse.format('select \"a\\b\"', output_format='php')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "백슬래시 이스케이프와 기존 큰따옴표 이스케이프가 함께 적용되며, 따옴표용 백슬래시는 다시 두 배가 되지 않는다",
+       "source": "worker_choice",
+       "test": "test_php_backslash_with_double_quotes",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "$sql = \"select '\\\\'\";",
+       "input": "sqlparse.format(\"select '\\'\", output_format='php')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "php 출력에서 작은따옴표는 그대로 두고 백슬래시만 두 배로 만든다",
+       "source": "existing_contract",
+       "test": "test_php_backslash_before_closing_quote",
+       "test_in_file": true,
+       "where": "sqlparse/filters/output.py OutputPHPFilter._process (큰따옴표만 이스케이프)"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "$sql = \"select 'a\\\\b' \";\\n$sql .= \"from foo\";",
+       "input": "sqlparse.format(\"select 'a\\b'\\nfrom foo\", output_format='php')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "여러 줄 php 출력의 기존 형식($sql = / $sql .=)을 유지하면서 백슬래시가 이스케이프된다",
+       "source": "existing_contract",
+       "test": "test_php_backslash_multiline",
+       "test_in_file": true,
+       "where": "sqlparse/filters/output.py OutputPHPFilter._process (has_nl 분기, '.=' 헤더)"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Escape backslashes in output formatters.",
+       "covered_by": [
+        "test_python_backslash_in_string_literal",
+        "test_python_double_backslash",
+        "test_python_backslash_before_closing_quote",
+        "test_python_backslash_multiline",
+        "test_php_backslash_in_string_literal",
+        "test_php_backslash_with_double_quotes",
+        "test_php_backslash_before_closing_quote",
+        "test_php_backslash_multiline"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "문자열 밖(식별자, 주석, 연산자 위치)의 백슬래시",
+       "tested": "문자열 리터럴(작은따옴표·큰따옴표) 안의 백슬래시"
+      },
+      {
+       "not_tested": "여러 문장(sql2, sql3 변수로 나뉘는 경우)과 reindent 옵션을 함께 쓴 경우",
+       "tested": "문장 하나(한 줄, 두 줄)"
+      },
+      {
+       "not_tested": "OutputPythonFilter / OutputPHPFilter 를 직접 호출한 경우와 varname 을 바꾼 경우",
+       "tested": "sqlparse.format(..., output_format=...) 를 통한 출력"
+      },
+      {
+       "not_tested": "php 큰따옴표 문자열에서 의미가 있는 $ 등 다른 문자의 이스케이프",
+       "tested": "php 출력의 백슬래시와 큰따옴표"
+      }
+     ]
+    },
+    "red": "red on the current code: test_php_backslash_in_string_literal - a...\nFAILED tests/test_lupus_0b3b519d.py::test_php_backslash_with_double_quotes - ...\nFAILED tests/test_lupus_0b3b519d.py::test_php_backslash_before_closing_quote\nFAILED tests/test_lupus_0b3b519d.py::test_php_backslash_multiline - assert '$...\n8 failed in 0.06s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 59.2,
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 33335,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "\"\"\"Regression tests for issue601.\n\nA keyword in front of a float literal without leading zero (``BETWEEN .03``)\nmust stay a keyword, while ``schema . name`` member access keeps working.\n\"\"\"\n\nimport pytest\n\nimport sqlparse\nfrom sqlparse import lexer\nfrom sqlparse import tokens as T\n\n\ndef _lex(sql):\n    return [(ttype, value) for ttype, value in lexer.tokenize(sql)\n            if ttype not in T.Whitespace]\n\n\ndef _shape(token):\n    \"\"\"Structure of a parsed token tree, ignoring the literal values.\"\"\"\n    if token.is_group:\n        return (type(token).__name__, [_shape(t) for t in token.tokens])\n    return (type(token).__name__, token.ttype)\n\n\ndef test_between_stays_keyword_before_leading_dot_float():\n    assert _lex('x BETWEEN .03 AND .06') == [\n        (T.Name, 'x'),\n        (T.Keyword, 'BETWEEN'),\n        (T.Number.Float, '.03'),\n        (T.Keyword, 'AND'),\n        (T.Number.Float, '.06'),\n    ]\n\n\n@pytest.mark.parametrize('sql', [\n    'x between .03 and .06',     # lower case keyword\n    'x BETWEEN  .5 AND .75',     # several spaces before the period\n    'x BETWEEN\\n.5 AND .75',     # newline before the period\n    'x BETWEEN\\t.5 AND .75',     # tab before the period\n])\ndef test_between_stays_keyword_whitespace_and_case_variants(sql):\n    toks = _lex(sql)\n    assert toks[1][0] is T.Keyword\n    assert toks[1][1].upper() == 'BETWEEN'\n    assert toks[2][0] is T.Number.Float\n    assert toks[4][0] is T.Number.Float\n\n\ndef test_keyword_directly_followed_by_leading_dot_float():\n    # no whitespace at all between the keyword and the literal\n    assert _lex('x BETWEEN.03 AND .06')[:3] == [\n        (T.Name, 'x'),\n        (T.Keyword, 'BETWEEN'),\n        (T.Number.Float, '.03'),\n    ]\n\n\ndef test_other_keyword_before_leading_dot_float():\n    assert _lex('a = .1 AND .5 < b')[3:5] == [\n        (T.Keyword, 'AND'),\n        (T.Number.Float, '.5'),\n    ]\n\n\ndef test_parsed_between_is_keyword_and_bounds_are_numbers():\n    sql = 'SELECT * FROM t WHERE x BETWEEN .03 AND .06'\n    stmt = sqlparse.parse(sql)[0]\n    assert str(stmt) == sql\n    flat = [t for t in stmt.flatten() if not t.is_whitespace]\n    between = [t for t in flat if t.value == 'BETWEEN']\n    assert len(between) == 1\n    assert between[0].ttype is T.Keyword\n    floats = [t.value for t in flat if t.ttype is T.Number.Float]\n    assert floats == ['.03', '.06']\n\n\ndef test_grouping_matches_leading_zero_variant():\n    # the statement has to be grouped exactly like the same statement\n    # written with explicit leading zeros\n    without = sqlparse.parse('SELECT * FROM t WHERE x BETWEEN .03 AND .06')[0]\n    with_zero = sqlparse.parse(\n        'SELECT * FROM t WHERE x BETWEEN 0.03 AND 0.06')[0]\n    assert _shape(without) == _shape(with_zero)\n\n\ndef test_bounds_are_standalone_number_tokens():\n    stmt = sqlparse.parse('SELECT * FROM t WHERE x BETWEEN .03 AND .06')[0]\n    where = stmt.tokens[-1]\n    assert isinstance(where, sqlparse.sql.Where)\n    direct = [t for t in where.tokens if not t.is_whitespace]\n    assert [(t.ttype, t.value) for t in direct[-4:]] == [\n        (T.Keyword, 'BETWEEN'),\n        (T.Number.Float, '.03'),\n        (T.Keyword, 'AND'),\n        (T.Number.Float, '.06'),\n    ]\n\n\n@pytest.mark.parametrize('sql', ['schema . name', 'schema.name',\n                                 'schema  .name'])\ndef test_member_access_word_before_period_is_name(sql):\n    # SCHEMA is a keyword on its own, in front of a period it is a Name\n    toks = _lex(sql)\n    assert toks[0] == (T.Name, 'schema')\n    assert toks[1] == (T.Punctuation, '.')\n    assert toks[2] == (T.Name, 'name')\n\n\ndef test_keyword_before_period_and_identifier_is_name():\n    assert _lex('between.x')[0] == (T.Name, 'between')\n    assert _lex('between . x')[0] == (T.Name, 'between')\n\n\ndef test_member_access_grouping_preserved():\n    for sql in ('schema . name', 'schema.name'):\n        stmt = sqlparse.parse(sql)[0]\n        assert len(stmt.tokens) == 1\n        ident = stmt.tokens[0]\n        assert isinstance(ident, sqlparse.sql.Identifier)\n        assert str(ident) == sql\n        assert ident.get_parent_name() == 'schema'\n        assert ident.get_real_name() == 'name'\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[(Name,'x'), (Keyword,'BETWEEN'), (Number.Float,'.03'), (Keyword,'AND'), (Number.Float,'.06')]",
+       "input": "lexer.tokenize('x BETWEEN .03 AND .06') (공백 토큰 제외)",
+       "quote": "also matched a keyword sitting in front of a float literal written without a leading zero, e.g. the ``BETWEEN`` in ``x BETWEEN .03 AND .06``",
+       "quote_in_request": true,
+       "rule": "앞에 0이 없는 실수 리터럴 앞의 키워드는 Name으로 강등되지 않고 Keyword로 남는다",
+       "source": "explicit_request",
+       "test": "test_between_stays_keyword_before_leading_dot_float",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "공백 한 칸인 요청의 예시 형태만 보장",
+       "choice": "여러 공백·개행·탭·소문자에서도 Keyword로 유지된다고 단언",
+       "differs_on": "'x BETWEEN\\n.5 AND .75'",
+       "expected": "두 번째 토큰이 Keyword BETWEEN(대소문자 무관), 세 번째·다섯 번째 토큰이 Number.Float",
+       "input": "'x between .03 and .06', 'x BETWEEN .5 AND .75', 'x BETWEEN\\n.5 AND .75', 'x BETWEEN\\t.5 AND .75'",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "키워드와 마침표 사이 공백의 종류·개수, 키워드의 대소문자와 무관하게 수정이 적용된다",
+       "source": "worker_choice",
+       "test": "test_between_stays_keyword_whitespace_and_case_variants",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "공백 없이 붙은 경우는 멤버 접근으로 보아 Name으로 둔다",
+       "choice": "공백 0개인 'BETWEEN.03'도 Keyword + Float로 단언",
+       "differs_on": "'x BETWEEN.03 AND .06'",
+       "expected": "앞 세 토큰이 (Name,'x'), (Keyword,'BETWEEN'), (Number.Float,'.03')",
+       "input": "lexer.tokenize('x BETWEEN.03 AND .06')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "키워드와 숫자를 시작하는 마침표 사이에 공백이 없어도 Keyword로 남는다",
+       "source": "worker_choice",
+       "test": "test_keyword_directly_followed_by_leading_dot_float",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "네 번째·다섯 번째 토큰이 (Keyword,'AND'), (Number.Float,'.5')",
+       "input": "lexer.tokenize('a = .1 AND .5 < b')",
+       "quote": "Add a ``(?!\\d)`` negative lookahead so the Name-before-period rule ignores a period that starts a numeric literal",
+       "quote_in_request": true,
+       "rule": "BETWEEN뿐 아니라 다른 키워드도 앞에 0이 없는 실수 앞에서 Keyword로 남는다",
+       "source": "explicit_request",
+       "test": "test_other_keyword_before_leading_dot_float",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "str(stmt)가 입력과 같고, flatten 결과에 BETWEEN이 정확히 하나이며 ttype이 Keyword, Number.Float 값은 ['.03', '.06']",
+       "input": "sqlparse.parse('SELECT * FROM t WHERE x BETWEEN .03 AND .06')[0]",
+       "quote": "As a result BETWEEN was demoted to a Name, the statement was grouped incorrectly, and the bounds were no longer standalone number tokens.",
+       "quote_in_request": true,
+       "rule": "파싱 결과에서 BETWEEN은 Keyword이고 두 경계는 숫자 토큰이다",
+       "source": "explicit_request",
+       "test": "test_parsed_between_is_keyword_and_bounds_are_numbers",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "기대 트리를 토큰별로 직접 열거해 비교",
+       "choice": "올바른 그룹핑의 기준을 '0.03 표기와 동일한 트리'로 정함",
+       "differs_on": "'SELECT * FROM t WHERE x BETWEEN .03 AND .06' (수정 전에는 'x BETWEEN'이 별칭 붙은 Identifier로 묶여 트리가 달라짐)",
+       "expected": "두 문장의 토큰 트리 구조(그룹 클래스와 ttype)가 완전히 같다",
+       "input": "parse('SELECT * FROM t WHERE x BETWEEN .03 AND .06') 와 parse('SELECT * FROM t WHERE x BETWEEN 0.03 AND 0.06')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "앞에 0이 없는 표기도 0이 있는 표기와 똑같이 그룹핑된다",
+       "source": "worker_choice",
+       "test": "test_grouping_matches_leading_zero_variant",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "Where 그룹이고, 공백을 뺀 직계 자식의 마지막 넷이 (Keyword,'BETWEEN'), (Number.Float,'.03'), (Keyword,'AND'), (Number.Float,'.06')",
+       "input": "parse('SELECT * FROM t WHERE x BETWEEN .03 AND .06')[0].tokens[-1]",
+       "quote": "the bounds were no longer standalone number tokens",
+       "quote_in_request": true,
+       "rule": "경계 값은 다른 그룹에 묶이지 않은 독립 숫자 토큰이다",
+       "source": "explicit_request",
+       "test": "test_bounds_are_standalone_number_tokens",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "앞 세 토큰이 (Name,'schema'), (Punctuation,'.'), (Name,'name')",
+       "input": "lexer.tokenize('schema . name'), 'schema.name', 'schema .name'",
+       "quote": "The SQL_REGEX rule that tags a word followed by a period as a Name (to support ``schema . name`` member access)",
+       "quote_in_request": true,
+       "rule": "식별자가 뒤따르는 마침표 앞의 단어는(단독으로는 키워드인 SCHEMA도) 여전히 Name이다",
+       "source": "explicit_request",
+       "test": "test_member_access_word_before_period_is_name",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "첫 토큰이 (Name,'between')",
+       "input": "lexer.tokenize('between.x'), lexer.tokenize('between . x')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "마침표 뒤가 숫자가 아니면 키워드도 기존대로 Name으로 태깅된다",
+       "source": "existing_contract",
+       "test": "test_keyword_before_period_and_identifier_is_name",
+       "test_in_file": true,
+       "where": "sqlparse/keywords.py 의 SQL_REGEX 규칙 r'[A-ZÀ-Ü]\\w*(?=\\s*\\.)' 과 그 위 주석 'Spaces around period `schema . name` are valid identifier'"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "최상위 토큰이 하나의 Identifier이고 str이 입력과 같으며 get_parent_name()=='schema', get_real_name()=='name'",
+       "input": "sqlparse.parse('schema . name')[0], sqlparse.parse('schema.name')[0]",
+       "quote": "while ``schema . name`` grouping is preserved",
+       "quote_in_request": true,
+       "rule": "멤버 접근은 공백이 있어도 하나의 Identifier로 그룹핑된다",
+       "source": "explicit_request",
+       "test": "test_member_access_grouping_preserved",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "The SQL_REGEX rule that tags a word followed by a period as a Name (to support ``schema . name`` member access) also matched a keyword sitting in front of a float literal written without a leading zero, e.g. the ``BETWEEN`` in ``x BETWEEN .03 AND .06``.",
+       "covered_by": [
+        "test_between_stays_keyword_before_leading_dot_float",
+        "test_between_stays_keyword_whitespace_and_case_variants",
+        "test_keyword_directly_followed_by_leading_dot_float",
+        "test_other_keyword_before_leading_dot_float"
+       ]
+      },
+      {
+       "clause": "As a result BETWEEN was demoted to a Name, the statement was grouped incorrectly, and the bounds were no longer standalone number tokens.",
+       "covered_by": [
+        "test_parsed_between_is_keyword_and_bounds_are_numbers",
+        "test_grouping_matches_leading_zero_variant",
+        "test_bounds_are_standalone_number_tokens"
+       ]
+      },
+      {
+       "clause": "Add a ``(?!\\d)`` negative lookahead so the Name-before-period rule ignores a period that starts a numeric literal, while ``schema . name`` grouping is preserved.",
+       "covered_by": [
+        "test_between_stays_keyword_before_leading_dot_float",
+        "test_other_keyword_before_leading_dot_float",
+        "test_member_access_word_before_period_is_name",
+        "test_keyword_before_period_and_identifier_is_name",
+        "test_member_access_grouping_preserved"
+       ]
+      },
+      {
+       "clause": "Adds regression tests covering both the fix and the member-access behavior.",
+       "covered_by": [
+        "test_between_stays_keyword_before_leading_dot_float",
+        "test_member_access_grouping_preserved"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "키워드가 아닌 일반 이름 뒤에 숫자로 시작하는 마침표가 오는 경우(예: 't.1', 'tbl .5')",
+       "tested": "키워드 뒤에 앞자리 0이 없는 실수 리터럴(.03, .5)"
+      },
+      {
+       "not_tested": "음수·지수 표기 경계(예: 'BETWEEN -.03 AND .06', '.5E3')",
+       "tested": "양수 실수 경계(.03, .06)"
+      },
+      {
+       "not_tested": "여러 단어 키워드나 DML 키워드 뒤의 실수(예: 'SELECT .5', 'ORDER BY .5')",
+       "tested": "BETWEEN, AND 키워드"
+      },
+      {
+       "not_tested": "sqlparse.format(reindent 등) 출력",
+       "tested": "lexer와 parse의 토큰·그룹 구조"
+      },
+      {
+       "not_tested": "따옴표 붙은 식별자나 3단계 이상 접근(예: '\"schema\" . \"name\"', 'a . b . c')",
+       "tested": "따옴표 없는 식별자의 멤버 접근('schema . name')"
+      }
+     ]
+    },
+    "red": "red on the current code: fore_leading_dot_float\nFAILED tests/test_lupus_17915c30.py::test_parsed_between_is_keyword_and_bounds_are_numbers\nFAILED tests/test_lupus_17915c30.py::test_grouping_matches_leading_zero_variant\nFAILED tests/test_lupus_17915c30.py::test_bounds_are_standalone_number_tokens\n10 failed, 5 passed in 0.14s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 125.3,
+   "added_lines": 2,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 130163,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import sqlparse\n\n\ndef _ident(s):\n    return sqlparse.parse(s)[0].tokens[0]\n\n\ndef test_real_name_four_parts():\n    assert _ident('db.schema.tbl.col').get_real_name() == 'col'\n\n\ndef test_real_name_three_parts():\n    assert _ident('a.b.c').get_real_name() == 'c'\n\n\ndef test_real_name_two_parts_unchanged_and_three_parts_fixed():\n    assert _ident('a.b').get_real_name() == 'b'\n    assert _ident('a').get_real_name() == 'a'\n    assert _ident('a.b.c').get_real_name() == 'c'\n\n\ndef test_parent_name_first_real_name_last():\n    p = _ident('db.schema.tbl.col')\n    assert p.get_parent_name() == 'db'\n    assert p.get_real_name() == 'col'\n\n\ndef test_real_name_three_parts_quoted():\n    p = _ident('\"db\".\"my schema\".\"tbl\"')\n    assert p.get_real_name() == 'tbl'\n    assert p.get_parent_name() == 'db'\n\n\ndef test_real_name_three_parts_with_as_alias():\n    p = _ident('a.b.c AS d')\n    assert p.get_real_name() == 'c'\n    assert p.get_alias() == 'd'\n    assert p.get_name() == 'd'\n\n\ndef test_real_name_three_parts_with_alias_without_as():\n    p = _ident('a.b.c d')\n    assert p.get_real_name() == 'c'\n    assert p.get_alias() == 'd'\n\n\ndef test_get_name_three_parts_without_alias():\n    assert _ident('a.b.c').get_name() == 'c'\n\n\ndef test_real_name_three_parts_wildcard():\n    assert _ident('a.b.*').get_real_name() == '*'\n\n\ndef test_real_name_three_parts_inside_statement():\n    p = sqlparse.parse('select a.b.c from x.y.z')[0]\n    assert p.tokens[2].get_real_name() == 'c'\n    assert p.tokens[6].get_real_name() == 'z'\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'col'",
+       "input": "parse(\"db.schema.tbl.col\")[0].tokens[0].get_real_name()",
+       "quote": "parse(\"db.schema.tbl.col\")[0].tokens[0].get_real_name() # 'schema', should be 'col'",
+       "quote_in_request": true,
+       "rule": "4부분 이름의 real name은 마지막 점 뒤의 구성요소다",
+       "source": "explicit_request",
+       "test": "test_real_name_four_parts",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'c'",
+       "input": "parse('a.b.c')[0].tokens[0].get_real_name()",
+       "quote": "The object name is the component after the last dot.",
+       "quote_in_request": true,
+       "rule": "3부분 이름의 real name은 마지막 점 뒤의 구성요소다",
+       "source": "explicit_request",
+       "test": "test_real_name_three_parts",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'b', 'a', 'c'",
+       "input": "'a.b', 'a', 'a.b.c' 각각의 get_real_name()",
+       "quote": "For a 2-part name the first dot is also the last, so it was accidentally correct",
+       "quote_in_request": true,
+       "rule": "2부분 이름과 점 없는 이름은 기존 결과를 유지하고, 3부분 이름은 마지막 구성요소를 돌려준다",
+       "source": "explicit_request",
+       "test": "test_real_name_two_parts_unchanged_and_three_parts_fixed",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "parent 'db', real 'col'",
+       "input": "'db.schema.tbl.col' 의 get_parent_name(), get_real_name()",
+       "quote": "get_parent_name still uses the first dot, as documented, so parent/real name now come from opposite ends as intended.",
+       "quote_in_request": true,
+       "rule": "parent name은 첫 점 앞, real name은 마지막 점 뒤에서 나온다",
+       "source": "explicit_request",
+       "test": "test_parent_name_first_real_name_last",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "따옴표를 유지한 '\"tbl\"' 을 돌려주는 것",
+       "choice": "따옴표를 제거한 'tbl' 을 기대값으로 삼음(sqlparse/sql.py 의 _get_first_name 이 remove_quotes 를 쓰는 것에 맞춤)",
+       "differs_on": "\"db\".\"my schema\".\"tbl\"",
+       "expected": "real 'tbl', parent 'db' (따옴표 제거)",
+       "input": "'\"db\".\"my schema\".\"tbl\"' 의 get_real_name(), get_parent_name()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "따옴표로 감싼 3부분 이름도 마지막 구성요소를 따옴표 없이 돌려준다",
+       "source": "worker_choice",
+       "test": "test_real_name_three_parts_quoted",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "마지막 이름 토큰인 별칭 'd' 를 돌려주는 것",
+       "choice": "별칭이 붙은 3부분 이름의 real name을 'c' 로 정함",
+       "differs_on": "a.b.c AS d",
+       "expected": "real 'c', alias 'd', name 'd'",
+       "input": "'a.b.c AS d' 의 get_real_name(), get_alias(), get_name()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "AS 별칭이 있어도 real name은 마지막 점 뒤 구성요소이고 별칭이 아니다",
+       "source": "worker_choice",
+       "test": "test_real_name_three_parts_with_as_alias",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "별칭 'd' 를 돌려주는 것",
+       "choice": "real name을 'c' 로 정함(tests/test_grouping.py 의 'foo.bar baz' 계약을 3부분으로 확장)",
+       "differs_on": "a.b.c d",
+       "expected": "real 'c', alias 'd'",
+       "input": "'a.b.c d' 의 get_real_name(), get_alias()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "AS 없는 별칭이 있어도 real name은 마지막 점 뒤 구성요소다",
+       "source": "worker_choice",
+       "test": "test_real_name_three_parts_with_alias_without_as",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'c'",
+       "input": "'a.b.c' 의 get_name()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "별칭이 없으면 get_name 은 real name(마지막 구성요소)을 돌려준다",
+       "source": "existing_contract",
+       "test": "test_get_name_three_parts_without_alias",
+       "test_in_file": true,
+       "where": "sqlparse/sql.py TokenList.get_name: return self.get_alias() or self.get_real_name()"
+      },
+      {
+       "alternative": "와일드카드는 이름이 아니므로 None 을 돌려주는 것",
+       "choice": "와일드카드를 real name 으로 돌려줌(_get_first_name 의 types 에 T.Wildcard 가 있는 것에 맞춤)",
+       "differs_on": "a.b.*",
+       "expected": "'*'",
+       "input": "'a.b.*' 의 get_real_name()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "마지막 점 뒤가 와일드카드면 '*' 를 돌려준다",
+       "source": "worker_choice",
+       "test": "test_real_name_three_parts_wildcard",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'c', 'z'",
+       "input": "parse('select a.b.c from x.y.z')[0] 의 tokens[2], tokens[6] 의 get_real_name()",
+       "quote": "Anchor on the last dot instead.",
+       "quote_in_request": true,
+       "rule": "문장 안의 3부분 열/테이블 식별자도 마지막 구성요소를 돌려준다",
+       "source": "explicit_request",
+       "test": "test_real_name_three_parts_inside_statement",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "get_real_name anchored on the first dot (via token_next_by), so it returned the second component of a fully-qualified name.",
+       "covered_by": [
+        "test_real_name_four_parts",
+        "test_real_name_three_parts"
+       ]
+      },
+      {
+       "clause": "For a 2-part name the first dot is also the last, so it was accidentally correct; for 3+ parts it returned an intermediate component: parse(\"db.schema.tbl.col\")[0].tokens[0].get_real_name() # 'schema', should be 'col'",
+       "covered_by": [
+        "test_real_name_four_parts",
+        "test_real_name_two_parts_unchanged_and_three_parts_fixed"
+       ]
+      },
+      {
+       "clause": "The object name is the component after the last dot. Anchor on the last dot instead.",
+       "covered_by": [
+        "test_real_name_three_parts",
+        "test_real_name_four_parts",
+        "test_real_name_three_parts_quoted",
+        "test_real_name_three_parts_inside_statement",
+        "test_get_name_three_parts_without_alias"
+       ]
+      },
+      {
+       "clause": "get_parent_name still uses the first dot, as documented, so parent/real name now come from opposite ends as intended.",
+       "covered_by": [
+        "test_parent_name_first_real_name_last",
+        "test_real_name_three_parts_quoted"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "점으로 끝나는 불완전한 이름(a.b.) — 마지막 점 뒤에 이름이 없을 때 None 인지",
+       "tested": "이름 토큰으로 끝나는 3~4부분 식별자(a.b.c, db.schema.tbl.col)"
+      },
+      {
+       "not_tested": "3부분 한정 함수 호출(a.b.foo())과 배열 인덱스(a.b.c[1])",
+       "tested": "3부분 열/테이블 이름"
+      },
+      {
+       "not_tested": "타입캐스트·정렬 키워드가 붙은 3부분 이름(a.b.c::int, a.b.c DESC)",
+       "tested": "별칭이 있는 3부분 이름(AS 유무)"
+      },
+      {
+       "not_tested": "-> / ->> 연산자로 이어진 이름(a.b->c)",
+       "tested": "점(.)으로 구분된 이름"
+      },
+      {
+       "not_tested": "이 세션에서는 실행 도구가 없어 새 테스트와 기존 테스트를 실제로 실행하지 못함",
+       "tested": "테스트 작성과 구현(정적 검토만)"
+      }
+     ]
+    },
+    "red": "red on the current code: eal_name_three_parts_with_alias_without_as\nFAILED tests/test_lupus_eef3d9b7.py::test_get_name_three_parts_without_alias\nFAILED tests/test_lupus_eef3d9b7.py::test_real_name_three_parts_wildcard - As...\nFAILED tests/test_lupus_eef3d9b7.py::test_real_name_three_parts_inside_statement\n10 failed in 0.06s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 74.4,
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 75073,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "# Tests for the stack-based statement splitter (issue845).\n\nimport sqlparse\n\n\ndef test_case_inside_plain_begin_block():\n    # The END of a CASE expression must not close the surrounding BEGIN\n    # block, even if the block isn't part of a CREATE statement.\n    block = ('BEGIN\\n'\n             '  SELECT CASE WHEN a = 1 THEN 2 ELSE 3 END;\\n'\n             '  SELECT 2;\\n'\n             'END;')\n    stmts = sqlparse.split(block + '\\nSELECT 3;')\n    assert stmts == [block, 'SELECT 3;']\n\n\ndef test_nested_begin_blocks_with_case():\n    block = ('BEGIN\\n'\n             '  BEGIN\\n'\n             '    SELECT CASE WHEN a = 1 THEN 2 END;\\n'\n             '  END;\\n'\n             '  SELECT 2;\\n'\n             'END;')\n    stmts = sqlparse.split(block + '\\nSELECT 3;')\n    assert stmts == [block, 'SELECT 3;']\n\n\ndef test_begin_tran_is_transaction():\n    stmts = sqlparse.split('BEGIN TRAN;\\nSELECT 1;\\nCOMMIT TRAN;')\n    assert stmts == ['BEGIN TRAN;', 'SELECT 1;', 'COMMIT TRAN;']\n\n\ndef test_begin_distributed_transaction_is_transaction():\n    sql = 'BEGIN DISTRIBUTED TRANSACTION;\\nUPDATE t SET a = 1;\\nCOMMIT;'\n    stmts = sqlparse.split(sql)\n    assert stmts == ['BEGIN DISTRIBUTED TRANSACTION;',\n                     'UPDATE t SET a = 1;',\n                     'COMMIT;']\n\n\ndef test_split_after_create_with_declare_section():\n    func = ('CREATE OR REPLACE FUNCTION foo() RETURNS INTEGER AS\\n'\n            'DECLARE\\n'\n            '  v_foo INTEGER;\\n'\n            'BEGIN\\n'\n            '  RETURN 1;\\n'\n            'END;')\n    stmts = sqlparse.split(func + '\\nSELECT 2;')\n    assert stmts == [func, 'SELECT 2;']\n\n\ndef test_split_after_procedure_with_end_case():\n    proc = ('CREATE PROCEDURE p()\\n'\n            'BEGIN\\n'\n            '  CASE x WHEN 1 THEN SELECT 1; END CASE;\\n'\n            'END;')\n    stmts = sqlparse.split(proc + '\\nSELECT 2;')\n    assert stmts == [proc, 'SELECT 2;']\n\n\ndef test_split_after_procedure_with_for_loop():\n    proc = ('CREATE PROCEDURE p()\\n'\n            'BEGIN\\n'\n            '  FOR r IN SELECT a FROM t LOOP\\n'\n            '    SELECT 1;\\n'\n            '  END LOOP;\\n'\n            'END;')\n    stmts = sqlparse.split(proc + '\\nSELECT 2;')\n    assert stmts == [proc, 'SELECT 2;']\n\n\ndef test_split_after_procedure_with_if_without_end_if():\n    proc = ('CREATE PROCEDURE p AS\\n'\n            'BEGIN\\n'\n            '  IF @flag = 1\\n'\n            '    SELECT 1;\\n'\n            'END;')\n    stmts = sqlparse.split(proc + '\\nSELECT 2;')\n    assert stmts == [proc, 'SELECT 2;']\n\n\ndef test_semicolon_inside_parenthesis_does_not_split():\n    # edge: an unbalanced closing parenthesis must not block later splits\n    stmts = sqlparse.split('SELECT (1; 2); SELECT 3); SELECT 4;')\n    assert stmts == ['SELECT (1; 2);', 'SELECT 3);', 'SELECT 4;']\n\n\ndef test_begin_semicolon_then_case_still_splits():\n    # edge: \"BEGIN;\" is a transaction, a later CASE ... END is balanced\n    sql = 'BEGIN;\\nSELECT CASE WHEN a THEN 1 END;\\nCOMMIT;'\n    stmts = sqlparse.split(sql)\n    assert stmts == ['BEGIN;', 'SELECT CASE WHEN a THEN 1 END;', 'COMMIT;']\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "원래 코드처럼 CREATE 문 안의 BEGIN 블록에서만 CASE 를 추적한다",
+       "choice": "CASE 는 어디서든 스택에 쌓고, END 는 스택 맨 위의 CASE 또는 BEGIN 하나만 닫는다",
+       "differs_on": "'BEGIN\\n SELECT CASE WHEN a = 1 THEN 2 ELSE 3 END;\\n SELECT 2;\\nEND;\\nSELECT 3;' (대안은 4문장으로 쪼갠다)",
+       "expected": "두 문장: BEGIN…END; 블록 전체, 'SELECT 3;'",
+       "input": "sqlparse.split('BEGIN\\n SELECT CASE WHEN a = 1 THEN 2 ELSE 3 END;\\n SELECT 2;\\nEND;\\nSELECT 3;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "CREATE 문이 아닌 BEGIN 블록 안에서 CASE 식의 END 는 블록을 닫지 않는다",
+       "source": "worker_choice",
+       "test": "test_case_inside_plain_begin_block",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "원래 코드처럼 깊이 카운터와 _in_case 플래그로 센다",
+       "choice": "BEGIN/CASE 를 스택에 쌓아 END 마다 맨 위 하나만 닫는다",
+       "differs_on": "위 입력 (대안은 안쪽 'END;' 에서 문장을 끊는다)",
+       "expected": "두 문장: 바깥 BEGIN…END; 블록 전체, 'SELECT 3;'",
+       "input": "sqlparse.split('BEGIN\\n BEGIN\\n SELECT CASE WHEN a = 1 THEN 2 END;\\n END;\\n SELECT 2;\\nEND;\\nSELECT 3;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "중첩된 BEGIN 블록과 CASE 는 각각 자기 END 로만 닫힌다",
+       "source": "worker_choice",
+       "test": "test_nested_begin_blocks_with_case",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['BEGIN TRAN;', 'SELECT 1;', 'COMMIT TRAN;']",
+       "input": "sqlparse.split('BEGIN TRAN;\\nSELECT 1;\\nCOMMIT TRAN;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "BEGIN 뒤에 TRAN 이 오면 블록이 아니라 트랜잭션 문이다",
+       "source": "existing_contract",
+       "test": "test_begin_tran_is_transaction",
+       "test_in_file": true,
+       "where": "sqlparse/engine/statement_splitter.py 의 Issue826 주석과 키워드 목록 ('TRANSACTION', 'WORK', 'TRAN', 'DISTRIBUTED', …). 원래 코드는 TRAN 이 Name 토큰이라 이 목록에 닿지 못했다"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['BEGIN DISTRIBUTED TRANSACTION;', 'UPDATE t SET a = 1;', 'COMMIT;']",
+       "input": "sqlparse.split('BEGIN DISTRIBUTED TRANSACTION;\\nUPDATE t SET a = 1;\\nCOMMIT;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "BEGIN 뒤에 DISTRIBUTED 가 오면 블록이 아니라 트랜잭션 문이다",
+       "source": "existing_contract",
+       "test": "test_begin_distributed_transaction_is_transaction",
+       "test_in_file": true,
+       "where": "sqlparse/engine/statement_splitter.py 의 Issue826 키워드 목록 (DISTRIBUTED 포함). 원래 코드는 DISTRIBUTED 가 Name 토큰이라 이 목록에 닿지 못했다"
+      },
+      {
+       "alternative": "원래 코드처럼 DECLARE 가 올린 레벨을 내리지 않아 뒤따르는 문장이 같은 문장에 붙는다",
+       "choice": "DECLARE 를 스택에 쌓았다가 BEGIN 이 그것을 대체한다",
+       "differs_on": "위 입력 (대안은 1문장)",
+       "expected": "두 문장: 함수 정의 전체, 'SELECT 2;'",
+       "input": "sqlparse.split('CREATE OR REPLACE FUNCTION foo() RETURNS INTEGER AS\\nDECLARE\\n v_foo INTEGER;\\nBEGIN\\n RETURN 1;\\nEND;\\nSELECT 2;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "CREATE 문의 DECLARE 구역은 본문의 BEGIN 에서 끝나고, 본문의 END; 뒤에서 문장이 끊긴다",
+       "source": "worker_choice",
+       "test": "test_split_after_create_with_declare_section",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "모든 CASE 를 블록 시작으로 본다",
+       "choice": "END 바로 뒤(공백·주석 제외)의 CASE 는 무시한다",
+       "differs_on": "위 입력 (대안은 CASE 가 닫히지 않아 1문장)",
+       "expected": "두 문장: 프로시저 전체, 'SELECT 2;'",
+       "input": "sqlparse.split('CREATE PROCEDURE p()\\nBEGIN\\n CASE x WHEN 1 THEN SELECT 1; END CASE;\\nEND;\\nSELECT 2;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "'END CASE' 의 CASE 는 새 CASE 블록을 열지 않는다",
+       "source": "worker_choice",
+       "test": "test_split_after_procedure_with_end_case",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "FOR 를 블록으로 쌓고 END LOOP 으로 닫는다",
+       "choice": "FOR/IF/WHILE 을 추적하지 않는다 (END IF/END LOOP/END WHILE 은 별도 토큰이라 무시된다)",
+       "differs_on": "'BEGIN SELECT a FROM t FOR UPDATE; END; SELECT 2;' (대안은 FOR 가 닫히지 않는다)",
+       "expected": "두 문장: 프로시저 전체, 'SELECT 2;'",
+       "input": "sqlparse.split('CREATE PROCEDURE p()\\nBEGIN\\n FOR r IN SELECT a FROM t LOOP\\n SELECT 1;\\n END LOOP;\\nEND;\\nSELECT 2;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "FOR … END LOOP 은 바깥 BEGIN 블록의 닫힘에 영향을 주지 않는다",
+       "source": "worker_choice",
+       "test": "test_split_after_procedure_with_for_loop",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "원래 코드처럼 CREATE 안의 BEGIN 블록에서 IF 를 레벨로 센다",
+       "choice": "IF 를 블록으로 추적하지 않는다",
+       "differs_on": "위 입력 (대안은 1문장)",
+       "expected": "두 문장: 프로시저 전체, 'SELECT 2;'",
+       "input": "sqlparse.split('CREATE PROCEDURE p AS\\nBEGIN\\n IF @flag = 1\\n SELECT 1;\\nEND;\\nSELECT 2;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "END IF 없는 IF 가 있어도 BEGIN 블록은 END 로 닫힌다",
+       "source": "worker_choice",
+       "test": "test_split_after_procedure_with_if_without_end_if",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['SELECT (1; 2);', 'SELECT 3);', 'SELECT 4;']",
+       "input": "sqlparse.split('SELECT (1; 2); SELECT 3); SELECT 4;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "괄호 안의 세미콜론은 끊지 않고, 짝 없는 닫는 괄호는 무시된다",
+       "source": "existing_contract",
+       "test": "test_semicolon_inside_parenthesis_does_not_split",
+       "test_in_file": true,
+       "where": "sqlparse/engine/statement_splitter.py 원래 코드의 괄호 레벨 처리(level <= 0 이면 분리)와 tests/test_regressions.py::test_issue485_split_multi"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['BEGIN;', 'SELECT CASE WHEN a THEN 1 END;', 'COMMIT;']",
+       "input": "sqlparse.split('BEGIN;\\nSELECT CASE WHEN a THEN 1 END;\\nCOMMIT;')",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "'BEGIN;' 은 트랜잭션 문이고, 블록 밖의 CASE … END 는 분리를 막지 않는다",
+       "source": "existing_contract",
+       "test": "test_begin_semicolon_then_case_still_splits",
+       "test_in_file": true,
+       "where": "tests/test_split.py::test_split_begintag (begin;) 와 tests/test_split.py::test_split_casewhen"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Refactor statement splitter to a simplified stack-based architecture (fixes #845)",
+       "covered_by": [
+        "test_case_inside_plain_begin_block",
+        "test_nested_begin_blocks_with_case",
+        "test_begin_tran_is_transaction",
+        "test_begin_distributed_transaction_is_transaction",
+        "test_split_after_create_with_declare_section",
+        "test_split_after_procedure_with_end_case",
+        "test_split_after_procedure_with_for_loop",
+        "test_split_after_procedure_with_if_without_end_if"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "내부가 실제로 스택 구조인지(속성 이름·구조)는 검사하지 않았다",
+       "tested": "sqlparse.split 의 분리 결과(동작)"
+      },
+      {
+       "not_tested": "이슈 #845 의 실제 재현 입력 — 저장소에 이슈 본문이 없어 내용을 알지 못한다",
+       "tested": "내가 고른 분리 오류 사례들(CASE in BEGIN, BEGIN TRAN, DECLARE 구역, END CASE, FOR…END LOOP, END IF 없는 IF)"
+      },
+      {
+       "not_tested": "'END FOR', 'END REPEAT' 처럼 END 뒤 단어가 별도 토큰인 닫는 구문 (구현도 처리하지 않는다)",
+       "tested": "END LOOP / END CASE 로 닫는 반복·분기"
+      },
+      {
+       "not_tested": "CREATE 없이 'DECLARE …; BEGIN … END;' 로 시작하는 익명 블록",
+       "tested": "CREATE 문 안의 DECLARE 구역"
+      },
+      {
+       "not_tested": "블록 안에 GO 가 있는 경우",
+       "tested": "세미콜론으로 끝나는 문장 분리"
+      },
+      {
+       "not_tested": "실제 pytest 실행 — 이 세션에는 실행 도구가 없어 한 번도 돌리지 못했다",
+       "tested": "새 테스트와 기존 테스트의 통과 여부를 코드 추적으로만 확인"
+      }
+     ]
+    },
+    "red": "red on the current code: r_create_with_declare_section\nFAILED tests/test_lupus_b1434e89.py::test_split_after_procedure_with_end_case\nFAILED tests/test_lupus_b1434e89.py::test_split_after_procedure_with_for_loop\nFAILED tests/test_lupus_b1434e89.py::test_split_after_procedure_with_if_without_end_if\n8 failed, 2 passed in 0.07s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 279.9,
+   "added_lines": 68,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 217102,
+   "errors": [],
+   "hidden_detail": "st_split_anonymous_begin_end_for - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 43 passed in 0.06s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "from itertools import count\nfrom unittest import TestCase\n\nimport more_itertools as mi\n\n\nclass IchunkedZeroAndNegativeTests(TestCase):\n    \"\"\"``ichunked()`` should behave like ``chunked()`` for ``n <= 0``\"\"\"\n\n    def test_zero_nonempty(self):\n        actual = [list(c) for c in mi.ichunked([1, 2, 3], 0)]\n        self.assertEqual(actual, [])\n        self.assertEqual(actual, list(mi.chunked([1, 2, 3], 0)))\n\n    def test_zero_single_item(self):\n        actual = [list(c) for c in mi.ichunked('A', 0)]\n        self.assertEqual(actual, [])\n\n    def test_zero_infinite(self):\n        actual = [list(c) for c in mi.ichunked(count(), 0)]\n        self.assertEqual(actual, [])\n\n    def test_zero_does_not_consume(self):\n        iterator = iter([1, 2, 3])\n        self.assertEqual([list(c) for c in mi.ichunked(iterator, 0)], [])\n        self.assertEqual(list(iterator), [1, 2, 3])\n\n    def test_zero_empty(self):\n        actual = [list(c) for c in mi.ichunked([], 0)]\n        self.assertEqual(actual, [])\n\n    def test_negative_empty(self):\n        with self.assertRaises(ValueError):\n            list(mi.chunked([], -1))\n        with self.assertRaises(ValueError):\n            list(mi.ichunked([], -1))\n\n    def test_negative_empty_large(self):\n        with self.assertRaises(ValueError):\n            list(mi.ichunked(iter(()), -5))\n\n    def test_negative_nonempty(self):\n        with self.assertRaises(ValueError):\n            [list(c) for c in mi.ichunked([1, 2, 3], -1)]\n\n    def test_positive_unchanged(self):\n        actual = [list(c) for c in mi.ichunked([1, 2, 3, 4, 5], 1)]\n        self.assertEqual(actual, [[1], [2], [3], [4], [5]])\n        actual = [list(c) for c in mi.ichunked([1, 2, 3, 4, 5], 2)]\n        self.assertEqual(actual, [[1, 2], [3, 4], [5]])\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[] 이고 list(mi.chunked([1, 2, 3], 0)) 와 같다 (원래 코드에서는 ValueError)",
+       "input": "mi.ichunked([1, 2, 3], 0), 각 청크를 list로 변환",
+       "quote": "make ichunked match chunked for n=0 and negative n",
+       "quote_in_request": true,
+       "rule": "n=0 이면 비어 있지 않은 iterable 에서도 chunked 처럼 아무것도 내지 않는다",
+       "source": "explicit_request",
+       "test": "test_zero_nonempty",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[]",
+       "input": "mi.ichunked('A', 0)",
+       "quote": "make ichunked match chunked for n=0 and negative n",
+       "quote_in_request": true,
+       "rule": "n=0 이면 원소가 하나뿐인 iterable 에서도 아무것도 내지 않는다",
+       "source": "explicit_request",
+       "test": "test_zero_single_item",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[] (무한 iterable 이어도 즉시 끝난다)",
+       "input": "mi.ichunked(itertools.count(), 0)",
+       "quote": "make ichunked match chunked for n=0 and negative n",
+       "quote_in_request": true,
+       "rule": "n=0 이면 무한 iterable 에서도 chunked 처럼 빈 결과로 끝난다",
+       "source": "explicit_request",
+       "test": "test_zero_infinite",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "첫 원소를 꺼낸 뒤 n=0 임을 확인하고 끝낸다 (원소 하나가 소비됨)",
+       "choice": "n=0 이면 원본에서 원소를 하나도 꺼내지 않는다 (chunked 가 take(0, ...) 로 아무것도 소비하지 않는 것과 같게 함)",
+       "differs_on": "iterator = iter([1, 2, 3]); list(mi.ichunked(iterator, 0)) 뒤의 list(iterator): [1, 2, 3] 대 [2, 3]",
+       "expected": "ichunked 결과는 [], 남은 iterator 는 [1, 2, 3]",
+       "input": "iterator = iter([1, 2, 3]); mi.ichunked(iterator, 0) 을 소진한 뒤 list(iterator)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "n=0 일 때 원본 iterable 의 원소를 하나도 소비하지 않는다",
+       "source": "worker_choice",
+       "test": "test_zero_does_not_consume",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[]",
+       "input": "mi.ichunked([], 0)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "빈 iterable 과 n=0 은 빈 결과다 (원래 코드에서도 통과하는 회귀 검사)",
+       "source": "existing_contract",
+       "test": "test_zero_empty",
+       "test_in_file": true,
+       "where": "tests/test_more.py:4540 IchunkedTests.test_zero"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "둘 다 ValueError (원래 코드에서 ichunked 는 예외 없이 [] 를 낸다)",
+       "input": "list(mi.chunked([], -1)) 와 list(mi.ichunked([], -1))",
+       "quote": "make ichunked match chunked for n=0 and negative n",
+       "quote_in_request": true,
+       "rule": "음수 n 이면 iterable 이 비어 있어도 chunked 처럼 ValueError 를 낸다",
+       "source": "explicit_request",
+       "test": "test_negative_empty",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "ValueError",
+       "input": "list(mi.ichunked(iter(()), -5))",
+       "quote": "make ichunked match chunked for n=0 and negative n",
+       "quote_in_request": true,
+       "rule": "-1 이 아닌 음수 n 도 빈 iterator 에서 ValueError 를 낸다",
+       "source": "explicit_request",
+       "test": "test_negative_empty_large",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "ValueError (원래 코드에서도 통과하는 회귀 검사)",
+       "input": "[list(c) for c in mi.ichunked([1, 2, 3], -1)]",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "음수 n 과 비어 있지 않은 iterable 은 ValueError 다",
+       "source": "existing_contract",
+       "test": "test_negative_nonempty",
+       "test_in_file": true,
+       "where": "tests/test_more.py:4546 IchunkedTests.test_negative"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[[1], [2], [3], [4], [5]] 와 [[1, 2], [3, 4], [5]]",
+       "input": "mi.ichunked([1, 2, 3, 4, 5], 1) 과 mi.ichunked([1, 2, 3, 4, 5], 2)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "양수 n (경계 n=1 포함) 의 동작은 바뀌지 않는다 (원래 코드에서도 통과하는 회귀 검사)",
+       "source": "existing_contract",
+       "test": "test_positive_unchanged",
+       "test_in_file": true,
+       "where": "more_itertools/more.py ichunked docstring, tests/test_more.py:4534 IchunkedTests.test_odd"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "make ichunked match chunked for n=0 and negative n",
+       "covered_by": [
+        "test_zero_nonempty",
+        "test_zero_single_item",
+        "test_zero_infinite",
+        "test_zero_does_not_consume",
+        "test_zero_empty",
+        "test_negative_empty",
+        "test_negative_empty_large",
+        "test_negative_nonempty"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "ValueError 가 ichunked 호출 시점에 바로 나는지(구현은 chunked 처럼 호출 즉시 낸다)와 오류 문구 'n must be at least 0'",
+       "tested": "음수 n 에서 결과를 소진했을 때 ValueError 가 나는지"
+      },
+      {
+       "not_tested": "n=None (chunked 는 허용하지만 ichunked 는 여전히 TypeError, 구현하지 않음)",
+       "tested": "정수 n (0, 음수, 양수)"
+      },
+      {
+       "not_tested": "n=0 에서 순회 중 예외를 내는 제너레이터 입력",
+       "tested": "n=0 에서 list, str, iterator, 무한 count() 입력"
+      }
+     ]
+    },
+    "red": "red on the current code: _lupus_d08ed925.py\", line 39, in test_negative_empty_large\n    with self.assertRaises(ValueError):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: ValueError not raised\n\n----------------------------------------------------------------------\nRan 9 tests in 0.001s\n\nFAILED (failures=2, errors=4)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 68.9,
+   "added_lines": 17,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 40294,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import tracemalloc\n\nfrom unittest import TestCase\n\nimport more_itertools as mi\n\n\nWARMUP = 100\nREPEATS = 2000\n# Unbounded lookahead storage grows by well over 100 bytes per call, so\n# REPEATS calls add more than 200 kB. Bounded storage adds nothing.\nLIMIT = 32 * 1024\n\n\ndef traced_growth(func):\n    \"\"\"Return the net bytes allocated while calling *func* REPEATS times.\"\"\"\n    for _ in range(WARMUP):\n        func()\n    was_tracing = tracemalloc.is_tracing()\n    if not was_tracing:\n        tracemalloc.start()\n    try:\n        before = tracemalloc.get_traced_memory()[0]\n        for _ in range(REPEATS):\n            func()\n        after = tracemalloc.get_traced_memory()[0]\n    finally:\n        if not was_tracing:\n            tracemalloc.stop()\n    return after - before\n\n\nclass ZeroCacheSeekableLookaheadTests(TestCase):\n    def test_repeated_peek_storage_is_bounded(self):\n        s = mi.seekable([10, 20, 30], maxlen=0)\n        self.assertLess(traced_growth(s.peek), LIMIT)\n        self.assertEqual(list(s), [10, 20, 30])\n\n    def test_repeated_peek_default_storage_is_bounded(self):\n        s = mi.seekable([10, 20, 30], maxlen=0)\n        self.assertLess(traced_growth(lambda: s.peek(None)), LIMIT)\n        self.assertEqual(list(s), [10, 20, 30])\n\n    def test_repeated_bool_storage_is_bounded(self):\n        s = mi.seekable([10, 20, 30], maxlen=0)\n        self.assertLess(traced_growth(lambda: bool(s)), LIMIT)\n        self.assertEqual(list(s), [10, 20, 30])\n\n    def test_peek_between_items_storage_is_bounded(self):\n        s = mi.seekable(mi.repeatfunc(int), maxlen=0)\n\n        def step():\n            s.peek()\n            next(s)\n\n        self.assertLess(traced_growth(step), LIMIT)\n\n    def test_peek_interleaved_with_next(self):\n        s = mi.seekable([10, 20, 30], maxlen=0)\n        self.assertEqual(s.peek(), 10)\n        self.assertEqual(next(s), 10)\n        self.assertEqual(s.peek(), 20)\n        self.assertEqual(s.peek(), 20)\n        self.assertEqual(next(s), 20)\n        self.assertEqual(next(s), 30)\n        self.assertEqual(s.peek('empty'), 'empty')\n        with self.assertRaises(StopIteration):\n            s.peek()\n        self.assertEqual(list(s.elements()), [])\n\n    def test_source_read_once_per_item(self):\n        pulled = []\n\n        def source():\n            for item in (10, 20, 30):\n                pulled.append(item)\n                yield item\n\n        s = mi.seekable(source(), maxlen=0)\n        for _ in range(5):\n            self.assertEqual(s.peek(), 10)\n        self.assertEqual(pulled, [10])\n        self.assertEqual(list(s), [10, 20, 30])\n        self.assertEqual(pulled, [10, 20, 30])\n\n    def test_seek_after_peek_counts_peeked_item(self):\n        s = mi.seekable([10, 20, 30, 40], maxlen=0)\n        self.assertEqual(s.peek(), 10)\n        s.seek(2)\n        self.assertEqual(list(s), [30, 40])\n\n    def test_peeked_none_is_kept(self):\n        s = mi.seekable([None, 1], maxlen=0)\n        self.assertIsNone(s.peek())\n        self.assertIsNone(s.peek())\n        self.assertEqual(list(s), [None, 1])\n\n    def test_nonzero_maxlen_peek_unchanged(self):\n        s = mi.seekable([10, 20, 30], maxlen=1)\n        self.assertEqual(s.peek(), 10)\n        self.assertEqual(s.peek(), 10)\n        self.assertEqual(list(s), [10, 20, 30])\n        self.assertEqual(list(s.elements()), [30])\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "gc.get_objects() 로 itertools.chain 객체 수가 늘지 않는지 세거나 s._source 가 원본 반복자 그대로인지 확인",
+       "choice": "tracemalloc 순증가 32KiB 미만(2000회 호출, 준비 100회)을 '유한'의 기준으로 정함",
+       "differs_on": "peek 마다 chain 은 쓰지 않지만 다른 객체(예: 리스트)에 항목을 계속 쌓는 구현: chain 개수 검사는 통과하고 메모리 검사는 실패",
+       "expected": "2000회 동안 순 할당 증가가 32768바이트 미만이고 list(s) == [10, 20, 30]",
+       "input": "seekable([10, 20, 30], maxlen=0); 100회 준비 호출 뒤 peek() 2000회를 tracemalloc 으로 측정하고 list(s) 를 호출",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "maxlen=0 에서 peek() 을 반복해도 미리보기 저장 공간이 호출 횟수에 비례해 늘지 않는다",
+       "source": "worker_choice",
+       "test": "test_repeated_peek_storage_is_bounded",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "default 없는 peek 만 검사",
+       "choice": "default 가 있는 peek 경로에도 같은 32KiB 한계를 적용",
+       "differs_on": "default 가 주어졌을 때만 원본을 감싸는 구현에서 peek(None) 을 2000회 호출",
+       "expected": "순 할당 증가 32768바이트 미만, list(s) == [10, 20, 30]",
+       "input": "seekable([10, 20, 30], maxlen=0); peek(None) 을 100회 준비 뒤 2000회 측정하고 list(s) 를 호출",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "default 인자를 준 peek 반복도 저장 공간이 유한하다",
+       "source": "worker_choice",
+       "test": "test_repeated_peek_default_storage_is_bounded",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "peek 만 검사하고 bool 은 기존 test_maxlen_zero_bool_does_not_drop_items 에 맡김",
+       "choice": "bool() 반복에도 32KiB 한계를 적용",
+       "differs_on": "__bool__ 이 peek 과 별도 경로로 원본을 감싸는 구현에서 bool(s) 를 2000회 호출",
+       "expected": "순 할당 증가 32768바이트 미만, list(s) == [10, 20, 30]",
+       "input": "seekable([10, 20, 30], maxlen=0); bool(s) 를 100회 준비 뒤 2000회 측정하고 list(s) 를 호출",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "bool() 은 peek 을 거치므로 반복해도 저장 공간이 유한하다",
+       "source": "worker_choice",
+       "test": "test_repeated_bool_storage_is_bounded",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "같은 항목을 연속으로 peek 하는 경우만 유한하면 된다고 봄",
+       "choice": "peek 과 next 를 번갈아 호출하는 경우에도 32KiB 한계를 적용",
+       "differs_on": "무한 원본에서 peek(); next() 를 2000회 반복: 소비된 래퍼가 중첩된 채 남는 구현은 실패",
+       "expected": "순 할당 증가 32768바이트 미만",
+       "input": "seekable(repeatfunc(int), maxlen=0) 에서 peek() 뒤 next() 를 100회 준비 후 2000회 측정",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "미리본 항목을 소비한 뒤에도 미리보기 저장 구조가 남아 쌓이지 않는다",
+       "source": "worker_choice",
+       "test": "test_peek_between_items_storage_is_bounded",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "10, 10, 20, 20, 20, 30, 'empty', StopIteration, elements() 는 []",
+       "input": "seekable([10, 20, 30], maxlen=0) 에서 peek, next, peek, peek, next, next, peek('empty'), peek(), elements() 순서로 호출",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "maxlen=0 에서 peek 은 항목을 버리지 않고 진행시키지 않으며, 끝에서는 default 를 돌려주거나 StopIteration 을 낸다",
+       "source": "existing_contract",
+       "test": "test_peek_interleaved_with_next",
+       "test_in_file": true,
+       "where": "tests/test_more.py 의 SeekableTest.test_maxlen_zero_peek_does_not_drop_items, test_maxlen_zero 와 PeekableMixinTests.test_simple_peeking, test_peek_default"
+      },
+      {
+       "alternative": "peek 마다 원본을 더 읽어 여러 항목을 버퍼에 두는 것도 허용",
+       "choice": "peek 을 반복해도 원본은 한 항목만 앞서 읽는다고 정함",
+       "differs_on": "peek() 5회 뒤 원본에서 꺼낸 값의 기록: [10] 대 [10, 20, ...]",
+       "expected": "peek 5회 뒤 기록은 [10], list(s) == [10, 20, 30], 최종 기록은 [10, 20, 30]",
+       "input": "(10, 20, 30) 을 내며 꺼낸 값을 기록하는 제너레이터를 seekable(..., maxlen=0) 로 감싸고 peek() 5회 뒤 list(s)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "미리보기는 원본에서 항목 하나만 꺼내 한 번만 보관한다",
+       "source": "worker_choice",
+       "test": "test_source_read_once_per_item",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "peek() == 10, list(s) == [30, 40]",
+       "input": "seekable([10, 20, 30, 40], maxlen=0); peek() 뒤 seek(2), list(s)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "보관 중인 미리본 항목은 seek 가 건너뛰는 항목 수에 포함된다(기존 동작 유지)",
+       "source": "existing_contract",
+       "test": "test_seek_after_peek_counts_peeked_item",
+       "test_in_file": true,
+       "where": "more_itertools/more.py 의 seekable.seek 와 seekable.peek: 원래 코드에서 미리본 항목은 원본 앞에 되돌려져 seek 의 consume 대상이 됨"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "peek() 은 두 번 모두 None, list(s) == [None, 1]",
+       "input": "seekable([None, 1], maxlen=0); peek() 2회 뒤 list(s)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "미리본 값이 None 이어도 '보관 없음'과 혼동하지 않는다",
+       "source": "existing_contract",
+       "test": "test_peeked_none_is_kept",
+       "test_in_file": true,
+       "where": "more_itertools/more.py 의 seekable.peek: 원래 코드는 미리본 값이 무엇이든 그대로 되돌려 놓음"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "10, 10, [10, 20, 30], elements() 는 [30]",
+       "input": "seekable([10, 20, 30], maxlen=1); peek() 2회, list(s), elements()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "maxlen 이 0 이 아닌 경우의 peek 과 캐시 동작은 바뀌지 않는다",
+       "source": "existing_contract",
+       "test": "test_nonzero_maxlen_peek_unchanged",
+       "test_in_file": true,
+       "where": "more_itertools/more.py 의 seekable.peek 캐시 인덱스 경로와 tests/test_more.py 의 SeekableTest.test_maxlen"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Bound zero-cache seekable lookahead storage",
+       "covered_by": [
+        "test_repeated_peek_storage_is_bounded",
+        "test_repeated_peek_default_storage_is_bounded",
+        "test_repeated_bool_storage_is_bounded",
+        "test_peek_between_items_storage_is_bounded"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "수십만 회 이상 반복했을 때의 깊은 중첩으로 인한 스택 넘침·크래시 여부",
+       "tested": "peek/bool 2000회 반복의 tracemalloc 순증가(32KiB 한계)"
+      },
+      {
+       "not_tested": "maxlen=0 에서 peek 뒤 relative_seek 과 seek(0)",
+       "tested": "maxlen=0 에서 peek 뒤 seek(2)"
+      },
+      {
+       "not_tested": "tracemalloc 이 없거나 할당 추적 방식이 다른 구현(PyPy 등)에서의 동작",
+       "tested": "CPython 의 tracemalloc 으로 잰 할당량"
+      },
+      {
+       "not_tested": "이 세션에는 실행 도구가 없어 새 테스트와 기존 테스트를 실제로 실행해 보지 못함",
+       "tested": "새 테스트와 구현을 코드 읽기로 작성"
+      }
+     ]
+    },
+    "red": "red on the current code: , in test_repeated_peek_storage_is_bounded\n    self.assertLess(traced_growth(s.peek), LIMIT)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 300176 not less than 32768\n\n----------------------------------------------------------------------\nRan 9 tests in 0.027s\n\nFAILED (failures=4)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 103.3,
+   "added_lines": 8,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 77510,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "from unittest import TestCase\n\nimport more_itertools as mi\n\n\nclass BucketPhantomKeyTests(TestCase):\n    \"\"\"A failed ``bucket`` lookup must not leave a key behind (issue 1284)\"\"\"\n\n    def _letters(self):\n        iterable = ['a1', 'b1', 'c1', 'a2', 'b2', 'c2', 'b3']\n        return mi.bucket(iterable, key=lambda x: x[0])\n\n    def _tens(self, validator=None):\n        iterable = [10, 20, 30, 11, 21, 31, 12, 22, 23, 33]\n        return mi.bucket(\n            iterable, key=lambda x: 10 * (x // 10), validator=validator\n        )\n\n    def test_contains_miss_does_not_add_key(self):\n        s = self._letters()\n        self.assertNotIn('d', s)\n        self.assertEqual(sorted(list(s)), ['a', 'b', 'c'])\n\n    def test_contains_agrees_with_list(self):\n        s = self._letters()\n        self.assertFalse('z' in s)\n        self.assertFalse('z' in list(s))\n\n    def test_getitem_miss_does_not_add_key(self):\n        s = self._letters()\n        self.assertEqual(list(s['z']), [])\n        self.assertEqual(sorted(list(s)), ['a', 'b', 'c'])\n\n    def test_misses_do_not_accumulate(self):\n        s = self._letters()\n        for missing in ['x', 'y', 'z', 'x', 'y', 'z']:\n            self.assertNotIn(missing, s)\n            self.assertEqual(list(s[missing]), [])\n        self.assertEqual(len(list(s)), 3)\n        self.assertEqual(sorted(list(s)), ['a', 'b', 'c'])\n\n    def test_miss_after_keys_listed(self):\n        s = self._letters()\n        self.assertEqual(sorted(list(s)), ['a', 'b', 'c'])\n        self.assertNotIn('d', s)\n        self.assertEqual(sorted(list(s)), ['a', 'b', 'c'])\n\n    def test_miss_on_empty_iterable(self):\n        s = mi.bucket([], key=lambda x: x[0])\n        self.assertNotIn('a', s)\n        self.assertEqual(list(s), [])\n\n    def test_consumed_key_still_listed_after_miss(self):\n        D = self._tens()\n        self.assertEqual(list(D[10]), [10, 11, 12])\n        self.assertEqual(list(D[20]), [20, 21, 22, 23])\n        self.assertEqual(list(D[30]), [30, 31, 33])\n        self.assertNotIn(40, D)\n        self.assertEqual(set(D), {10, 20, 30})\n\n    def test_partially_consumed_key_after_miss(self):\n        s = self._letters()\n        a_iterable = s['a']\n        self.assertEqual(next(a_iterable), 'a1')\n        self.assertNotIn('z', s)\n        self.assertEqual(sorted(list(s)), ['a', 'b', 'c'])\n        self.assertEqual(list(a_iterable), ['a2'])\n        self.assertEqual(list(s['b']), ['b1', 'b2', 'b3'])\n\n    def test_hit_then_miss(self):\n        D = self._tens()\n        self.assertIn(10, D)\n        self.assertNotIn(40, D)\n        self.assertEqual(set(D), {10, 20, 30})\n        # Checking in-ness shouldn't advance the iterator\n        self.assertEqual(list(D[10]), [10, 11, 12])\n\n    def test_valid_but_absent_key_with_validator(self):\n        D = self._tens(validator=lambda x: x in {10, 20, 40})\n        self.assertNotIn(40, D)\n        self.assertEqual(list(D[40]), [])\n        self.assertEqual(set(D), {10, 20})\n        self.assertEqual(list(D[20]), [20, 21, 22, 23])\n\n    def test_cache_is_plain_dict(self):\n        s = self._letters()\n        self.assertIs(type(s._cache), dict)\n        self.assertNotIn('z', s)\n        self.assertNotIn('z', s._cache)\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'d' in s 는 False, sorted(list(s)) == ['a','b','c']",
+       "input": "bucket(['a1','b1','c1','a2','b2','c2','b3'], key=lambda x: x[0]); 'd' in s 실행 후 sorted(list(s))",
+       "quote": "the docstring's own \"Get the keys\" example returned a fourth key after one membership test",
+       "quote_in_request": true,
+       "rule": "실패한 멤버십 검사는 키 목록에 새 키를 남기지 않는다",
+       "source": "explicit_request",
+       "test": "test_contains_miss_does_not_add_key",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "둘 다 False",
+       "input": "같은 bucket 에서 'z' in s 다음에 'z' in list(s)",
+       "quote": "`'c' in s` and `'c' in list(s)` disagreed for the same object at the same moment",
+       "quote_in_request": true,
+       "rule": "같은 객체에 대해 in 검사와 키 목록이 일치해야 한다",
+       "source": "explicit_request",
+       "test": "test_contains_agrees_with_list",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "list(s['z']) == [], 키는 ['a','b','c']",
+       "input": "list(s['z']) 실행 후 sorted(list(s))",
+       "quote": "every failed lookup left a permanent phantom key behind",
+       "quote_in_request": true,
+       "rule": "s[key] 로 없는 키를 조회해도 키가 생기지 않는다",
+       "source": "explicit_request",
+       "test": "test_getitem_miss_does_not_add_key",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "각 조회는 False / [], len(list(s)) == 3, 키는 ['a','b','c']",
+       "input": "'x','y','z' 를 각각 두 번씩 in 검사와 list(s[key]) 로 조회한 뒤 list(s)",
+       "quote": "misses accumulated",
+       "quote_in_request": true,
+       "rule": "실패한 조회가 반복되어도 키가 쌓이지 않는다",
+       "source": "explicit_request",
+       "test": "test_misses_do_not_accumulate",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "두 번 모두 ['a','b','c'], 'd' in s 는 False",
+       "input": "sorted(list(s)) 로 원본을 다 소진한 뒤 'd' in s, 다시 sorted(list(s))",
+       "quote": "Make _cache a plain dict so a lookup cannot insert",
+       "quote_in_request": true,
+       "rule": "원본이 이미 소진되어 캐시만 남은 상태에서도 조회가 키를 삽입하지 않는다",
+       "source": "explicit_request",
+       "test": "test_miss_after_keys_listed",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'a' in s 는 False, list(s) == []",
+       "input": "bucket([], key=lambda x: x[0]); 'a' in s 후 list(s)",
+       "quote": "register a key only where an item with that key is actually seen",
+       "quote_in_request": true,
+       "rule": "항목이 하나도 없는 bucket 에서는 조회 후에도 키가 없다",
+       "source": "explicit_request",
+       "test": "test_miss_on_empty_iterable",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "각 list 는 [10,11,12], [20,21,22,23], [30,31,33]; 40 in D 는 False; set(D) == {10,20,30}",
+       "input": "[10,20,30,11,21,31,12,22,23,33] 을 10 단위로 묶고 D[10], D[20], D[30] 을 모두 소진, 40 in D 후 set(D)",
+       "quote": "a key fully consumed through s[key] is still listed",
+       "quote_in_request": true,
+       "rule": "s[key] 로 완전히 소비된 키는 계속 나열되고, 없는 키 40 은 나열되지 않는다",
+       "source": "explicit_request",
+       "test": "test_consumed_key_still_listed_after_miss",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'a1', False, ['a','b','c'], ['a2'], ['b1','b2','b3']",
+       "input": "a_iterable = s['a']; next(a_iterable); 'z' in s; sorted(list(s)); list(a_iterable); list(s['b'])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "일부만 소비된 자식 이터레이터는 실패한 조회와 키 나열 뒤에도 남은 항목을 순서대로 낸다",
+       "source": "existing_contract",
+       "test": "test_partially_consumed_key_after_miss",
+       "test_in_file": true,
+       "where": "more_itertools/more.py bucket docstring 의 a_iterable / list(s['b']) 예시"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "True, False, {10,20,30}, [10,11,12]",
+       "input": "10 in D, 40 in D, set(D), list(D[10])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "in 검사는 항목을 소비하지 않으며, 성공한 검사 뒤의 실패한 검사도 키를 남기지 않는다",
+       "source": "existing_contract",
+       "test": "test_hit_then_miss",
+       "test_in_file": true,
+       "where": "tests/test_more.py BucketTests.test_in ('Checking in-ness shouldn't advance the iterator')"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "False, [], {10,20}, [20,21,22,23]",
+       "input": "같은 정수 목록, validator=lambda x: x in {10,20,40}; 40 in D, list(D[40]), set(D), list(D[20])",
+       "quote": "register a key only where an item with that key is actually seen",
+       "quote_in_request": true,
+       "rule": "validator 를 통과하지만 항목이 없는 키는 등록되지 않고, validator 가 거부한 키(30)도 나열되지 않는다",
+       "source": "explicit_request",
+       "test": "test_valid_but_absent_key_with_validator",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "type(s._cache) is dict, 'z' 는 _cache 에 없음",
+       "input": "s._cache 의 타입, 'z' in s 후 'z' in s._cache",
+       "quote": "Make _cache a plain dict so a lookup cannot insert",
+       "quote_in_request": true,
+       "rule": "_cache 는 defaultdict 가 아닌 plain dict 이고 조회로 삽입되지 않는다",
+       "source": "explicit_request",
+       "test": "test_cache_is_plain_dict",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "every failed lookup left a permanent phantom key behind",
+       "covered_by": [
+        "test_getitem_miss_does_not_add_key",
+        "test_contains_miss_does_not_add_key",
+        "test_miss_after_keys_listed"
+       ]
+      },
+      {
+       "clause": "a plain `in` test was enough to create one",
+       "covered_by": [
+        "test_contains_miss_does_not_add_key",
+        "test_hit_then_miss"
+       ]
+      },
+      {
+       "clause": "`'c' in s` and `'c' in list(s)` disagreed for the same object at the same moment",
+       "covered_by": [
+        "test_contains_agrees_with_list"
+       ]
+      },
+      {
+       "clause": "misses accumulated",
+       "covered_by": [
+        "test_misses_do_not_accumulate"
+       ]
+      },
+      {
+       "clause": "the docstring's own \"Get the keys\" example returned a fourth key after one membership test",
+       "covered_by": [
+        "test_contains_miss_does_not_add_key"
+       ]
+      },
+      {
+       "clause": "Make _cache a plain dict so a lookup cannot insert",
+       "covered_by": [
+        "test_cache_is_plain_dict",
+        "test_miss_after_keys_listed"
+       ]
+      },
+      {
+       "clause": "register a key only where an item with that key is actually seen",
+       "covered_by": [
+        "test_miss_on_empty_iterable",
+        "test_valid_but_absent_key_with_validator"
+       ]
+      },
+      {
+       "clause": "A key whose items are produced straight to the caller is registered at that point, so the existing test_list case — a key fully consumed through s[key] is still listed — keeps working",
+       "covered_by": [
+        "test_consumed_key_still_listed_after_miss"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "무한 이터레이터(count)와 validator 조합에서의 실패한 조회",
+       "tested": "유한한 리스트 원본에서의 실패한 조회"
+      },
+      {
+       "not_tested": "validator 가 거부하는 키를 직접 조회한 뒤의 키 목록(원래 코드에서도 삽입하지 않으므로 제외)",
+       "tested": "validator 를 통과하지만 항목이 없는 키의 조회"
+      },
+      {
+       "not_tested": "서로 같지만 타입이 다른 키(1 과 1.0, True)로 조회했을 때 어느 쪽이 등록되는지",
+       "tested": "문자열·정수 키"
+      },
+      {
+       "not_tested": "항목 하나만 next 로 받은 직후(원본 소진 전) _cache 에 그 키가 이미 등록되어 있는지",
+       "tested": "항목이 호출자에게 바로 전달된 키가 원본을 끝까지 소비한 뒤 나열되는지"
+      },
+      {
+       "not_tested": "list(s) 가 내는 키의 순서",
+       "tested": "키 집합의 내용(sorted/set 비교)"
+      }
+     ]
+    },
+    "red": "red on the current code: in test_valid_but_absent_key_with_validator\n    self.assertEqual(set(D), {10, 20})\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^\nAssertionError: Items in the first set but not the second:\n40\n\n----------------------------------------------------------------------\nRan 11 tests in 0.001s\n\nFAILED (failures=11)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 94.5,
+   "added_lines": 11,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 45743,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "from unittest import TestCase\n\nimport more_itertools as mi\n\n\nclass FalsyError(Exception):\n    \"\"\"An exception whose instances are falsy.\"\"\"\n\n    def __bool__(self):\n        return False\n\n\nclass EmptyLenError(Exception):\n    \"\"\"An exception whose instances are falsy by way of ``__len__``.\"\"\"\n\n    def __len__(self):\n        return 0\n\n\nclass BadRepr:\n    \"\"\"An item whose ``repr()`` cannot be computed.\"\"\"\n\n    def __repr__(self):\n        raise RuntimeError('repr failed')\n\n\nclass OneFalsyExceptionTests(TestCase):\n    def test_too_long_falsy_instance(self):\n        exc = FalsyError('too long')\n        self.assertFalse(exc)\n        with self.assertRaises(FalsyError) as cm:\n            mi.one([1, 2], too_long=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_too_short_falsy_instance(self):\n        exc = FalsyError('too short')\n        with self.assertRaises(FalsyError) as cm:\n            mi.one([], too_short=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_too_long_falsy_by_len(self):\n        exc = EmptyLenError('too long')\n        self.assertFalse(exc)\n        with self.assertRaises(EmptyLenError) as cm:\n            mi.one(iter('ab'), too_long=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_too_short_falsy_by_len(self):\n        exc = EmptyLenError('too short')\n        with self.assertRaises(EmptyLenError) as cm:\n            mi.one(iter(()), too_short=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_too_long_bad_repr(self):\n        it = [BadRepr(), BadRepr()]\n        self.assertRaises(\n            OverflowError, lambda: mi.one(it, too_long=OverflowError)\n        )\n\n    def test_too_long_bad_repr_falsy_instance(self):\n        exc = FalsyError('too long')\n        with self.assertRaises(FalsyError) as cm:\n            mi.one([BadRepr(), BadRepr()], too_long=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_falsy_exception_unused_for_one_item(self):\n        exc = FalsyError()\n        self.assertEqual(mi.one(['item'], too_short=exc, too_long=exc), 'item')\n\n    def test_wrong_keyword_not_raised(self):\n        # A falsy too_short must not be raised for a too-long iterable, and\n        # vice versa\n        exc = FalsyError()\n        with self.assertRaises(ValueError) as cm:\n            mi.one([1, 2], too_short=exc)\n        self.assertNotIsInstance(cm.exception, FalsyError)\n        with self.assertRaises(ValueError) as cm:\n            mi.one([], too_long=exc)\n        self.assertNotIsInstance(cm.exception, FalsyError)\n\n    def test_defaults_unchanged(self):\n        self.assertRaisesRegex(\n            ValueError,\n            r'too few items in iterable \\(expected 1\\)',\n            lambda: mi.one([]),\n        )\n        self.assertRaisesRegex(\n            ValueError,\n            'Expected exactly one item in iterable, but got 0, 1, and '\n            'perhaps more.',\n            lambda: mi.one(range(3)),\n        )\n        self.assertRaisesRegex(\n            ValueError,\n            'Expected exactly one item in iterable, but got 0, 1, and '\n            'perhaps more.',\n            lambda: mi.one(range(3), too_short=None, too_long=None),\n        )\n\n\nclass OnlyFalsyExceptionTests(TestCase):\n    def test_too_long_falsy_instance(self):\n        exc = FalsyError('too long')\n        with self.assertRaises(FalsyError) as cm:\n            mi.only([1, 2], too_long=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_too_long_falsy_by_len(self):\n        exc = EmptyLenError('too long')\n        with self.assertRaises(EmptyLenError) as cm:\n            mi.only(iter('abc'), too_long=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_too_long_bad_repr(self):\n        it = [BadRepr(), BadRepr()]\n        self.assertRaises(\n            OverflowError, lambda: mi.only(it, too_long=OverflowError)\n        )\n\n    def test_too_long_bad_repr_falsy_instance(self):\n        exc = FalsyError('too long')\n        with self.assertRaises(FalsyError) as cm:\n            mi.only([BadRepr(), BadRepr()], too_long=exc)\n        self.assertIs(cm.exception, exc)\n\n    def test_falsy_exception_unused(self):\n        exc = FalsyError()\n        self.assertEqual(mi.only([], too_long=exc), None)\n        self.assertEqual(mi.only([], default='!', too_long=exc), '!')\n        self.assertEqual(mi.only([1], too_long=exc), 1)\n\n    def test_defaults_unchanged(self):\n        self.assertRaisesRegex(\n            ValueError,\n            \"Expected exactly one item in iterable, \"\n            \"but got 'foo', 'bar', and perhaps more\",\n            lambda: mi.only(['foo', 'bar', 'baz']),\n        )\n        self.assertRaisesRegex(\n            ValueError,\n            'Expected exactly one item in iterable, but got 1, 2, and '\n            'perhaps more',\n            lambda: mi.only([1, 2], too_long=None),\n        )\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 FalsyError 인스턴스가 발생한다(assertIs)",
+       "input": "mi.one([1, 2], too_long=FalsyError('too long')) (__bool__이 False를 반환하는 Exception 서브클래스 인스턴스)",
+       "quote": "a `too_long`/`too_short` whose instances are falsy (e.g. an Exception subclass overriding `__bool__`) was discarded and the default `ValueError` raised instead. Switch to explicit `is not None` checks",
+       "quote_in_request": true,
+       "rule": "too_long 인스턴스가 falsy여도 버리지 않고 그대로 raise한다",
+       "source": "explicit_request",
+       "test": "OneFalsyExceptionTests.test_too_long_falsy_instance",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 FalsyError 인스턴스가 발생한다",
+       "input": "mi.one([], too_short=FalsyError('too short'))",
+       "quote": "a `too_long`/`too_short` whose instances are falsy (e.g. an Exception subclass overriding `__bool__`) was discarded and the default `ValueError` raised instead. Switch to explicit `is not None` checks",
+       "quote_in_request": true,
+       "rule": "too_short 인스턴스가 falsy여도 그대로 raise한다",
+       "source": "explicit_request",
+       "test": "OneFalsyExceptionTests.test_too_short_falsy_instance",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 EmptyLenError 인스턴스가 발생한다",
+       "input": "mi.one(iter('ab'), too_long=EmptyLenError('too long')) (__len__이 0을 반환해 falsy인 예외)",
+       "quote": "Switch to explicit `is not None` checks",
+       "quote_in_request": true,
+       "rule": "falsy가 되는 방식(__len__)과 무관하게 None이 아니면 raise한다",
+       "source": "explicit_request",
+       "test": "OneFalsyExceptionTests.test_too_long_falsy_by_len",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 EmptyLenError 인스턴스가 발생한다",
+       "input": "mi.one(iter(()), too_short=EmptyLenError('too short'))",
+       "quote": "Switch to explicit `is not None` checks",
+       "quote_in_request": true,
+       "rule": "too_short도 None이 아니면 raise한다",
+       "source": "explicit_request",
+       "test": "OneFalsyExceptionTests.test_too_short_falsy_by_len",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "RuntimeError가 아니라 OverflowError가 발생한다",
+       "input": "mi.one([BadRepr(), BadRepr()], too_long=OverflowError) (__repr__이 RuntimeError를 던지는 항목)",
+       "quote": "only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception",
+       "quote_in_request": true,
+       "rule": "사용자 예외가 있으면 기본 메시지를 만들지 않는다",
+       "source": "explicit_request",
+       "test": "OneFalsyExceptionTests.test_too_long_bad_repr",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 FalsyError 인스턴스가 발생한다",
+       "input": "mi.one([BadRepr(), BadRepr()], too_long=FalsyError('too long'))",
+       "quote": "only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception",
+       "quote_in_request": true,
+       "rule": "falsy 예외와 고장난 __repr__이 겹쳐도 요청한 예외가 발생한다",
+       "source": "explicit_request",
+       "test": "OneFalsyExceptionTests.test_too_long_bad_repr_falsy_instance",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'item'을 반환하고 예외가 없다",
+       "input": "mi.one(['item'], too_short=FalsyError(), too_long=FalsyError())",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "항목이 정확히 하나면 사용자 예외를 쓰지 않고 그 항목을 반환한다",
+       "source": "existing_contract",
+       "test": "OneFalsyExceptionTests.test_falsy_exception_unused_for_one_item",
+       "test_in_file": false,
+       "where": "more_itertools/more.py one() docstring 'Return the first item from *iterable*'; tests/test_more.py OneTests.test_basic"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "FalsyError가 아닌 기본 ValueError가 발생한다",
+       "input": "mi.one([1, 2], too_short=FalsyError()) 와 mi.one([], too_long=FalsyError())",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "too_short는 빈 경우에만, too_long은 초과한 경우에만 적용된다",
+       "source": "existing_contract",
+       "test": "OneFalsyExceptionTests.test_wrong_keyword_not_raised",
+       "test_in_file": false,
+       "where": "more_itertools/more.py one() docstring: 'If *iterable* is empty ... *too_short* keyword', 'more than one item ... *too_long* keyword'"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "ValueError 'too few items in iterable (expected 1)' / 'Expected exactly one item in iterable, but got 0, 1, and perhaps more.'",
+       "input": "mi.one([]), mi.one(range(3)), mi.one(range(3), too_short=None, too_long=None)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "사용자 예외가 없거나 None이면 기존 기본 ValueError와 메시지를 유지한다",
+       "source": "existing_contract",
+       "test": "OneFalsyExceptionTests.test_defaults_unchanged",
+       "test_in_file": false,
+       "where": "more_itertools/more.py one() docstring; tests/test_more.py OneTests.test_too_long_default_message"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 FalsyError 인스턴스가 발생한다",
+       "input": "mi.only([1, 2], too_long=FalsyError('too long'))",
+       "quote": "`one(it, too_long=exc)` and `only(it, too_long=exc)` used `raise too_long or ValueError(msg)`",
+       "quote_in_request": true,
+       "rule": "only()도 falsy too_long을 버리지 않는다",
+       "source": "explicit_request",
+       "test": "OnlyFalsyExceptionTests.test_too_long_falsy_instance",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 EmptyLenError 인스턴스가 발생한다",
+       "input": "mi.only(iter('abc'), too_long=EmptyLenError('too long'))",
+       "quote": "Switch to explicit `is not None` checks",
+       "quote_in_request": true,
+       "rule": "only()도 None이 아니면 raise한다",
+       "source": "explicit_request",
+       "test": "OnlyFalsyExceptionTests.test_too_long_falsy_by_len",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "RuntimeError가 아니라 OverflowError가 발생한다",
+       "input": "mi.only([BadRepr(), BadRepr()], too_long=OverflowError)",
+       "quote": "only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception",
+       "quote_in_request": true,
+       "rule": "only()도 사용자 예외가 있으면 기본 메시지를 만들지 않는다",
+       "source": "explicit_request",
+       "test": "OnlyFalsyExceptionTests.test_too_long_bad_repr",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "넘긴 바로 그 FalsyError 인스턴스가 발생한다",
+       "input": "mi.only([BadRepr(), BadRepr()], too_long=FalsyError('too long'))",
+       "quote": "only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception",
+       "quote_in_request": true,
+       "rule": "only()에서 falsy 예외와 고장난 __repr__이 겹쳐도 요청한 예외가 발생한다",
+       "source": "explicit_request",
+       "test": "OnlyFalsyExceptionTests.test_too_long_bad_repr_falsy_instance",
+       "test_in_file": false,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "각각 None, '!', 1을 반환하고 예외가 없다",
+       "input": "mi.only([], too_long=exc), mi.only([], default='!', too_long=exc), mi.only([1], too_long=exc) (exc=FalsyError())",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "항목이 0개면 default, 1개면 그 항목을 반환하고 too_long은 쓰지 않는다",
+       "source": "existing_contract",
+       "test": "OnlyFalsyExceptionTests.test_falsy_exception_unused",
+       "test_in_file": false,
+       "where": "more_itertools/more.py only() docstring; tests/test_more.py OnlyTests.test_custom_exception, test_custom_value"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "ValueError \"Expected exactly one item in iterable, but got 'foo', 'bar', and perhaps more\" / '... but got 1, 2, and perhaps more'",
+       "input": "mi.only(['foo', 'bar', 'baz']) 와 mi.only([1, 2], too_long=None)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "too_long이 없거나 None이면 기존 기본 ValueError와 메시지를 유지한다",
+       "source": "existing_contract",
+       "test": "OnlyFalsyExceptionTests.test_defaults_unchanged",
+       "test_in_file": false,
+       "where": "more_itertools/more.py only() docstring; tests/test_more.py OnlyTests.test_default_exception_message"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "`one(it, too_long=exc)` and `only(it, too_long=exc)` used `raise too_long or ValueError(msg)`, so a `too_long`/`too_short` whose instances are falsy (e.g. an Exception subclass overriding `__bool__`) was discarded and the default `ValueError` raised instead.",
+       "covered_by": []
+      },
+      {
+       "clause": "Switch to explicit `is not None` checks",
+       "covered_by": []
+      },
+      {
+       "clause": "only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception",
+       "covered_by": []
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "메타클래스 때문에 클래스 객체 자체가 falsy인 예외 클래스를 too_long/too_short로 넘기는 경우",
+       "tested": "falsy 예외 인스턴스(__bool__ 또는 __len__ 재정의)"
+      },
+      {
+       "not_tested": "too_long이 없을 때 __repr__이 예외를 던지는 항목(기본 메시지 생성 중 오류가 그대로 전파되는지)",
+       "tested": "too_long이 주어졌을 때 __repr__이 예외를 던지는 항목"
+      },
+      {
+       "not_tested": "무한 이터레이터에서 falsy 예외 발생 뒤 소비된 항목 수(정확히 두 개만 소비하는지)",
+       "tested": "리스트·range·iter() 이터레이터 입력"
+      },
+      {
+       "not_tested": "같은 too_short/too_long 인자를 받는 strictly_n() (요청 범위 밖이라 수정도 검사도 하지 않음)",
+       "tested": "one()/only()"
+      }
+     ]
+    },
+    "red": "red on the current code: issues-t_s1ea3j/7-do/more_itertools/more.py\", line 3688, in only\n    raise too_long or ValueError(msg)\nValueError: Expected exactly one item in iterable, but got 1, 2, and perhaps more.\n\n----------------------------------------------------------------------\nRan 15 tests in 0.002s\n\nFAILED (errors=10)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 85.5,
+   "added_lines": 9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 56398,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "1e6e869a",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import sys\nimport unittest\n\nimport tomli\nfrom tomli import _parser\n\nNESTING_ERROR_RE = (\n    r\"TOML inline arrays/tables are nested more than the allowed [0-9]+ levels\"\n)\nDEFAULT_RECURSION_LIMIT = 1000\n\n\ndef nested_array_toml(nest_count):\n    return \"arr = \" + nest_count * \"[\" + nest_count * \"]\"\n\n\ndef nested_table_toml(nest_count):\n    return nest_count * \"key = {\" + nest_count * \"}\"\n\n\ndef array_depth(obj):\n    depth = 0\n    while isinstance(obj, list):\n        depth += 1\n        obj = obj[0] if obj else None\n    return depth\n\n\ndef table_depth(obj):\n    depth = 0\n    while isinstance(obj, dict) and obj:\n        depth += 1\n        obj = obj[\"key\"]\n    return depth\n\n\nclass TestMaxInlineNestingConstant(unittest.TestCase):\n    def test_limit_is_smaller_than_default_recursion_limit(self):\n        self.assertIsInstance(_parser.MAX_INLINE_NESTING, int)\n        self.assertLess(_parser.MAX_INLINE_NESTING, DEFAULT_RECURSION_LIMIT)\n\n    def test_limit_does_not_exceed_recursion_limit(self):\n        self.assertLessEqual(_parser.MAX_INLINE_NESTING, sys.getrecursionlimit())\n\n    def test_limit_still_allows_previously_supported_nesting(self):\n        # 470 nested arrays reach nesting level 469\n        self.assertGreaterEqual(_parser.MAX_INLINE_NESTING, 469)\n\n\nclass TestInlineNestingWithRaisedRecursionLimit(unittest.TestCase):\n    \"\"\"Raise the interpreter recursion limit so that only the library's\n    own MAX_INLINE_NESTING can stop the parser.\"\"\"\n\n    def setUp(self):\n        self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())\n        sys.setrecursionlimit(20000)\n\n    def test_900_nested_arrays_rejected(self):\n        with self.assertRaisesRegex(RecursionError, NESTING_ERROR_RE):\n            tomli.loads(nested_array_toml(900))\n\n    def test_900_nested_tables_rejected(self):\n        with self.assertRaisesRegex(RecursionError, NESTING_ERROR_RE):\n            tomli.loads(nested_table_toml(900))\n\n    def test_array_boundary(self):\n        limit = _parser.MAX_INLINE_NESTING\n        obj = tomli.loads(nested_array_toml(limit + 1))\n        self.assertEqual(array_depth(obj[\"arr\"]), limit + 1)\n        with self.assertRaisesRegex(RecursionError, NESTING_ERROR_RE):\n            tomli.loads(nested_array_toml(limit + 2))\n\n    def test_table_boundary(self):\n        limit = _parser.MAX_INLINE_NESTING\n        obj = tomli.loads(nested_table_toml(limit + 1))\n        self.assertEqual(table_depth(obj), limit + 1)\n        with self.assertRaisesRegex(RecursionError, NESTING_ERROR_RE):\n            tomli.loads(nested_table_toml(limit + 2))\n\n    def test_error_message_reports_limit(self):\n        limit = _parser.MAX_INLINE_NESTING\n        with self.assertRaises(RecursionError) as cm:\n            tomli.loads(nested_array_toml(900))\n        self.assertEqual(\n            str(cm.exception),\n            \"TOML inline arrays/tables are nested more than the allowed\"\n            f\" {limit} levels\",\n        )\n        self.assertLess(limit, DEFAULT_RECURSION_LIMIT)\n\n\nclass TestInlineNestingDefaultRecursionLimit(unittest.TestCase):\n    def test_470_nested_arrays_still_parse(self):\n        obj = tomli.loads(nested_array_toml(470))\n        self.assertEqual(array_depth(obj[\"arr\"]), 470)\n\n    def test_310_nested_tables_still_parse(self):\n        obj = tomli.loads(nested_table_toml(310))\n        self.assertEqual(table_depth(obj), 310)\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "int 이고 1000 보다 작다",
+       "input": "tomli._parser.MAX_INLINE_NESTING (기본 재귀 한도 1000 인 인터프리터에서 import)",
+       "quote": "Set smaller MAX_INLINE_NESTING",
+       "quote_in_request": true,
+       "rule": "MAX_INLINE_NESTING 은 기존 값(sys.getrecursionlimit(), 기본 1000)보다 작아야 한다",
+       "source": "explicit_request",
+       "test": "test_limit_is_smaller_than_default_recursion_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "재귀 한도와 무관한 고정 상수 500",
+       "choice": "min(sys.getrecursionlimit(), 500) 으로 구현해 재귀 한도보다 커지지 않게 했다",
+       "differs_on": "재귀 한도가 500 미만(예: 300)인 상태에서 tomli 를 import 하면 내 선택은 300, 대안은 500",
+       "expected": "MAX_INLINE_NESTING <= sys.getrecursionlimit()",
+       "input": "tomli._parser.MAX_INLINE_NESTING 과 sys.getrecursionlimit()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "한도는 인터프리터 재귀 한도를 넘지 않는다",
+       "source": "worker_choice",
+       "test": "test_limit_does_not_exceed_recursion_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "469 이상",
+       "input": "tomli._parser.MAX_INLINE_NESTING",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "기존 테스트가 요구하는 470 단계 배열 중첩은 계속 허용된다",
+       "source": "existing_contract",
+       "test": "test_limit_still_allows_previously_supported_nesting",
+       "test_in_file": true,
+       "where": "tests/test_misc.py:105-108 (test_inline_array_recursion_limit, nest_count = 470)"
+      },
+      {
+       "alternative": "한도를 950 같은 더 큰 값으로 낮추기",
+       "choice": "한도를 500 으로 정해 900 단계가 거부된다",
+       "differs_on": "900 단계 중첩 배열: 내 선택은 RecursionError, 대안은 정상 파싱",
+       "expected": "RecursionError, 메시지 'TOML inline arrays/tables are nested more than the allowed N levels'",
+       "input": "sys.setrecursionlimit(20000) 후 'arr = ' + '['*900 + ']'*900",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "인터프리터 재귀 한도가 충분히 커도 900 단계 배열 중첩은 라이브러리 한도로 거부된다",
+       "source": "worker_choice",
+       "test": "test_900_nested_arrays_rejected",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "한도를 950 같은 더 큰 값으로 낮추기",
+       "choice": "한도를 500 으로 정해 900 단계가 거부된다",
+       "differs_on": "900 단계 중첩 인라인 테이블: 내 선택은 RecursionError, 대안은 정상 파싱",
+       "expected": "RecursionError, 메시지 'TOML inline arrays/tables are nested more than the allowed N levels'",
+       "input": "sys.setrecursionlimit(20000) 후 'key = {'*900 + '}'*900",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "900 단계 인라인 테이블 중첩도 같은 한도로 거부된다",
+       "source": "worker_choice",
+       "test": "test_900_nested_tables_rejected",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "+1 단계는 파싱되어 깊이가 MAX_INLINE_NESTING+1, +2 단계는 RecursionError",
+       "input": "sys.setrecursionlimit(20000) 후 MAX_INLINE_NESTING+1 단계와 MAX_INLINE_NESTING+2 단계 중첩 배열",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "nest_lvl > MAX_INLINE_NESTING 일 때만 거부한다(경계는 기존 비교식 그대로)",
+       "source": "existing_contract",
+       "test": "test_array_boundary",
+       "test_in_file": true,
+       "where": "src/tomli/_parser.py parse_value: `if nest_lvl > MAX_INLINE_NESTING:`"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "+1 단계는 파싱되어 깊이가 MAX_INLINE_NESTING+1, +2 단계는 RecursionError",
+       "input": "sys.setrecursionlimit(20000) 후 MAX_INLINE_NESTING+1 단계와 MAX_INLINE_NESTING+2 단계 중첩 인라인 테이블",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "인라인 테이블도 같은 경계에서 거부한다",
+       "source": "existing_contract",
+       "test": "test_table_boundary",
+       "test_in_file": true,
+       "where": "src/tomli/_parser.py parse_value: `if nest_lvl > MAX_INLINE_NESTING:` 와 parse_inline_table 의 nest_lvl 전달"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "예외 문자열이 정확히 'TOML inline arrays/tables are nested more than the allowed {MAX_INLINE_NESTING} levels' 이고 그 한도가 1000 보다 작다",
+       "input": "sys.setrecursionlimit(20000) 후 900 단계 중첩 배열",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "오류 문구는 기존 형식을 유지하고 새(더 작은) 한도를 보고한다",
+       "source": "existing_contract",
+       "test": "test_error_message_reports_limit",
+       "test_in_file": true,
+       "where": "src/tomli/_parser.py parse_value 의 RecursionError 메시지; tests/test_misc.py:112-117 의 정규식"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "오류 없이 파싱되고 배열 깊이 470",
+       "input": "기본 재귀 한도에서 'arr = ' + '['*470 + ']'*470",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "한도를 낮춰도 470 단계 배열은 계속 파싱된다",
+       "source": "existing_contract",
+       "test": "test_470_nested_arrays_still_parse",
+       "test_in_file": true,
+       "where": "tests/test_misc.py:105-108"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "오류 없이 파싱되고 테이블 깊이 310",
+       "input": "기본 재귀 한도에서 'key = {'*310 + '}'*310",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "한도를 낮춰도 310 단계 인라인 테이블은 계속 파싱된다",
+       "source": "existing_contract",
+       "test": "test_310_nested_tables_still_parse",
+       "test_in_file": true,
+       "where": "tests/test_misc.py:120-123"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Set smaller MAX_INLINE_NESTING",
+       "covered_by": [
+        "test_limit_is_smaller_than_default_recursion_limit",
+        "test_900_nested_arrays_rejected",
+        "test_900_nested_tables_rejected",
+        "test_error_message_reports_limit"
+       ]
+      },
+      {
+       "clause": "to avoid python:3.13-alpine worker thread crash",
+       "covered_by": []
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "python:3.13-alpine 의 작은 스택을 가진 워커 스레드에서 mypyc 바이너리로 실행한 깊은 중첩(실제 크래시 재현). 500 이 그 환경에서 충분히 작은지는 확인하지 못했다",
+       "tested": "메인 스레드에서 순수 Python 으로 실행한 깊은 중첩(재귀 한도를 20000 으로 올림)"
+      },
+      {
+       "not_tested": "재귀 한도를 500 미만이나 1000 초과로 바꾼 뒤 tomli 를 새로 import 했을 때의 값",
+       "tested": "기본 재귀 한도(1000)에서 import 된 MAX_INLINE_NESTING 값"
+      },
+      {
+       "not_tested": "배열과 인라인 테이블을 섞어 중첩한 입력",
+       "tested": "배열만 또는 인라인 테이블만 중첩한 입력"
+      },
+      {
+       "not_tested": "이 세션에서는 실행 도구가 없어 새 테스트와 기존 테스트를 실제로 돌려 보지 못했다",
+       "tested": "테스트 파일과 구현을 작성만 함"
+      }
+     ]
+    },
+    "red": "red on the current code:    self.assertLess(_parser.MAX_INLINE_NESTING, DEFAULT_RECURSION_LIMIT)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1000 not less than 1000\n\n----------------------------------------------------------------------\nRan 10 tests in 0.008s\n\nFAILED (failures=4)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 80.0,
+   "added_lines": 5,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 82441,
+   "errors": [],
+   "hidden_detail": "estMiscellaneous::test_inline_array_recursion_limit\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed in 0.02s"
+  },
+  {
+   "repo": "tomli",
+   "commit": "e1fdb94b",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "# SPDX-License-Identifier: MIT\n# SPDX-FileCopyrightText: 2021 Taneli Hukkinen\n# Licensed to PSF under a Contributor Agreement.\n\nimport sys\nimport unittest\n\nimport tomli\n\nLIMIT = sys.getrecursionlimit()\n\n\ndef dotted_key(part_count, part=\"a\", sep=\".\"):\n    return sep.join([part] * part_count)\n\n\ndef nesting_depth(obj, part=\"a\"):\n    \"\"\"Count how many times `part` can be followed (without recursion).\"\"\"\n    depth = 0\n    while isinstance(obj, dict) and part in obj:\n        obj = obj[part]\n        depth += 1\n    return depth\n\n\nclass TestKeyPartsLimit(unittest.TestCase):\n    def test_key_value_limit(self):\n        # Exactly the limit is still accepted\n        doc = dotted_key(LIMIT) + \" = 1\"\n        self.assertEqual(nesting_depth(tomli.loads(doc)), LIMIT)\n\n        # One part more is rejected\n        with self.assertRaises(RecursionError):\n            tomli.loads(dotted_key(LIMIT + 1) + \" = 1\")\n\n    def test_key_value_excessive_parts(self):\n        with self.assertRaises(RecursionError):\n            tomli.loads(dotted_key(LIMIT * 10) + \" = 1\")\n\n    def test_error_is_not_toml_decode_error(self):\n        try:\n            tomli.loads(dotted_key(LIMIT + 1) + \" = 1\")\n        except tomli.TOMLDecodeError:\n            self.fail(\"Expected RecursionError, got TOMLDecodeError\")\n        except RecursionError:\n            pass\n        else:\n            self.fail(\"Expected RecursionError, got no error\")\n\n    def test_table_header_limit(self):\n        doc = \"[\" + dotted_key(LIMIT) + \"]\\nb = 1\"\n        self.assertEqual(nesting_depth(tomli.loads(doc)), LIMIT)\n\n        with self.assertRaises(RecursionError):\n            tomli.loads(\"[\" + dotted_key(LIMIT + 1) + \"]\\nb = 1\")\n\n    def test_array_of_tables_header_limit(self):\n        doc = \"[[\" + dotted_key(LIMIT) + \"]]\\nb = 1\"\n        self.assertEqual(nesting_depth(tomli.loads(doc)), LIMIT)\n\n        with self.assertRaises(RecursionError):\n            tomli.loads(\"[[\" + dotted_key(LIMIT + 1) + \"]]\\nb = 1\")\n\n    def test_inline_table_key_limit(self):\n        doc = \"t = {\" + dotted_key(LIMIT) + \" = 1}\"\n        self.assertEqual(nesting_depth(tomli.loads(doc)[\"t\"]), LIMIT)\n\n        with self.assertRaises(RecursionError):\n            tomli.loads(\"t = {\" + dotted_key(LIMIT + 1) + \" = 1}\")\n\n    def test_quoted_parts_limit(self):\n        for part in ('\"a\"', \"'a'\"):\n            with self.subTest(part=part):\n                doc = dotted_key(LIMIT, part=part) + \" = 1\"\n                self.assertEqual(nesting_depth(tomli.loads(doc)), LIMIT)\n\n                with self.assertRaises(RecursionError):\n                    tomli.loads(dotted_key(LIMIT + 1, part=part) + \" = 1\")\n\n    def test_whitespace_around_dots_limit(self):\n        doc = dotted_key(LIMIT, sep=\" . \") + \" = 1\"\n        self.assertEqual(nesting_depth(tomli.loads(doc)), LIMIT)\n\n        with self.assertRaises(RecursionError):\n            tomli.loads(dotted_key(LIMIT + 1, sep=\" . \") + \" = 1\")\n\n    def test_limit_is_per_key(self):\n        # Many keys in a document are fine, as long as no single key\n        # has too many parts.\n        doc = \"\\n\".join(f\"k{i}.a.b = {i}\" for i in range(LIMIT + 1))\n        self.assertEqual(len(tomli.loads(doc)), LIMIT + 1)\n\n        with self.assertRaises(RecursionError):\n            tomli.loads(doc + \"\\n\" + dotted_key(LIMIT + 1) + \" = 1\")\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "An exclusive limit, where a key with exactly sys.getrecursionlimit() parts is already rejected",
+       "choice": "The limit is inclusive: a key may have up to sys.getrecursionlimit() parts (MAX_KEY_PARTS)",
+       "differs_on": "A key/value pair whose key has exactly sys.getrecursionlimit() parts (1000 by default)",
+       "expected": "Parses without error; the result is nested exactly sys.getrecursionlimit() levels deep",
+       "input": "'a.a. … .a = 1' with exactly sys.getrecursionlimit() parts",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "A key with exactly the limit number of parts is still accepted",
+       "source": "worker_choice",
+       "test": "test_key_value_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "RecursionError",
+       "input": "'a.a. … .a = 1' with sys.getrecursionlimit() + 1 parts",
+       "quote": "`sys.getrecursionlimit` and `RecursionError` is already (and in the non-mypyc version, implicitly) used for `MAX_INLINE_NESTING`.",
+       "quote_in_request": true,
+       "rule": "A key with more parts than the limit is rejected with RecursionError, and the limit is sys.getrecursionlimit()",
+       "source": "explicit_request",
+       "test": "test_key_value_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "RecursionError",
+       "input": "'a.a. … .a = 1' with sys.getrecursionlimit() * 10 parts (10,000 by default)",
+       "quote": "This isn't a problem unless a document has an excessive number (10_000-ish) of parts in a key. Limiting input seems like the best fix here.",
+       "quote_in_request": true,
+       "rule": "A document with an excessive number of parts in a key is rejected",
+       "source": "explicit_request",
+       "test": "test_key_value_excessive_parts",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "RecursionError is raised, not tomli.TOMLDecodeError",
+       "input": "'a.a. … .a = 1' with sys.getrecursionlimit() + 1 parts",
+       "quote": "Keys aren't parsed recursively, but that's an implementation detail; `RecursionError` works nicely for names recursive structures.",
+       "quote_in_request": true,
+       "rule": "The error type for too many key parts is RecursionError",
+       "source": "explicit_request",
+       "test": "test_error_is_not_toml_decode_error",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "An exclusive limit for table header keys",
+       "choice": "The same inclusive limit applies to table header keys",
+       "differs_on": "A '[…]' header with exactly sys.getrecursionlimit() parts",
+       "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+       "input": "'[a.a. … .a]\\nb = 1' with exactly sys.getrecursionlimit() parts in the header",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "A table header key at the limit is accepted",
+       "source": "worker_choice",
+       "test": "test_table_header_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "Limit only the keys of key/value pairs, since the request names only key_value_rule's loop",
+       "choice": "The limit is enforced in parse_key, so it covers every key including '[table]' headers",
+       "differs_on": "A '[…]' header with sys.getrecursionlimit() + 1 parts",
+       "expected": "RecursionError",
+       "input": "'[a.a. … .a]\\nb = 1' with sys.getrecursionlimit() + 1 parts in the header",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "The limit also applies to table header keys",
+       "source": "worker_choice",
+       "test": "test_table_header_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "An exclusive limit for array-of-tables header keys",
+       "choice": "The same inclusive limit applies to array-of-tables header keys",
+       "differs_on": "A '[[…]]' header with exactly sys.getrecursionlimit() parts",
+       "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+       "input": "'[[a.a. … .a]]\\nb = 1' with exactly sys.getrecursionlimit() parts",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "An array-of-tables header key at the limit is accepted",
+       "source": "worker_choice",
+       "test": "test_array_of_tables_header_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "Limit only the keys of key/value pairs",
+       "choice": "The limit is enforced in parse_key, so it covers '[[array]]' headers too",
+       "differs_on": "A '[[…]]' header with sys.getrecursionlimit() + 1 parts",
+       "expected": "RecursionError",
+       "input": "'[[a.a. … .a]]\\nb = 1' with sys.getrecursionlimit() + 1 parts",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "The limit also applies to array-of-tables header keys",
+       "source": "worker_choice",
+       "test": "test_array_of_tables_header_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "An exclusive limit for inline table keys",
+       "choice": "The same inclusive limit applies to keys inside inline tables",
+       "differs_on": "An inline table key with exactly sys.getrecursionlimit() parts",
+       "expected": "Parses; the nesting depth under 't' equals sys.getrecursionlimit()",
+       "input": "'t = {a.a. … .a = 1}' with exactly sys.getrecursionlimit() parts in the inline key",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "An inline table key at the limit is accepted",
+       "source": "worker_choice",
+       "test": "test_inline_table_key_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "Limit only top-level key/value keys",
+       "choice": "The limit is enforced in parse_key, so it covers inline table keys too",
+       "differs_on": "An inline table key with sys.getrecursionlimit() + 1 parts",
+       "expected": "RecursionError",
+       "input": "'t = {a.a. … .a = 1}' with sys.getrecursionlimit() + 1 parts in the inline key",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "The limit also applies to keys inside inline tables",
+       "source": "worker_choice",
+       "test": "test_inline_table_key_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "An exclusive limit",
+       "choice": "Quoted parts count the same as bare parts, with an inclusive limit",
+       "differs_on": "A key of exactly sys.getrecursionlimit() quoted parts",
+       "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+       "input": "Keys made of basic-string parts (\"a\".\"a\"…) and of literal-string parts ('a'.'a'…), with exactly sys.getrecursionlimit() parts",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "A key of quoted parts at the limit is accepted",
+       "source": "worker_choice",
+       "test": "test_quoted_parts_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "Apply the limit only to bare key parts",
+       "choice": "Every key part counts as one, whatever its notation",
+       "differs_on": "A key with sys.getrecursionlimit() + 1 parts written as \"a\".\"a\"…",
+       "expected": "RecursionError",
+       "input": "Keys made of basic-string parts and of literal-string parts, with sys.getrecursionlimit() + 1 parts",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "Parts are counted regardless of whether they are bare or quoted",
+       "source": "worker_choice",
+       "test": "test_quoted_parts_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "A limit on the source length of the key",
+       "choice": "The limit is on the number of parts, not on key length or characters",
+       "differs_on": "A key with exactly sys.getrecursionlimit() parts and spaces around every dot",
+       "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+       "input": "'a . a . … . a = 1' with exactly sys.getrecursionlimit() parts",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "Whitespace around dots does not change the part count at the limit",
+       "source": "worker_choice",
+       "test": "test_whitespace_around_dots_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "A limit on the source length of the key",
+       "choice": "The limit is on the number of parts, with whitespace ignored",
+       "differs_on": "A key with sys.getrecursionlimit() + 1 parts and spaces around every dot",
+       "expected": "RecursionError",
+       "input": "'a . a . … . a = 1' with sys.getrecursionlimit() + 1 parts",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "Whitespace around dots does not let a key exceed the limit",
+       "source": "worker_choice",
+       "test": "test_whitespace_around_dots_limit",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "Parses; the result has sys.getrecursionlimit() + 1 top-level keys",
+       "input": "sys.getrecursionlimit() + 1 lines of the form 'k{i}.a.b = {i}'",
+       "quote": "Limit number of parts of a key",
+       "quote_in_request": true,
+       "rule": "The limit applies to the parts of a single key, not to the total number of key parts in a document",
+       "source": "explicit_request",
+       "test": "test_limit_is_per_key",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "RecursionError",
+       "input": "The same document followed by one key/value line whose key has sys.getrecursionlimit() + 1 parts",
+       "quote": "Limiting input seems like the best fix here.",
+       "quote_in_request": true,
+       "rule": "A single key over the limit is rejected even when the rest of the document is valid",
+       "source": "explicit_request",
+       "test": "test_limit_is_per_key",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Limit number of parts of a key (#286) * Limit number of parts of a key",
+       "covered_by": [
+        "test_key_value_limit",
+        "test_table_header_limit",
+        "test_array_of_tables_header_limit",
+        "test_inline_table_key_limit",
+        "test_quoted_parts_limit",
+        "test_whitespace_around_dots_limit",
+        "test_limit_is_per_key"
+       ]
+      },
+      {
+       "clause": "tomli has quadratic time complexity when handling parts of a key (via Flags.is_ calls in key_value_rule's loop, and maybe elsewhere).",
+       "covered_by": []
+      },
+      {
+       "clause": "This isn't a problem unless a document has an excessive number (10_000-ish) of parts in a key.",
+       "covered_by": [
+        "test_key_value_excessive_parts"
+       ]
+      },
+      {
+       "clause": "Limiting input seems like the best fix here.",
+       "covered_by": [
+        "test_key_value_limit",
+        "test_key_value_excessive_parts",
+        "test_limit_is_per_key"
+       ]
+      },
+      {
+       "clause": "`sys.getrecursionlimit` and `RecursionError` is already (and in the non-mypyc version, implicitly) used for `MAX_INLINE_NESTING`.",
+       "covered_by": [
+        "test_key_value_limit",
+        "test_error_is_not_toml_decode_error"
+       ]
+      },
+      {
+       "clause": "Keys aren't parsed recursively, but that's an implementation detail; `RecursionError` works nicely for names recursive structures.",
+       "covered_by": [
+        "test_error_is_not_toml_decode_error"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "A table header and a key/value key that are each under the limit but whose combined absolute path exceeds it (e.g. a 600-part header plus a 600-part key); the implementation allows this",
+       "tested": "A single key (key/value, table header, array-of-tables header, inline table key) with more parts than the limit"
+      },
+      {
+       "not_tested": "The wording of the error message, and parse time itself (no check that the quadratic behaviour is gone)",
+       "tested": "That an over-limit key raises RecursionError"
+      },
+      {
+       "not_tested": "The recursion limit being changed with sys.setrecursionlimit() after tomli is imported (MAX_KEY_PARTS is fixed at import time)",
+       "tested": "The limit as sys.getrecursionlimit() read when the test module is imported"
+      },
+      {
+       "not_tested": "mypyc-compiled builds",
+       "tested": "The pure Python parser"
+      },
+      {
+       "not_tested": "An actual run of the new tests and the existing test suite",
+       "tested": "Test file and implementation as written; nothing was executed in this session (no run tool available)"
+      }
+     ]
+    },
+    "red": "red on the current code: b21e.py\", line 84, in test_whitespace_around_dots_limit\n    with self.assertRaises(RecursionError):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: RecursionError not raised\n\n----------------------------------------------------------------------\nRan 9 tests in 0.633s\n\nFAILED (failures=10)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 79.6,
+   "added_lines": 11,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 110030,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "9eb2125e",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import datetime\nimport unittest\n\nfrom . import tomllib\n\n\nclass TestOptionalSeconds(unittest.TestCase):\n    def test_local_time_without_seconds(self):\n        self.assertEqual(tomllib.loads(\"t = 13:37\"), {\"t\": datetime.time(13, 37)})\n\n    def test_local_time_without_seconds_boundaries(self):\n        self.assertEqual(tomllib.loads(\"t = 00:00\"), {\"t\": datetime.time(0, 0)})\n        self.assertEqual(tomllib.loads(\"t = 23:59\"), {\"t\": datetime.time(23, 59)})\n\n    def test_local_datetime_without_seconds(self):\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27T07:32\"),\n            {\"dt\": datetime.datetime(1979, 5, 27, 7, 32)},\n        )\n\n    def test_local_datetime_without_seconds_space_separator(self):\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27 07:32\"),\n            {\"dt\": datetime.datetime(1979, 5, 27, 7, 32)},\n        )\n\n    def test_offset_datetime_without_seconds_zulu(self):\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27 07:32Z\"),\n            {\n                \"dt\": datetime.datetime(\n                    1979, 5, 27, 7, 32, tzinfo=datetime.timezone.utc\n                )\n            },\n        )\n\n    def test_offset_datetime_without_seconds_numeric_offset(self):\n        tz = datetime.timezone(datetime.timedelta(hours=-7))\n        actual = tomllib.loads(\"dt = 1979-05-27 07:32-07:00\")[\"dt\"]\n        self.assertEqual(actual, datetime.datetime(1979, 5, 27, 7, 32, tzinfo=tz))\n        self.assertEqual(actual.utcoffset(), datetime.timedelta(hours=-7))\n\n    def test_without_seconds_in_array_and_inline_table(self):\n        self.assertEqual(\n            tomllib.loads(\"a = [07:32, 1979-05-27T07:32]\\nb = {t = 08:15}\"),\n            {\n                \"a\": [datetime.time(7, 32), datetime.datetime(1979, 5, 27, 7, 32)],\n                \"b\": {\"t\": datetime.time(8, 15)},\n            },\n        )\n\n    def test_without_seconds_then_comment(self):\n        self.assertEqual(\n            tomllib.loads(\"t = 07:32 # comment\\n\"), {\"t\": datetime.time(7, 32)}\n        )\n\n    def test_with_seconds_still_parsed(self):\n        # Runs after a no-seconds parse so that this test fails on a\n        # parser that still requires seconds.\n        doc = \"a = 07:32\\nb = 07:32:01\\nc = 07:32:01.5\\nd = 1979-05-27T07:32:01.25Z\"\n        self.assertEqual(\n            tomllib.loads(doc),\n            {\n                \"a\": datetime.time(7, 32),\n                \"b\": datetime.time(7, 32, 1),\n                \"c\": datetime.time(7, 32, 1, 500000),\n                \"d\": datetime.datetime(\n                    1979, 5, 27, 7, 32, 1, 250000, tzinfo=datetime.timezone.utc\n                ),\n            },\n        )\n\n    def test_fraction_without_seconds_is_invalid(self):\n        # Sanity check that the no-seconds form is accepted at all, so\n        # that this test fails on a parser that still requires seconds.\n        self.assertEqual(tomllib.loads(\"t = 07:32\"), {\"t\": datetime.time(7, 32)})\n        for doc in (\"t = 07:32.5\", \"dt = 1979-05-27T07:32.5\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_malformed_without_seconds_is_invalid(self):\n        self.assertEqual(tomllib.loads(\"t = 07:32\"), {\"t\": datetime.time(7, 32)})\n        for doc in (\n            \"t = 07:32:\",  # trailing colon\n            \"t = 07:3\",  # one digit minute\n            \"t = 7:32\",  # one digit hour\n            \"t = 24:00\",  # hour out of range\n            \"t = 07:60\",  # minute out of range\n            \"t = 07\",  # hours only\n            \"dt = 1979-05-27T07\",  # hours only\n            \"dt = 1979-05-27T07:32:\",  # trailing colon\n        ):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': datetime.time(13, 37)}",
+       "input": "t = 13:37",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초가 없는 로컬 시간은 초 0으로 파싱된다",
+       "source": "explicit_request",
+       "test": "test_local_time_without_seconds",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime.time(0, 0) / datetime.time(23, 59)",
+       "input": "t = 00:00 / t = 23:59",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초 없는 시간의 시·분 범위 양끝이 허용된다",
+       "source": "explicit_request",
+       "test": "test_local_time_without_seconds_boundaries",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime.datetime(1979, 5, 27, 7, 32), tzinfo 없음",
+       "input": "dt = 1979-05-27T07:32",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초가 없는 로컬 date-time이 파싱된다",
+       "source": "explicit_request",
+       "test": "test_local_datetime_without_seconds",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime.datetime(1979, 5, 27, 7, 32)",
+       "input": "dt = 1979-05-27 07:32",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "공백 구분자를 쓴 date-time에서도 초를 생략할 수 있다",
+       "source": "existing_contract",
+       "test": "test_local_datetime_without_seconds_space_separator",
+       "test_in_file": true,
+       "where": "src/tomli/_re.py RE_DATETIME 의 구분자 [Tt ]; tests/data/valid/_external/toml-test/valid/datetime/no-seconds.toml"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime.datetime(1979, 5, 27, 7, 32, tzinfo=timezone.utc)",
+       "input": "dt = 1979-05-27 07:32Z",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초가 없어도 Z 오프셋이 뒤따를 수 있다",
+       "source": "existing_contract",
+       "test": "test_offset_datetime_without_seconds_zulu",
+       "test_in_file": true,
+       "where": "tests/data/valid/_external/toml-test/valid/datetime/no-seconds.toml (without-seconds-2)"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime(1979, 5, 27, 7, 32, tzinfo=-07:00), utcoffset() == timedelta(hours=-7)",
+       "input": "dt = 1979-05-27 07:32-07:00",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초가 없어도 숫자 오프셋이 뒤따를 수 있고, 오프셋의 -07:00 이 초로 오인되지 않는다",
+       "source": "existing_contract",
+       "test": "test_offset_datetime_without_seconds_numeric_offset",
+       "test_in_file": true,
+       "where": "tests/data/valid/_external/toml-test/valid/datetime/no-seconds.toml (without-seconds-3)"
+      },
+      {
+       "alternative": "최상위 key = value 에서만 허용한다",
+       "choice": "값이 올 수 있는 모든 위치에서 초 생략을 허용한다",
+       "differs_on": "a = [07:32]",
+       "expected": "{'a': [time(7, 32), datetime(1979, 5, 27, 7, 32)], 'b': {'t': time(8, 15)}}",
+       "input": "a = [07:32, 1979-05-27T07:32]\\nb = {t = 08:15}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초 없는 값이 배열과 인라인 테이블 안에서도 파싱된다",
+       "source": "worker_choice",
+       "test": "test_without_seconds_in_array_and_inline_table",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "초 없는 값 바로 뒤에 줄 끝을 요구한다",
+       "choice": "초 없는 값 뒤의 공백·주석을 다른 값과 똑같이 처리한다",
+       "differs_on": "t = 07:32 # comment",
+       "expected": "{'t': datetime.time(7, 32)}",
+       "input": "t = 07:32 # comment\\n",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초 없는 시간 뒤에 공백과 주석이 올 수 있다",
+       "source": "worker_choice",
+       "test": "test_without_seconds_then_comment",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "a=time(7,32), b=time(7,32,1), c=time(7,32,1,500000), d=datetime(1979,5,27,7,32,1,250000,tzinfo=utc)",
+       "input": "a = 07:32\\nb = 07:32:01\\nc = 07:32:01.5\\nd = 1979-05-27T07:32:01.25Z",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초와 소수 초가 있는 기존 형식은 그대로 파싱되고 초 없는 형식과 한 문서에 섞일 수 있다",
+       "source": "existing_contract",
+       "test": "test_with_seconds_still_parsed",
+       "test_in_file": true,
+       "where": "src/tomli/_re.py _TIME_RE_STR, match_to_datetime, match_to_localtime"
+      },
+      {
+       "alternative": "07:32.5 를 분의 소수(07:32:30)로 받아들인다",
+       "choice": "초 없이 소수부만 있으면 오류로 한다",
+       "differs_on": "t = 07:32.5",
+       "expected": "TOMLDecodeError",
+       "input": "t = 07:32.5 / dt = 1979-05-27T07:32.5 (먼저 t = 07:32 가 파싱되는지 확인)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "소수 초는 초가 있을 때만 쓸 수 있다",
+       "source": "worker_choice",
+       "test": "test_fraction_without_seconds_is_invalid",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "분도 생략할 수 있게 해 1979-05-27T07 을 07:00 으로 받아들인다",
+       "choice": "초만 선택 사항으로 하고 시·분의 두 자리 형식과 범위 검사는 그대로 둔다",
+       "differs_on": "dt = 1979-05-27T07",
+       "expected": "각각 TOMLDecodeError",
+       "input": "t = 07:32: / t = 07:3 / t = 7:32 / t = 24:00 / t = 07:60 / t = 07 / dt = 1979-05-27T07 / dt = 1979-05-27T07:32: (먼저 t = 07:32 가 파싱되는지 확인)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "생략할 수 있는 것은 초뿐이다. 분 생략, 한 자리 시·분, 범위 밖 시·분, 끝의 콜론은 여전히 오류다",
+       "source": "worker_choice",
+       "test": "test_malformed_without_seconds_is_invalid",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "TOML 1.1: Make seconds optional in Date-Time and Time (#203)",
+       "covered_by": [
+        "test_local_time_without_seconds",
+        "test_local_time_without_seconds_boundaries",
+        "test_local_datetime_without_seconds",
+        "test_local_datetime_without_seconds_space_separator",
+        "test_offset_datetime_without_seconds_zulu",
+        "test_offset_datetime_without_seconds_numeric_offset",
+        "test_without_seconds_in_array_and_inline_table",
+        "test_without_seconds_then_comment"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "소문자 t 구분자 (1979-05-27t07:32)",
+       "tested": "대문자 T 와 공백 구분자를 쓴 초 없는 date-time"
+      },
+      {
+       "not_tested": "소문자 z, 양수 오프셋(+07:00)",
+       "tested": "대문자 Z 와 음수 오프셋(-07:00)이 붙은 초 없는 date-time"
+      },
+      {
+       "not_tested": "tomllib.load 로 바이너리 파일을 파싱",
+       "tested": "tomllib.loads 로 문자열을 파싱"
+      },
+      {
+       "not_tested": "테이블 배열([[x]]) 안의 초 없는 값, 초 없는 값을 키로 쓴 경우",
+       "tested": "배열과 인라인 테이블 안의 초 없는 값"
+      }
+     ]
+    },
+    "red": "red on the current code:        \"Expected newline or end of document after a statement\", src, pos\n    )\ntomli._parser.TOMLDecodeError: Expected newline or end of document after a statement (at line 1, column 6)\n\n----------------------------------------------------------------------\nRan 11 tests in 0.002s\n\nFAILED (errors=11)"
+   },
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 145.7,
+   "added_lines": 14,
+   "hidden_tests_pass": true,
+   "calls": 3,
+   "tokens": 250753,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "2a2aa62f",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "# SPDX-License-Identifier: MIT\n# SPDX-FileCopyrightText: 2021 Taneli Hukkinen\n# Licensed to PSF under a Contributor Agreement.\n\nimport unittest\n\nfrom . import tomllib\n\n\nclass TestInlineTableNewlinesAndTrailingComma(unittest.TestCase):\n    def test_trailing_comma(self):\n        self.assertEqual(tomllib.loads(\"t = {a = 1, b = 2,}\"), {\"t\": {\"a\": 1, \"b\": 2}})\n        self.assertEqual(tomllib.loads(\"t = { a = 1 , }\"), {\"t\": {\"a\": 1}})\n\n    def test_newlines_between_pairs(self):\n        doc = \"t = {\\n  a = 1,\\n  b = 2\\n}\\n\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_newlines_and_trailing_comma(self):\n        doc = \"t = {\\n  a = 1,\\n  b = 2,\\n}\\nafter = true\\n\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}, \"after\": True})\n\n    def test_newline_before_comma(self):\n        doc = \"t = {a = 1\\n, b = 2}\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_crlf_newlines(self):\n        doc = \"t = {\\r\\n  a = 1,\\r\\n  b = 2,\\r\\n}\\r\\n\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_empty_inline_table_with_newlines(self):\n        self.assertEqual(tomllib.loads(\"t = {\\n}\"), {\"t\": {}})\n        self.assertEqual(tomllib.loads(\"t = {\\n\\n  \\t\\n}\"), {\"t\": {}})\n\n    def test_comments_inside_inline_table(self):\n        doc = (\n            \"t = { # opening\\n\"\n            \"  a = 1, # after a\\n\"\n            \"  # own line\\n\"\n            \"  b = 2 # before close\\n\"\n            \"}\\n\"\n        )\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_nested_multiline(self):\n        doc = (\n            \"t = {\\n\"\n            \"  inner = {\\n\"\n            \"    x = 1,\\n\"\n            \"  },\\n\"\n            \"  arr = [\\n\"\n            \"    { y = 2, },\\n\"\n            \"  ],\\n\"\n            \"}\\n\"\n        )\n        self.assertEqual(\n            tomllib.loads(doc), {\"t\": {\"inner\": {\"x\": 1}, \"arr\": [{\"y\": 2}]}}\n        )\n\n    def test_comma_only_is_invalid(self):\n        for doc in (\"t = {,}\", \"t = {\\n,\\n}\", \"t = {,\\n}\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_double_comma_is_invalid(self):\n        for doc in (\"t = {a = 1,,}\", \"t = {a = 1,\\n,\\n}\", \"t = {a = 1,, b = 2}\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_missing_comma_across_newline_is_invalid(self):\n        with self.assertRaises(tomllib.TOMLDecodeError):\n            tomllib.loads(\"t = {\\n  a = 1\\n  b = 2\\n}\")\n\n    def test_unclosed_multiline_is_invalid(self):\n        for doc in (\"t = {\\n\", \"t = {\\n  a = 1,\\n\", \"t = {a = 1,\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_newline_around_equals_is_invalid(self):\n        for doc in (\"t = {a\\n= 1}\", \"t = {a =\\n1}\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_duplicate_key_across_lines_is_invalid(self):\n        with self.assertRaises(tomllib.TOMLDecodeError):\n            tomllib.loads(\"t = {\\n  a = 1,\\n  a = 2,\\n}\")\n\n    def test_inner_inline_table_stays_immutable(self):\n        with self.assertRaises(tomllib.TOMLDecodeError):\n            tomllib.loads(\"t = {\\n  a = {x = 1},\\n  a.y = 2,\\n}\")\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}} / {'t': {'a': 1}}",
+       "input": "t = {a = 1, b = 2,} / t = { a = 1 , }",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "인라인 테이블의 마지막 키/값 쌍 뒤에 쉼표를 허용한다",
+       "source": "explicit_request",
+       "test": "test_trailing_comma",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {\\n a = 1,\\n b = 2\\n}\\n",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "여는 중괄호 뒤, 쉼표 뒤, 닫는 중괄호 앞의 줄바꿈을 허용한다",
+       "source": "explicit_request",
+       "test": "test_newlines_between_pairs",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}, 'after': True}",
+       "input": "t = {\\n a = 1,\\n b = 2,\\n}\\nafter = true\\n",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "줄바꿈과 후행 쉼표를 함께 쓸 수 있고, 테이블이 닫힌 뒤 다음 문장이 정상 파싱된다",
+       "source": "explicit_request",
+       "test": "test_newlines_and_trailing_comma",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {a = 1\\n, b = 2}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "값과 쉼표 사이의 줄바꿈도 허용한다",
+       "source": "explicit_request",
+       "test": "test_newline_before_comma",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {\\r\\n a = 1,\\r\\n b = 2,\\r\\n}\\r\\n",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "CRLF 줄바꿈도 인라인 테이블 안에서 줄바꿈으로 취급한다",
+       "source": "existing_contract",
+       "test": "test_crlf_newlines",
+       "test_in_file": true,
+       "where": "src/tomli/_parser.py loads(): \"\\r\\n\" 을 \"\\n\" 으로 치환하는 정규화"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {}}",
+       "input": "t = {\\n} / t = {\\n\\n \\t\\n}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "줄바꿈과 공백만 들어 있는 인라인 테이블은 빈 테이블이다",
+       "source": "explicit_request",
+       "test": "test_empty_inline_table_with_newlines",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "줄바꿈만 허용하고 인라인 테이블 안의 주석은 TOMLDecodeError 로 거부한다",
+       "choice": "배열과 같은 방식(skip_comments_and_array_ws)으로 줄바꿈과 함께 주석도 건너뛴다. TOML 1.1 스펙이 그렇다고 기억하지만 요청문에는 주석 언급이 없다",
+       "differs_on": "t = {\\n a = 1, # c\\n}",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = { # opening\\n a = 1, # after a\\n # own line\\n b = 2 # before close\\n}\\n",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "여러 줄 인라인 테이블 안에서 주석을 허용한다",
+       "source": "worker_choice",
+       "test": "test_comments_inside_inline_table",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'inner': {'x': 1}, 'arr': [{'y': 2}]}}",
+       "input": "t = {\\n inner = {\\n x = 1,\\n },\\n arr = [\\n { y = 2, },\\n ],\\n}\\n",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "중첩된 인라인 테이블과 배열 속 인라인 테이블에도 줄바꿈과 후행 쉼표가 적용된다",
+       "source": "explicit_request",
+       "test": "test_nested_multiline",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "TOMLDecodeError",
+       "input": "t = {,} / t = {\\n,\\n} / t = {,\\n}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "키/값 쌍 없이 쉼표만 있는 인라인 테이블은 계속 무효다",
+       "source": "existing_contract",
+       "test": "test_comma_only_is_invalid",
+       "test_in_file": true,
+       "where": "tests/data/invalid/_external/toml-test/invalid/inline-table/empty-01.toml, empty-02.toml, empty-03.toml"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "TOMLDecodeError",
+       "input": "t = {a = 1,,} / t = {a = 1,\\n,\\n} / t = {a = 1,, b = 2}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "연속된 쉼표는 무효다(후행 쉼표는 하나만)",
+       "source": "existing_contract",
+       "test": "test_double_comma_is_invalid",
+       "test_in_file": true,
+       "where": "tests/data/invalid/_external/toml-test/invalid/inline-table/double-comma.toml (t = {x=3,,y=4}); 줄바꿈이 낀 변형은 같은 규칙의 확장"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "TOMLDecodeError",
+       "input": "t = {\\n a = 1\\n b = 2\\n}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "줄바꿈은 쉼표를 대신하지 못한다",
+       "source": "existing_contract",
+       "test": "test_missing_comma_across_newline_is_invalid",
+       "test_in_file": true,
+       "where": "tests/data/invalid/inline-table-missing-comma.toml, tests/data/invalid/_external/toml-test/invalid/inline-table/no-comma-01.toml (한 줄 형태); 줄바꿈 형태로의 확장은 내 판단"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "TOMLDecodeError",
+       "input": "t = {\\n / t = {\\n a = 1,\\n / t = {a = 1,",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "닫는 중괄호 없이 문서가 끝나면 무효다",
+       "source": "existing_contract",
+       "test": "test_unclosed_multiline_is_invalid",
+       "test_in_file": true,
+       "where": "tests/data/invalid/_external/toml-test/invalid/inline-table/no-close-01.toml, no-close-02.toml"
+      },
+      {
+       "alternative": "인라인 테이블 안이면 '=' 앞뒤의 줄바꿈도 허용한다",
+       "choice": "줄바꿈은 키/값 쌍 사이와 중괄호·쉼표 주변에서만 허용하고, 한 쌍 내부(키, '=', 값 사이)에서는 거부한다",
+       "differs_on": "t = {a =\\n1}",
+       "expected": "TOMLDecodeError",
+       "input": "t = {a\\n= 1} / t = {a =\\n1}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "키와 '=' 사이, '=' 와 값 사이에는 줄바꿈을 허용하지 않는다",
+       "source": "worker_choice",
+       "test": "test_newline_around_equals_is_invalid",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "TOMLDecodeError",
+       "input": "t = {\\n a = 1,\\n a = 2,\\n}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "여러 줄 형태에서도 중복 키는 무효다",
+       "source": "existing_contract",
+       "test": "test_duplicate_key_across_lines_is_invalid",
+       "test_in_file": true,
+       "where": "tests/data/invalid/inline-table/define-twice.toml; src/tomli/_parser.py parse_inline_table 의 'Duplicate inline table key' 검사"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "TOMLDecodeError",
+       "input": "t = {\\n a = {x = 1},\\n a.y = 2,\\n}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "여러 줄 형태에서도 안쪽 인라인 테이블은 점 표기 키로 확장할 수 없다",
+       "source": "existing_contract",
+       "test": "test_inner_inline_table_stays_immutable",
+       "test_in_file": true,
+       "where": "tests/data/invalid/inline-table/overwrite-value-in-inner-table.toml; src/tomli/_parser.py parse_inline_table 의 Flags.FROZEN 검사"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "TOML 1.1: Allow newlines and trailing comma in inline tables (#200)",
+       "covered_by": [
+        "test_trailing_comma",
+        "test_newlines_between_pairs",
+        "test_newlines_and_trailing_comma",
+        "test_newline_before_comma",
+        "test_crlf_newlines",
+        "test_empty_inline_table_with_newlines",
+        "test_comments_inside_inline_table",
+        "test_nested_multiline"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "새 테스트와 기존 테스트를 실제로 실행한 결과(이 세션에는 실행 도구가 없어 한 번도 돌리지 못했다)",
+       "tested": "전체 검사 실행 여부: 테스트와 구현을 코드 읽기로만 확인했다"
+      },
+      {
+       "not_tested": "거부 사례 7개(test_*_is_invalid, test_inner_inline_table_stays_immutable)는 원래 코드에서도 통과한다. 구현 여부가 아니라 과잉 허용을 막는 회귀 검사다",
+       "tested": "원래 코드에서 실패하는 허용 사례 8개(test_trailing_comma, test_newlines_*, test_newline_before_comma, test_crlf_newlines, test_empty_inline_table_with_newlines, test_comments_inside_inline_table, test_nested_multiline)"
+      },
+      {
+       "not_tested": "오류 메시지 문구와 lineno/colno 위치",
+       "tested": "TOMLDecodeError 가 발생하는지 여부"
+      },
+      {
+       "not_tested": "단독 CR 등 다른 제어 문자가 인라인 테이블 안에 있을 때",
+       "tested": "인라인 테이블 안의 LF, CRLF, 공백, 탭"
+      },
+      {
+       "not_tested": "주석에 금지된 제어 문자가 있거나, 주석이 닫는 중괄호를 가린 채 문서가 끝나는 경우(예: t = {a = 1 #})",
+       "tested": "인라인 테이블 안의 정상 주석"
+      },
+      {
+       "not_tested": "tomllib.load 로 바이너리 파일에서 같은 문서를 읽는 경로",
+       "tested": "tomllib.loads 로 문자열 파싱"
+      },
+      {
+       "not_tested": "여러 줄 형태의 깊은 중첩과 재귀 한계(MAX_INLINE_NESTING) 근처",
+       "tested": "2단계 중첩(인라인 테이블 속 인라인 테이블, 배열 속 인라인 테이블)"
+      }
+     ]
+    },
+    "red": "red on the current code: se_key_part\n    raise TOMLDecodeError(\"Invalid initial character for a key part\", src, pos)\ntomli._parser.TOMLDecodeError: Invalid initial character for a key part (at line 1, column 19)\n\n----------------------------------------------------------------------\nRan 15 tests in 0.003s\n\nFAILED (errors=8)"
+   },
+   "lupus_done": false,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "seconds": 153.4,
+   "added_lines": 6,
+   "hidden_tests_pass": true,
+   "calls": 3,
+   "tokens": 257906,
+   "errors": []
+  }
+ ],
+ "summary": {
+  "do": {
+   "n": 12,
+   "hidden_pass": 10,
+   "added_lines_mean": 13.3,
+   "tokens_mean": 114729,
+   "seconds_mean": 112.5,
+   "lupus_said_done": 10,
+   "said_done_but_hidden_fail": 2
+  }
+ }
+}

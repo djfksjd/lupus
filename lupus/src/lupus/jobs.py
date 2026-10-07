@@ -149,7 +149,8 @@ def prune(k: Kernel, days: float, kept: bool = False) -> dict:
         except LupusError:
             idle = False
             removed["skipped_while_a_supervisor_runs"] = ["displaced", "snapshots"]
-        for name, key in (("displaced", "displaced"), ("sessions", "session_files"), ("base", "snapshots")):
+        for name, key in (("displaced", "displaced"), ("sessions", "session_files"), ("base", "snapshots"),
+                          ("released", "snapshots")):      # (a proposal for released files of a goal that has since ended)
             base = k.runtime / name
             for entry in (sorted(base.iterdir()) if base.is_dir() and (idle or name == "sessions") else []):
                 owner = entry.name.removesuffix(".json").removesuffix("-verified")

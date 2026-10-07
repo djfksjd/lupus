@@ -37,6 +37,8 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 | **预算与循环控制** | 调用、尝试、时间和 token 在开始前预留。重复同一个失败的尝试会在调用模型之前被拒绝。 |
 | **崩溃安全的 checkpoint** | 恢复对象先于数据库提交持久化；已在每个边界处杀进程测试。 |
 | **你的工作区保持原样** | `--isolated` 在已提交 HEAD 的独立检出中工作。`lupus diff` 查看结果，`lupus accept` 以一个提交带回（仅快进，并对该提交本身再次检查；如果你的分支在此期间前进了，则先合并并对合并结果再次检查，通过后才带回），`lupus discard` 丢弃。 |
+| **看得见测试做了哪些假设** | 在你批准起草的测试之前，Lupus 会显示 worker 自述的“这个测试断言了什么”，并单独列出“请求中没有写、由 worker 自行决定的内容”（上限、措辞、边界）。对请求的引用会与请求原文核对，说明与该测试的确切版本绑定。 |
+| **当请求要改变旧测试所固定的行为时** | `lupus release <goal> <文件>` 允许指定的已冻结测试或 fixture 文件发生变化。worker 对它们的修改作为提案保存，只有在你批准确切的 diff 之后才成为新的冻结状态。整个测试集仍然必须通过。 |
 | **操作系统级约束** | Claude worker 和所有验证器都在 Lupus 施加的 macOS 沙箱中运行；验证器也可以改在 Docker 容器中运行。 |
 | **必须证明自己价值的记忆** | 项目知识以带类型、带链接的节点保存。`lupus learn` 从记录下来的失败中提出做法，在后续经过验证的结果将其晋升或淘汰之前，它们一直是候选。 |
 
@@ -112,6 +114,7 @@ lupus do "给 export 命令增加 --json 选项" --driver claude
 lupus do "…" --driver claude --review     # 检查通过后，由另一个 AI 对照请求与改动（可选；见上面的试验）
 lupus do "…" --driver claude --isolated   # 同样的流程，在独立检出中进行；之后：lupus diff | accept | discard <goal>
 lupus do "…" --driver claude --lean       # 给 worker 加上“优先复用、最小改动”的指引（可选；未测出收益，见契约文档）
+lupus release <goal> tests/test_x.py        # 请求要改变这个已冻结测试所固定的行为时：允许它变化，再用 `lupus release-approve <goal>` 批准确切的 diff
 lupus session --driver claude        # 你平时的交互式 Claude Code，测试已冻结，退出时验证
 lupus write "账单表迁移计划" --out docs/plan.md --driver claude
                                      # 你批准标准 -> 撰写 -> 另一个 AI 评判 -> 你签字
@@ -161,8 +164,8 @@ lupus learn --undo                                             # 撤回最近一
 - **每个项目只有一个 writer。** `alpha-run --parallel` 最多同时推进 4 个目标，但不会在同一个文件夹里同时运行两个。同一仓库的多个目标只有各自位于独立检出时才会并行，结果依次带回。Lupus 不会把一个请求自动拆成并行的子任务，同一目标内的任务仍然依次执行。
 - 学习功能只提出候选，由后续经过验证的结果来决定；没有固定的评估集。
 - jest 和 vitest 用真实安装验证过；Go 和 Rust 用为验证临时安装的工具链验证过。Linux 和 Windows 上没有操作系统沙箱支持。
-- 任何等待状态都有出路：`lupus status <goal>` 说明原因，再用 `resolve`、`refreeze`、`approve`、`revise`、`revalidate`、`budget-raise` 继续。`lupus prune` 清理旧的遗留文件。
-- 代码还很年轻。23 轮外部评审发现了 130 个缺陷并全部修复，一次可用性审查又发现并修复了 16 个，应当假定仍有遗漏。
+- 任何等待状态都有出路：`lupus status <goal>` 说明原因，再用 `resolve`、`release`、`refreeze`、`approve`、`revise`、`revalidate`、`budget-raise` 继续。`lupus prune` 清理旧的遗留文件。
+- 代码还很年轻。28 轮外部评审发现了 140 个缺陷并全部修复，一次可用性审查又发现并修复了 16 个，应当假定仍有遗漏。
 
 ## 取自其他项目并加以改造的部分
 

@@ -1,0 +1,664 @@
+{
+ "driver": "native_claude",
+ "reviewer": null,
+ "arms": [
+  "release"
+ ],
+ "date": "2026-10-07",
+ "rows": [
+  {
+   "repo": "tomli",
+   "commit": "9eb2125e",
+   "arm": "release",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import datetime\nimport unittest\n\nfrom . import tomllib\n\n\nclass TestOptionalSeconds(unittest.TestCase):\n    def test_local_time_without_seconds(self):\n        self.assertEqual(tomllib.loads(\"t = 13:37\"), {\"t\": datetime.time(13, 37)})\n\n    def test_local_time_boundaries_without_seconds(self):\n        self.assertEqual(\n            tomllib.loads(\"a = 00:00\\nb = 23:59\\n\"),\n            {\"a\": datetime.time(0, 0), \"b\": datetime.time(23, 59)},\n        )\n\n    def test_local_datetime_without_seconds(self):\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27T07:32\"),\n            {\"dt\": datetime.datetime(1979, 5, 27, 7, 32)},\n        )\n\n    def test_local_datetime_space_separator_without_seconds(self):\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27 07:32\"),\n            {\"dt\": datetime.datetime(1979, 5, 27, 7, 32)},\n        )\n\n    def test_offset_datetime_zulu_without_seconds(self):\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27T07:32Z\"),\n            {\"dt\": datetime.datetime(1979, 5, 27, 7, 32, tzinfo=datetime.timezone.utc)},\n        )\n\n    def test_offset_datetime_numeric_offset_without_seconds(self):\n        tz = datetime.timezone(datetime.timedelta(hours=-7))\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27T07:32-07:00\"),\n            {\"dt\": datetime.datetime(1979, 5, 27, 7, 32, tzinfo=tz)},\n        )\n        tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))\n        self.assertEqual(\n            tomllib.loads(\"dt = 1979-05-27T07:32+05:30\"),\n            {\"dt\": datetime.datetime(1979, 5, 27, 7, 32, tzinfo=tz)},\n        )\n\n    def test_without_seconds_in_array_and_inline_table(self):\n        self.assertEqual(\n            tomllib.loads(\"a = [13:37, 1979-05-27T07:32]\\nb = {t = 08:05}\\n\"),\n            {\n                \"a\": [datetime.time(13, 37), datetime.datetime(1979, 5, 27, 7, 32)],\n                \"b\": {\"t\": datetime.time(8, 5)},\n            },\n        )\n\n    def test_seconds_still_accepted(self):\n        self.assertEqual(\n            tomllib.loads(\"t = 13:37:42.5\\ndt = 1979-05-27T07:32:01Z\\n\"),\n            {\n                \"t\": datetime.time(13, 37, 42, 500000),\n                \"dt\": datetime.datetime(\n                    1979, 5, 27, 7, 32, 1, tzinfo=datetime.timezone.utc\n                ),\n            },\n        )\n\n    def test_fraction_without_seconds_is_invalid(self):\n        for doc in (\"t = 13:37.5\", \"dt = 1979-05-27T07:32.5\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_malformed_times_still_invalid(self):\n        for doc in (\n            \"t = 13:37:\",\n            \"t = 13:3\",\n            \"t = 24:00\",\n            \"t = 13:60\",\n            \"t = 13:37:60\",\n            \"dt = 1979-05-27T07\",\n            \"dt = 1979-05-27T07:32:\",\n        ):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': datetime.time(13, 37)}",
+       "input": "t = 13:37",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초가 없는 Time 값은 초를 0으로 하여 파싱된다",
+       "source": "explicit_request",
+       "test": "test_local_time_without_seconds",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "time(0, 0), time(23, 59)",
+       "input": "a = 00:00 / b = 23:59",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초가 없는 Time 은 시·분의 최소·최대 경계에서도 파싱된다",
+       "source": "explicit_request",
+       "test": "test_local_time_boundaries_without_seconds",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime(1979, 5, 27, 7, 32), tzinfo 없음",
+       "input": "dt = 1979-05-27T07:32",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초가 없는 로컬 Date-Time 은 초를 0으로 하여 파싱된다",
+       "source": "explicit_request",
+       "test": "test_local_datetime_without_seconds",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime(1979, 5, 27, 7, 32)",
+       "input": "dt = 1979-05-27 07:32",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "날짜와 시간 사이 구분자가 공백이어도 초를 생략할 수 있다",
+       "source": "existing_contract",
+       "test": "test_local_datetime_space_separator_without_seconds",
+       "test_in_file": true,
+       "where": "src/tomli/_re.py 의 RE_DATETIME 구분자 [Tt ]"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "datetime(1979, 5, 27, 7, 32, tzinfo=timezone.utc)",
+       "input": "dt = 1979-05-27T07:32Z",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초가 없어도 뒤따르는 Z 오프셋이 그대로 적용된다",
+       "source": "explicit_request",
+       "test": "test_offset_datetime_zulu_without_seconds",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "각각 UTC-07:00, UTC+05:30 tzinfo 를 가진 datetime(1979, 5, 27, 7, 32)",
+       "input": "dt = 1979-05-27T07:32-07:00 및 dt = 1979-05-27T07:32+05:30",
+       "quote": "Make seconds optional in Date-Time and Time",
+       "quote_in_request": true,
+       "rule": "초가 없어도 뒤따르는 숫자 오프셋이 그대로 적용된다(오프셋을 초로 오인하지 않는다)",
+       "source": "explicit_request",
+       "test": "test_offset_datetime_numeric_offset_without_seconds",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "최상위 키/값 줄에서만 초 생략을 허용",
+       "choice": "값이 놓이는 모든 위치(배열·인라인 테이블)에서 초 생략을 허용",
+       "differs_on": "b = {t = 08:05}",
+       "expected": "{'a': [time(13, 37), datetime(1979, 5, 27, 7, 32)], 'b': {'t': time(8, 5)}}",
+       "input": "a = [13:37, 1979-05-27T07:32] / b = {t = 08:05}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "배열과 인라인 테이블 안의 값에서도 초를 생략할 수 있다",
+       "source": "worker_choice",
+       "test": "test_without_seconds_in_array_and_inline_table",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "time(13, 37, 42, 500000), datetime(1979, 5, 27, 7, 32, 1, tzinfo=utc)",
+       "input": "t = 13:37:42.5 / dt = 1979-05-27T07:32:01Z",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초와 소수 초가 있는 기존 형식은 그대로 파싱된다",
+       "source": "existing_contract",
+       "test": "test_seconds_still_accepted",
+       "test_in_file": true,
+       "where": "src/tomli/_re.py 의 _TIME_RE_STR, match_to_datetime, match_to_localtime"
+      },
+      {
+       "alternative": "분 뒤의 소수부를 소수 초(또는 소수 분)로 받아들여 파싱",
+       "choice": "소수 초는 초가 있을 때만 허용하고, 초 없이 쓰면 오류",
+       "differs_on": "t = 13:37.5",
+       "expected": "TOMLDecodeError",
+       "input": "t = 13:37.5 및 dt = 1979-05-27T07:32.5",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초 없이 소수 초만 쓰는 것은 허용되지 않는다",
+       "source": "worker_choice",
+       "test": "test_fraction_without_seconds_is_invalid",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "분도 생략 가능하게 하거나 끝에 남은 ':' 를 무시하고 파싱",
+       "choice": "시:분 은 필수이고 범위 검사를 유지하며, 끝에 남은 ':' 는 오류로 처리",
+       "differs_on": "dt = 1979-05-27T07",
+       "expected": "모두 TOMLDecodeError",
+       "input": "t = 13:37: / t = 13:3 / t = 24:00 / t = 13:60 / t = 13:37:60 / dt = 1979-05-27T07 / dt = 1979-05-27T07:32:",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "초만 선택 사항이며, 분 생략·범위 초과·끝에 남은 콜론은 여전히 오류다",
+       "source": "worker_choice",
+       "test": "test_malformed_times_still_invalid",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "TOML 1.1: Make seconds optional in Date-Time and Time (#203)",
+       "covered_by": [
+        "test_local_time_without_seconds",
+        "test_local_time_boundaries_without_seconds",
+        "test_local_datetime_without_seconds",
+        "test_local_datetime_space_separator_without_seconds",
+        "test_offset_datetime_zulu_without_seconds",
+        "test_offset_datetime_numeric_offset_without_seconds",
+        "test_without_seconds_in_array_and_inline_table"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "구분자가 소문자 t 인 초 없는 Date-Time, 소문자 z 오프셋",
+       "tested": "구분자가 대문자 T 또는 공백인 초 없는 Date-Time"
+      },
+      {
+       "not_tested": "tomllib.load 로 바이너리 파일을 파싱",
+       "tested": "tomllib.loads 로 문자열을 파싱"
+      },
+      {
+       "not_tested": "초 없는 값 뒤에 주석(#)이나 공백이 바로 붙는 경우",
+       "tested": "초 없는 값 뒤에 줄바꿈·쉼표·닫는 괄호가 오는 경우"
+      },
+      {
+       "not_tested": "오류 메시지 문구와 오류 위치(lineno/colno)",
+       "tested": "초 없이 소수 초만 쓴 경우의 오류 발생 여부"
+      },
+      {
+       "not_tested": "초 없는 Date-Time 에서 날짜가 유효하지 않은 경우(예: 2021-02-30T07:32)",
+       "tested": "초 없는 시간의 시·분 범위 초과(24:00, 13:60)"
+      }
+     ]
+    },
+    "red": "red on the current code: t9ccb2/0-release/src/tomli/_parser.py\", line 520, in parse_array\n    raise TOMLDecodeError(\"Unclosed array\", src, pos)\ntomli._parser.TOMLDecodeError: Unclosed array (at line 1, column 8)\n\n----------------------------------------------------------------------\nRan 10 tests in 0.001s\n\nFAILED (errors=7)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "stuck_on_existing_tests": true,
+   "release": {
+    "asked": [
+     "tests/data/valid/dates-and-times/datetimes.json",
+     "tests/data/valid/dates-and-times/datetimes.toml",
+     "tests/data/valid/dates-and-times/localtime.json",
+     "tests/data/valid/dates-and-times/localtime.toml",
+     "tests/test_data.py"
+    ],
+    "released": [
+     "tests/data/valid/dates-and-times/datetimes.json",
+     "tests/data/valid/dates-and-times/datetimes.toml",
+     "tests/data/valid/dates-and-times/localtime.json",
+     "tests/data/valid/dates-and-times/localtime.toml",
+     "tests/test_data.py"
+    ],
+    "refused": [],
+    "rounds": [
+     {
+      "steps": [
+       "NEW_INFO"
+      ],
+      "done": false,
+      "proposed": [
+       [
+        "tests/test_data.py",
+        "modified"
+       ]
+      ],
+      "trial": {
+       "c0": "PASS",
+       "c1": "PASS"
+      }
+     },
+     {
+      "steps": [
+       "ALREADY_SATISFIED"
+      ],
+      "done": true,
+      "proposed": [],
+      "trial": null
+     }
+    ],
+    "done": true
+   },
+   "seconds": 160.3,
+   "added_lines": 6,
+   "hidden_tests_pass": true,
+   "calls": 4,
+   "tokens": 267479,
+   "errors": []
+  },
+  {
+   "repo": "tomli",
+   "commit": "2a2aa62f",
+   "arm": "release",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "# SPDX-License-Identifier: MIT\n# SPDX-FileCopyrightText: 2021 Taneli Hukkinen\n# Licensed to PSF under a Contributor Agreement.\n\nimport unittest\n\nfrom . import tomllib\n\n\nclass TestInlineTableNewlinesAndTrailingComma(unittest.TestCase):\n    def test_trailing_comma_single_line(self):\n        self.assertEqual(tomllib.loads(\"t = { c = 1, }\"), {\"t\": {\"c\": 1}})\n        self.assertEqual(tomllib.loads(\"t = {c=1,}\"), {\"t\": {\"c\": 1}})\n        self.assertEqual(\n            tomllib.loads(\"t = { a = 1, b = 2 , }\"), {\"t\": {\"a\": 1, \"b\": 2}}\n        )\n\n    def test_newlines_between_pairs(self):\n        doc = \"t = {\\n  a = 1,\\n  b = 2\\n}\\n\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_newline_only_after_open_brace(self):\n        self.assertEqual(tomllib.loads(\"t = {\\na = 1}\"), {\"t\": {\"a\": 1}})\n\n    def test_newline_only_before_close_brace(self):\n        self.assertEqual(tomllib.loads(\"t = {a = 1\\n}\"), {\"t\": {\"a\": 1}})\n\n    def test_newline_before_comma(self):\n        doc = \"t = {a = 1\\n, b = 2}\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_newlines_and_trailing_comma(self):\n        doc = \"t = {\\n\\ta = 1,\\n\\tb = 2,\\n}\\n\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n        doc = \"t = {\\na = 1,\\nb = 2,}\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_newline_between_trailing_comma_and_close_brace(self):\n        self.assertEqual(tomllib.loads(\"t = {a = 1,\\n\\n}\"), {\"t\": {\"a\": 1}})\n\n    def test_empty_table_with_newlines(self):\n        self.assertEqual(tomllib.loads(\"t = {\\n}\"), {\"t\": {}})\n        self.assertEqual(tomllib.loads(\"t = {\\n\\n  \\n}\"), {\"t\": {}})\n\n    def test_crlf_newlines(self):\n        doc = \"t = {\\r\\n  a = 1,\\r\\n  b = 2,\\r\\n}\\r\\n\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_comments_inside(self):\n        doc = (\n            \"t = {#comment\\n\"\n            \"\\t# comment\\n\"\n            \"\\tc = 1,#comment\\n\"\n            \"\\t#comment\\n\"\n            \"}#comment\\n\"\n        )\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"c\": 1}})\n\n    def test_comment_before_comma(self):\n        doc = \"t = {a = 1 # comment\\n, b = 2}\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1, \"b\": 2}})\n\n    def test_nested_tables_and_arrays(self):\n        doc = (\n            \"tbl = {\\n\"\n            '\\thello = \"world\",\\n'\n            \"\\t1     = 2,\\n\"\n            \"\\tarr   = [1,\\n\"\n            \"\\t         2,\\n\"\n            \"\\t        ],\\n\"\n            \"\\ttbl = {\\n\"\n            \"\\t\\t k = 1,\\n\"\n            \"\\t}\\n\"\n            \"}\\n\"\n        )\n        self.assertEqual(\n            tomllib.loads(doc),\n            {\"tbl\": {\"hello\": \"world\", \"1\": 2, \"arr\": [1, 2], \"tbl\": {\"k\": 1}}},\n        )\n\n    def test_inline_table_in_array(self):\n        doc = \"a = [{\\n  x = 1,\\n}, { y = 2, }]\"\n        self.assertEqual(tomllib.loads(doc), {\"a\": [{\"x\": 1}, {\"y\": 2}]})\n\n    def test_statement_after_multiline_table(self):\n        doc = \"t = {\\n  a = 1,\\n}\\nb = 2\\n\"\n        self.assertEqual(tomllib.loads(doc), {\"t\": {\"a\": 1}, \"b\": 2})\n\n    def test_lone_comma_still_invalid(self):\n        self.assertEqual(tomllib.loads(\"t = {a = 1,}\"), {\"t\": {\"a\": 1}})\n        for doc in (\"t = {,}\", \"t = {\\n,\\n}\", \"t = {,\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_double_comma_still_invalid(self):\n        self.assertEqual(tomllib.loads(\"t = {a = 1,}\"), {\"t\": {\"a\": 1}})\n        for doc in (\"t = {a = 1,,}\", \"t = {a = 1,\\n,}\", \"t = {a = 1,, b = 2}\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_newline_does_not_replace_comma(self):\n        self.assertEqual(\n            tomllib.loads(\"t = {\\na = 1,\\nb = 2\\n}\"), {\"t\": {\"a\": 1, \"b\": 2}}\n        )\n        with self.assertRaises(tomllib.TOMLDecodeError):\n            tomllib.loads(\"t = {\\na = 1\\nb = 2\\n}\")\n\n    def test_newline_inside_key_value_pair_still_invalid(self):\n        self.assertEqual(tomllib.loads(\"t = {\\na = 1\\n}\"), {\"t\": {\"a\": 1}})\n        for doc in (\"t = {a =\\n1}\", \"t = {a\\n= 1}\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_unclosed_still_invalid(self):\n        self.assertEqual(tomllib.loads(\"t = {a = 1,\\n}\"), {\"t\": {\"a\": 1}})\n        for doc in (\"t = {\\n\", \"t = {a = 1,\\n\", \"t = {a = 1\\n\", \"t = {a = 1,\"):\n            with self.subTest(doc=doc):\n                with self.assertRaises(tomllib.TOMLDecodeError):\n                    tomllib.loads(doc)\n\n    def test_duplicate_key_across_lines_still_invalid(self):\n        self.assertEqual(\n            tomllib.loads(\"t = {\\na = 1,\\nb = 2,\\n}\"), {\"t\": {\"a\": 1, \"b\": 2}}\n        )\n        with self.assertRaises(tomllib.TOMLDecodeError):\n            tomllib.loads(\"t = {\\na = 1,\\na = 2,\\n}\")\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'c': 1}} / {'t': {'c': 1}} / {'t': {'a': 1, 'b': 2}}",
+       "input": "t = { c = 1, } / t = {c=1,} / t = { a = 1, b = 2 , }",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "인라인 테이블의 마지막 키/값 쌍 뒤에 쉼표가 올 수 있다",
+       "source": "explicit_request",
+       "test": "test_trailing_comma_single_line",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {\\n a = 1,\\n b = 2\\n}\\n",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "인라인 테이블 안의 키/값 쌍 사이에 개행이 올 수 있다",
+       "source": "explicit_request",
+       "test": "test_newlines_between_pairs",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1}}",
+       "input": "t = {\\na = 1}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "여는 중괄호 바로 뒤의 개행을 허용한다",
+       "source": "explicit_request",
+       "test": "test_newline_only_after_open_brace",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1}}",
+       "input": "t = {a = 1\\n}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "닫는 중괄호 바로 앞의 개행을 허용한다(뒤따르는 쉼표 없이)",
+       "source": "explicit_request",
+       "test": "test_newline_only_before_close_brace",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "개행은 쉼표 뒤와 중괄호 옆에서만 허용하고 쉼표 앞 개행은 오류로 처리",
+       "choice": "값 뒤, 쉼표 앞에서도 개행을 건너뛴다(배열 파서 parse_array와 같은 방식)",
+       "differs_on": "t = {a = 1\\n, b = 2}",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {a = 1\\n, b = 2}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "값과 쉼표 사이의 개행을 허용한다",
+       "source": "worker_choice",
+       "test": "test_newline_before_comma",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "둘 다 {'t': {'a': 1, 'b': 2}}",
+       "input": "t = {\\n\\ta = 1,\\n\\tb = 2,\\n}\\n / t = {\\na = 1,\\nb = 2,}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "개행과 후행 쉼표를 함께 쓸 수 있다",
+       "source": "explicit_request",
+       "test": "test_newlines_and_trailing_comma",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1}}",
+       "input": "t = {a = 1,\\n\\n}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "후행 쉼표와 닫는 중괄호 사이에 여러 개행이 올 수 있다",
+       "source": "explicit_request",
+       "test": "test_newline_between_trailing_comma_and_close_brace",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "개행은 키/값 쌍이 하나 이상 있을 때만 허용하고 빈 테이블은 한 줄 {}만 허용",
+       "choice": "키/값 쌍이 없어도 중괄호 사이 개행을 허용해 빈 dict로 파싱",
+       "differs_on": "t = {\\n}",
+       "expected": "둘 다 {'t': {}}",
+       "input": "t = {\\n} / t = {\\n\\n \\n}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "개행만 들어 있는 인라인 테이블은 빈 테이블이다",
+       "source": "worker_choice",
+       "test": "test_empty_table_with_newlines",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {\\r\\n a = 1,\\r\\n b = 2,\\r\\n}\\r\\n",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "CRLF도 인라인 테이블 안에서 개행으로 취급된다",
+       "source": "existing_contract",
+       "test": "test_crlf_newlines",
+       "test_in_file": true,
+       "where": "src/tomli/_parser.py loads(): __s.replace(\"\\r\\n\", \"\\n\") 로 CRLF를 LF로 정규화"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'c': 1}}",
+       "input": "t = {#comment\\n\\t# comment\\n\\tc = 1,#comment\\n\\t#comment\\n}#comment\\n",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "개행이 허용되는 자리에는 주석도 올 수 있다",
+       "source": "existing_contract",
+       "test": "test_comments_inside",
+       "test_in_file": true,
+       "where": "tests/data/valid/_external/toml-test/valid/inline-table/newline-comment.toml (trailing-comma-1 항목)"
+      },
+      {
+       "alternative": "값 뒤 주석은 줄 끝 쉼표 다음에만 허용하고 쉼표 앞 주석은 오류",
+       "choice": "값 뒤에서 주석과 개행을 모두 건너뛴 뒤 쉼표를 기대한다",
+       "differs_on": "t = {a = 1 # comment\\n, b = 2}",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {a = 1 # comment\\n, b = 2}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "값과 쉼표 사이에 주석과 개행이 올 수 있다",
+       "source": "worker_choice",
+       "test": "test_comment_before_comma",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'tbl': {'hello': 'world', '1': 2, 'arr': [1, 2], 'tbl': {'k': 1}}}",
+       "input": "tbl = {\\n\\thello = \"world\",\\n\\t1 = 2,\\n\\tarr = [1,\\n\\t 2,\\n\\t ],\\n\\ttbl = {\\n\\t\\t k = 1,\\n\\t}\\n}\\n",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "여러 줄 인라인 테이블 안에 배열과 여러 줄 인라인 테이블이 중첩될 수 있다",
+       "source": "existing_contract",
+       "test": "test_nested_tables_and_arrays",
+       "test_in_file": true,
+       "where": "tests/data/valid/_external/toml-test/valid/inline-table/newline.toml (tbl-1 항목을 줄여 쓴 것)"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'a': [{'x': 1}, {'y': 2}]}",
+       "input": "a = [{\\n x = 1,\\n}, { y = 2, }]",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "배열 원소인 인라인 테이블에도 개행과 후행 쉼표가 허용된다",
+       "source": "explicit_request",
+       "test": "test_inline_table_in_array",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1}, 'b': 2}",
+       "input": "t = {\\n a = 1,\\n}\\nb = 2\\n",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "여러 줄 인라인 테이블이 닫힌 뒤 다음 문장이 정상적으로 파싱된다",
+       "source": "explicit_request",
+       "test": "test_statement_after_multiline_table",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1}}",
+       "input": "t = {a = 1,}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "후행 쉼표 허용(이 테스트가 원래 코드에서 실패하도록 하는 양성 단언)",
+       "source": "explicit_request",
+       "test": "test_lone_comma_still_invalid",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "TOMLDecodeError",
+       "input": "t = {,} / t = {,",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "키/값 쌍 없이 쉼표만 있는 인라인 테이블은 여전히 오류",
+       "source": "existing_contract",
+       "test": "test_lone_comma_still_invalid",
+       "test_in_file": true,
+       "where": "tests/data/invalid/_external/toml-test/invalid/inline-table/empty-01.toml, empty-02.toml"
+      },
+      {
+       "alternative": "개행이 허용되므로 쌍 없는 쉼표도 빈 테이블로 받아들임",
+       "choice": "쉼표 앞에는 반드시 키/값 쌍이 있어야 한다",
+       "differs_on": "t = {\\n,\\n}",
+       "expected": "TOMLDecodeError",
+       "input": "t = {\\n,\\n}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "개행을 끼워도 쉼표만 있는 테이블은 오류",
+       "source": "worker_choice",
+       "test": "test_lone_comma_still_invalid",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1}}",
+       "input": "t = {a = 1,}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "후행 쉼표 허용(양성 단언)",
+       "source": "explicit_request",
+       "test": "test_double_comma_still_invalid",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "연속된 쉼표를 모두 후행 쉼표로 보고 허용",
+       "choice": "쉼표 뒤에는 키/값 쌍 또는 닫는 중괄호만 올 수 있다",
+       "differs_on": "t = {a = 1,,}",
+       "expected": "TOMLDecodeError",
+       "input": "t = {a = 1,,} / t = {a = 1,\\n,} / t = {a = 1,, b = 2}",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "후행 쉼표는 하나만 허용되고 연속 쉼표는 오류",
+       "source": "worker_choice",
+       "test": "test_double_comma_still_invalid",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "{'t': {'a': 1, 'b': 2}}",
+       "input": "t = {\\na = 1,\\nb = 2\\n}",
+       "quote": "Allow newlines and trailing comma in inline tables",
+       "quote_in_request": true,
+       "rule": "쉼표로 구분된 여러 줄 쌍은 유효(양성 단언)",
+       "source": "explicit_request",
+       "test": "test_newline_does_not_replace_comma",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "TOML 1.1: Allow newlines and trailing comma in inline tables (#200)",
+       "covered_by": [
+        "test_trailing_comma_single_line",
+        "test_newlines_between_pairs",
+        "test_newline_only_after_open_brace",
+        "test_newline_only_before_close_brace",
+        "test_newline_before_comma",
+        "test_newlines_and_trailing_comma",
+        "test_newline_between_trailing_comma_and_close_brace",
+        "test_empty_table_with_newlines"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "tomllib.load 로 바이너리 파일 객체를 파싱하는 경우",
+       "tested": "tomllib.loads 로 문자열을 파싱하는 경우"
+      },
+      {
+       "not_tested": "여러 줄 인라인 테이블 안의 여러 줄 문자열(\"\"\"...\"\"\") 값과 점 표기 키(a.b = 1)",
+       "tested": "여러 줄 인라인 테이블 안의 한 줄 문자열·정수·배열·중첩 테이블 값"
+      },
+      {
+       "not_tested": "오류 메시지 문구와 줄/열 위치",
+       "tested": "오류가 TOMLDecodeError 형식인지"
+      },
+      {
+       "not_tested": "인라인 테이블 안 주석에 제어 문자가 들어간 경우",
+       "tested": "인라인 테이블 안의 정상 주석"
+      },
+      {
+       "not_tested": "여러 줄에 걸쳐 동결된 하위 테이블을 점 표기 키로 수정하는 경우(t = {a = {b = 1},\\n a.c = 2})",
+       "tested": "여러 줄에 걸친 중복 키 오류"
+      },
+      {
+       "not_tested": "재귀 한도 근처까지 깊게 중첩된 여러 줄 인라인 테이블",
+       "tested": "1~2단계 중첩된 여러 줄 인라인 테이블"
+      }
+     ]
+    },
+    "red": "red on the current code: e_key_part\n    raise TOMLDecodeError(\"Invalid initial character for a key part\", src, pos)\ntomli._parser.TOMLDecodeError: Invalid initial character for a key part (at line 1, column 12)\n\n----------------------------------------------------------------------\nRan 20 tests in 0.006s\n\nFAILED (errors=20)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "NO_PROGRESS",
+    "NO_PROGRESS"
+   ],
+   "stuck_on_existing_tests": true,
+   "release": {
+    "asked": [
+     "tests/data/valid/inline-table/empty-inline-table.json",
+     "tests/data/valid/inline-table/empty-inline-table.toml",
+     "tests/data/valid/inline-table/multiline-inline-table.json",
+     "tests/data/valid/inline-table/multiline-inline-table.toml",
+     "tests/test_data.py"
+    ],
+    "released": [
+     "tests/data/valid/inline-table/empty-inline-table.json",
+     "tests/data/valid/inline-table/empty-inline-table.toml",
+     "tests/data/valid/inline-table/multiline-inline-table.json",
+     "tests/data/valid/inline-table/multiline-inline-table.toml",
+     "tests/test_data.py"
+    ],
+    "refused": [],
+    "rounds": [
+     {
+      "steps": [
+       "NEW_INFO"
+      ],
+      "done": false,
+      "proposed": [
+       [
+        "tests/test_data.py",
+        "modified"
+       ]
+      ],
+      "trial": {
+       "c0": "PASS",
+       "c1": "PASS"
+      }
+     },
+     {
+      "steps": [
+       "ALREADY_SATISFIED"
+      ],
+      "done": true,
+      "proposed": [],
+      "trial": null
+     }
+    ],
+    "done": true
+   },
+   "seconds": 239.8,
+   "added_lines": 6,
+   "hidden_tests_pass": true,
+   "calls": 4,
+   "tokens": 427226,
+   "errors": []
+  }
+ ],
+ "summary": {
+  "release": {
+   "n": 2,
+   "hidden_pass": 2,
+   "added_lines_mean": 6.0,
+   "tokens_mean": 347352,
+   "seconds_mean": 200.1,
+   "lupus_said_done": 2,
+   "said_done_but_hidden_fail": 0
+  }
+ }
+}

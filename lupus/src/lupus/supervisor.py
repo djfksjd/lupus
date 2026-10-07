@@ -12,11 +12,12 @@ from __future__ import annotations
 import json
 import math
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any
 
-from . import adapters, budget, economy, gitx, goals, handoff, judging, memory, projects, protect, recovery, review, runs, service, usage, verify
+from . import adapters, budget, contract, economy, gitx, goals, handoff, judging, memory, projects, protect, recovery, release, review, runs, service, usage, verify
 from .adapters import Adapter
 from .kernel import Kernel
 from .util import LupusError, container_stop, crash_point, find_secret, find_secret_bytes, proc_start, sha256_json
@@ -88,9 +89,14 @@ def _recover(k: Kernel, stop_stale_writer: bool) -> dict[str, Any]:
     alive += [{"aux_pid": a["pid"], "purpose": a["purpose"]} for a in runs.aux_alive(k)]
     for run in runs.unstopped(k):
         if run["pid"] is None:
-            # The exec gate guarantees a worker never started without a recorded pid.
-            runs.confirm_stopped(k, run["run_id"], {"kind": "never_spawned"})
-            closed.append(run["run_id"])
+            # The exec gate guarantees a worker never started without a recorded pid. The run may
+            # still have a verifier of its own alive (the supervisor died while checking): then it is
+            # reported like any writer that is still there, not raised as an error.
+            try:
+                runs.confirm_stopped(k, run["run_id"], {"kind": "never_spawned"})
+                closed.append(run["run_id"])
+            except LupusError as exc:
+                alive.append({"run_id": run["run_id"], "pid": None, "waiting_for": exc.detail or exc.code})
             continue
         if runs.writer_alive(run):
             ours = proc_start(run["pid"]) == run["proc_start"]
@@ -216,6 +222,8 @@ def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recall
         *[f"- {c['text']}" for c in criteria],
         "현재 디렉터리 안의 파일만 읽고 수정하라. 다른 작업은 하지 마라.",
     ]
+    if release.worker_note(k, task["goal_id"]):
+        lines.append(release.worker_note(k, task["goal_id"]))
     notes = goals.resolutions(k, task["task_id"])
     if notes:
         lines += ["사용자가 이 작업에 추가로 준 지시(가장 최근 것이 우선한다):", *[f"- {n}" for n in notes[-3:]]]
@@ -256,6 +264,11 @@ def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recall
             )
     if recalled:
         lines.append(recalled)
+    if any(c["verifier"].get("contract_for") for c in criteria):
+        # The reply of this task is read: it carries the description of the test. The closing line
+        # above asked for one word; say which of the two holds, so the worker is not left to guess.
+        lines = [line.replace("'done' 한 단어로 답하라", "설명 없이, 아래에 정한 JSON 만 답으로 출력하라") for line in lines]
+        lines.append(contract.REQUEST)
     if k.policy["memory_recall_tokens"] > 0 and task["attempt_count"] >= 1:
         # Asked only after a failure: that is when there is something worth recording, and a
         # first-try success should not pay output tokens for it.
@@ -414,6 +427,9 @@ def run_task(
         adapter = tiers[min(task["attempt_count"], len(tiers) - 1)]
     criteria = _task_criteria(k, task)
     safety = _verify_reserve(criteria)
+    if release.granted(k, goal_id):
+        # A proposed change to released files is also tried out once (for the approval screen).
+        safety = {**safety, "active_ms": safety["active_ms"] * 2}
     # The lease has to outlive the worker AND its verification.
     ttl_ms = int(timeout_s * 1000) + safety["active_ms"] + 120_000
     if claimed is None:
@@ -440,6 +456,7 @@ def run_task(
         # The last worker of this goal was cut off before its changes could be checked. What it
         # left in the protected files is its doing: put it back now (versions are kept aside).
         protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "interrupted")
+    release.complete(k, goal_id, root)      # an approved change to released files that was cut off before it was written
     outside = protect.drift(k, goal_id, root)
     if outside:
         names = ", ".join(sorted(d["path"] for d in outside)[:5])
@@ -452,8 +469,10 @@ def run_task(
     last = k.one("SELECT outcome FROM attempt WHERE task_id = ? ORDER BY rowid DESC LIMIT 1", task_id)
     # …and when this task's instructions already rode along in an earlier call (a batch), its own
     # criteria decide whether that call did the work: verified first, called only if it fails.
+    # …and right after the user approved a change to released files, those versions are in place and
+    # nothing has been tried with them: the checks decide first.
     if (last is not None and last["outcome"] in ("ABANDONED", "ENV_BLOCKED")) or (
-            last is None and _was_batched(k, task_id)):
+            last is None and _was_batched(k, task_id)) or release.approved_since_last_attempt(k, task_id, goal_id):
         skipped = _already_satisfied(k, goal, task, criteria, root, run_id, token)
         if skipped is not None:
             return skipped
@@ -536,10 +555,21 @@ def run_task(
 
     # 4. verify (outside any transaction), then integrate under the fencing guard
     try:
+        # What the worker did to files the user released is taken aside first: it is a proposal for
+        # the user, and it is not what gets verified.
+        try:
+            proposed, refused = release.capture(k, goal_id, root), ""
+        except LupusError as exc:
+            proposed, refused = None, f"{exc.code}: {exc.detail}. "
         # Whatever the worker did to the protected files is undone BEFORE verifying, so the
         # checks that run are the ones that were frozen.
         undone = protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id)
         gitx.unguard(k, root, taken, goal_id)      # hooks/config a worker left in .git never get to run
+        for c in criteria:
+            if c["verifier"].get("contract_for"):      # what the worker says its test asserts, bound to the test as it is now
+                written = protect._plain(root, c["verifier"]["path"])
+                contract.capture(k, goal_id, attempt_id, result.text, c["verifier"]["contract_for"],
+                                 written.read_bytes() if written is not None and written.is_file() else None)
         # A remembered failure is an inference ("same files, so same result"), and it is wrong for a
         # check that depends on something outside the project or on chance. It may save a run, but
         # it must never be what parks a task: the attempt that would do that is checked for real.
@@ -590,11 +620,32 @@ def run_task(
         # its edits out again before the red check is the design, not a correction)
         note_undo = "보호된 검증 파일을 건드려 되돌렸다(수정 금지): " + ", ".join(undone["restored"]) + ". "
         checked = [(c, v, digest, (note_undo + detail) if v == "FAIL" else detail) for c, v, digest, detail in checked]
-    safety_actual = {"calls": judge_calls, "active_ms": verify_ms}
+    if refused:
+        checked = [(c, v, digest, (refused + detail) if v != "PASS" else detail) for c, v, digest, detail in checked]
     verdicts = {c["id"]: verdict for c, verdict, _, _ in checked}
     all_pass = all(v == "PASS" for v in verdicts.values())
+    if proposed is not None and all_pass:
+        shutil.rmtree(k.runtime / "released" / goal_id, ignore_errors=True)      # the frozen versions pass as they are: nothing to decide
+        proposed = None
+    if proposed is not None:
+        # Tried once with the proposed versions in place, so the user is told what approving would
+        # lead to. It is information for that screen and nothing else: no evidence is recorded from
+        # it, and the frozen versions are back before anything goes on.
+        try:
+            try:
+                release.apply(k, goal_id, root, proposed)
+                trial, trial_ms, trial_calls = _timed_verify(k, goal, criteria, root)
+            finally:
+                protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "after-trial")
+            release.note_provisional(k, goal_id, proposed, {c["id"]: v for c, v, _, _ in trial}, {c["id"]: d for c, _, _, d in trial})
+            verify_ms, judge_calls = verify_ms + trial_ms, judge_calls + trial_calls
+        except LupusError as exc:
+            return _abandon(k, run_id, token, attempt_id, task_id, exc, work_actual, observation, dict(safety))
+    safety_actual = {"calls": judge_calls, "active_ms": verify_ms}
     if result.error_class in ENV_ERRORS and not all_pass:
         outcome = "ENV_BLOCKED"       # not an implementation failure; no improvement loop (§6.3)
+    elif proposed is not None:
+        outcome = "NEW_INFO"          # a decision is now the user's; waiting for it is not a failed try
     elif {cid for cid, v in verdicts.items() if v == "PASS"} - passing_before:
         outcome = "PROGRESS"
     else:
@@ -628,6 +679,10 @@ def run_task(
     # 5. release the writer with the task's real state
     if all_pass:
         task_status, reason = "DONE", ""
+    elif proposed is not None and outcome == "NEW_INFO":
+        task_status = "NEEDS_APPROVAL"
+        reason = ("worker가 사용자가 허용한 보호 파일을 고쳤다: " + ", ".join(e["path"] for e in proposed["entries"])[:300]
+                  + f". 그 diff를 보고 승인해야 반영된다: lupus release-approve {goal_id}")
     elif outcome == "ENV_BLOCKED":
         task_status = "EXTERNAL_BLOCKED"
         reason = {"quota": "provider usage limit: wait for reset or hand off to another approved AI",
@@ -787,6 +842,14 @@ def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout
             try:
                 with k.tx():
                     ready = recovery.readiness(k, goal_id, adapter.driver)
+                    nxt = goals.next_runnable(k, goal_id)
+                    if (ready["blockers"] == ["BUDGET_EXHAUSTED:attempts"] and nxt is not None
+                            and release.approved_since_last_attempt(k, nxt["task_id"], goal_id)):
+                        # The user just approved a change to released files. Checking the result of
+                        # that decision is not another try by a worker: it runs no model and uses no
+                        # attempt, so having none left does not stand in its way. (If the checks then
+                        # fail, a further try is refused for lack of budget, as it should be.)
+                        ready = {**ready, "ready": True, "next_task_id": nxt["task_id"]}
                     if not ready["ready"]:
                         raise LupusError("NOT_READY", ";".join(ready["blockers"]))
                     run = runs.claim(k, ready["next_task_id"], adapter.driver, adapter.auth_mode)

@@ -65,6 +65,8 @@ lupus run <goal_id> --driver claude --background     # 터미널을 닫아도 �
 lupus jobs | lupus logs <job_id> | lupus stop <job_id>
 lupus learn --driver claude                          # 기록된 실패에서 절차 후보 생성(사건이 없으면 호출하지 않음)
 lupus learn --undo [PASS]                            # 학습 묶음이 추가한 후보를 한 번에 철회(모델 호출 없음)
+lupus release <goal_id> <파일…>                      # 요청이 고정된 테스트·fixture가 정해 둔 동작을 바꿀 때: 그 파일의 변경을 허용(제안만)
+lupus release-approve <goal_id> | lupus release-reject <goal_id> --note "…"   # worker가 제안한 정확한 diff를 보고 승인 / 거절
 lupus approve <goal_id> | lupus revise <goal_id> "<의견>" --driver claude   # 문서 목표의 승인·수정
 lupus revalidate <goal_id> --note "…"                # 권한 철회 뒤 계속 허용
 lupus project-remove <project_id> | lupus prune --days 30
@@ -82,7 +84,7 @@ python3 -m lupus note-verify|note-retire|note-promote|note-forget <node_id>
 python3 -m lupus graph --open                                     # 그래프 화면
 ```
 
-사용자 권한이 필요한 명령(`project-add`, `goal-submit`, `goal-pause/resume/cancel`, `resolve`, `budget-raise`, `revoke`, `fix-tests`, `do`, `write`, `session`, `learn`, `alpha-budget`, `goal-priority`, `note-add/link/verify/retire/promote/forget`)은 실제 터미널에서 `yes`를 입력해야 실행된다. `run`·`alpha-run`·`jobs`·`stop`은 확인을 묻지 않으므로 백그라운드로 실행할 수 있다.
+사용자 권한이 필요한 명령(`project-add`, `goal-submit`, `goal-pause/resume/cancel`, `resolve`, `release`, `release-approve`, `release-reject`, `budget-raise`, `revoke`, `fix-tests`, `do`, `write`, `session`, `learn`, `alpha-budget`, `goal-priority`, `note-add/link/verify/retire/promote/forget`)은 실제 터미널에서 `yes`를 입력해야 실행된다. `run`·`alpha-run`·`jobs`·`stop`은 확인을 묻지 않으므로 백그라운드로 실행할 수 있다.
 
 `goal.json`:
 
@@ -129,4 +131,6 @@ python3 -m lupus graph --open                                     # 그래프 �
 | `alpha`, `jobs` | 여러 프로젝트의 순서·공유 예산·AI 전환, 백그라운드 실행 |
 | `learn` | 기록된 실패에서 절차 후보 만들기, 묶음 단위 되돌리기 |
 | `economy` | `--lean` 지침: 동봉한 Ponytail 원문에서 worker에게 맞는 부분만 골라 붙임 |
+| `contract` | 초안 테스트가 무엇을 단언하고 worker가 무엇을 스스로 정했는지: 확인 가능한 것은 확인해 승인 화면에 표시 |
+| `release` | 고정된 테스트·fixture의 변경: 해제 → 제안 보관 → 정확한 diff 승인 → 새 개정 |
 | `gitx` | `.git` 보호, 격리된 체크아웃과 diff·accept·discard |

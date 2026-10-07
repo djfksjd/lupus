@@ -1,0 +1,1163 @@
+{
+ "judge": "native_codex",
+ "summary": {
+  "rows": 12,
+  "with_description": 12,
+  "rows_where_the_worker_named_a_choice": 10,
+  "hidden_fail_rows": 2,
+  "hidden_fail_rows_where_the_worker_named_a_choice": 2,
+  "bare_discrepancies_on_hidden_fail": 9,
+  "described_discrepancies_on_hidden_fail": 9,
+  "bare_hidden_fail_rows_with_any": 2,
+  "described_hidden_fail_rows_with_any": 2,
+  "bare_discrepancies_on_hidden_pass": 30,
+  "described_discrepancies_on_hidden_pass": 32,
+  "described_citing_the_description": 10
+ },
+ "rows": [
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "따옴표를 먼저 이스케이프한 뒤 백슬래시를 이스케이프(결과: \\\\' 로 리터럴이 깨짐)",
+     "choice": "백슬래시와 따옴표를 모두 이스케이프해 유효한 Python 리터럴로 원문이 복원되게 함",
+     "differs_on": "select '\\'",
+     "expected": "출력이 sql = 'select \\'\\\\\\'' 이고, literal_eval 결과가 원래 SQL과 같다",
+     "input": "sqlparse.format(\"select '\\'\", output_format='python') (닫는 따옴표 바로 앞의 백슬래시)",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "백슬래시를 먼저 이스케이프한 뒤 작은따옴표를 이스케이프한다(따옴표 이스케이프용 백슬래시가 다시 두 배가 되지 않는다)",
+     "source": "worker_choice",
+     "test": "test_python_backslash_before_closing_quote",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "큰따옴표 먼저, 그다음 백슬래시 이스케이프(결과: \\\\\" 로 PHP 문자열이 일찍 닫힘)",
+     "choice": "백슬래시 먼저, 그다음 큰따옴표 이스케이프",
+     "differs_on": "select \"a\\b\"",
+     "expected": "$sql = \"select \\\"a\\\\b\\\"\";",
+     "input": "sqlparse.format('select \"a\\b\"', output_format='php')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "백슬래시 이스케이프와 기존 큰따옴표 이스케이프가 함께 적용되며, 따옴표용 백슬래시는 다시 두 배가 되지 않는다",
+     "source": "worker_choice",
+     "test": "test_php_backslash_with_double_quotes",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 2,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The draft does not check Python formatting of \"select '\\foo\\'\": the reference requires both backslashes doubled and both single quotes escaped in the same output, including the leading \\f sequence.",
+      "cites": "test: sql = \"select 'a\\\\b'\""
+     },
+     {
+      "what": "The draft does not check PHP formatting of \"select '\\foo\\'\": the reference requires both backslashes doubled in the same output while leaving single quotes unescaped, including the leading \\f sequence",
+      "cites": "test: assert f == '$sql = \"select \\'a\\\\\\\\b\\'\";'"
+     }
+    ]
+   },
+   "described": {
+    "n": 2,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires exact Python output for select '\\foo\\', with both the leading backslash before foo and the trailing backslash before the closing quote doubled in the same literal. The draft tes",
+      "cites": "test: sql = \"select 'a\\\\b'\" | test: sql = \"select '\\\\'\""
+     },
+     {
+      "what": "The reference requires exact PHP output for select '\\foo\\', with both the leading backslash before foo and the trailing backslash before the closing quote doubled in the same literal. The draft tests ",
+      "cites": "test: sql = \"select 'a\\\\b'\" | test: sql = \"select '\\\\'\""
+     }
+    ]
+   }
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "공백 한 칸인 요청의 예시 형태만 보장",
+     "choice": "여러 공백·개행·탭·소문자에서도 Keyword로 유지된다고 단언",
+     "differs_on": "'x BETWEEN\\n.5 AND .75'",
+     "expected": "두 번째 토큰이 Keyword BETWEEN(대소문자 무관), 세 번째·다섯 번째 토큰이 Number.Float",
+     "input": "'x between .03 and .06', 'x BETWEEN .5 AND .75', 'x BETWEEN\\n.5 AND .75', 'x BETWEEN\\t.5 AND .75'",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "키워드와 마침표 사이 공백의 종류·개수, 키워드의 대소문자와 무관하게 수정이 적용된다",
+     "source": "worker_choice",
+     "test": "test_between_stays_keyword_whitespace_and_case_variants",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "공백 없이 붙은 경우는 멤버 접근으로 보아 Name으로 둔다",
+     "choice": "공백 0개인 'BETWEEN.03'도 Keyword + Float로 단언",
+     "differs_on": "'x BETWEEN.03 AND .06'",
+     "expected": "앞 세 토큰이 (Name,'x'), (Keyword,'BETWEEN'), (Number.Float,'.03')",
+     "input": "lexer.tokenize('x BETWEEN.03 AND .06')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "키워드와 숫자를 시작하는 마침표 사이에 공백이 없어도 Keyword로 남는다",
+     "source": "worker_choice",
+     "test": "test_keyword_directly_followed_by_leading_dot_float",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "기대 트리를 토큰별로 직접 열거해 비교",
+     "choice": "올바른 그룹핑의 기준을 '0.03 표기와 동일한 트리'로 정함",
+     "differs_on": "'SELECT * FROM t WHERE x BETWEEN .03 AND .06' (수정 전에는 'x BETWEEN'이 별칭 붙은 Identifier로 묶여 트리가 달라짐)",
+     "expected": "두 문장의 토큰 트리 구조(그룹 클래스와 ttype)가 완전히 같다",
+     "input": "parse('SELECT * FROM t WHERE x BETWEEN .03 AND .06') 와 parse('SELECT * FROM t WHERE x BETWEEN 0.03 AND 0.06')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "앞에 0이 없는 표기도 0이 있는 표기와 똑같이 그룹핑된다",
+     "source": "worker_choice",
+     "test": "test_grouping_matches_leading_zero_variant",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 4,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires BETWEEN and AND to be direct keyword tokens in the parsed bare expression 'a BETWEEN .03 AND .06'. The draft checks direct parsed tokens only inside a WHERE clause, so incorrect",
+      "cites": "test: sql = 'SELECT * FROM t WHERE x BETWEEN .03 AND .06' | test: direct = [t for t in where.tokens if not t.is_whitespa"
+     },
+     {
+      "what": "The reference also parses 'a between .03 and .06' and requires direct BETWEEN and AND keywords plus float values exactly ['.03', '.06']. The draft's lowercase case checks only lexer output, leaving lo",
+      "cites": "test: 'x between .03 and .06',     # lower case keyword | test: toks = _lex(sql)"
+     },
+     {
+      "what": "The reference requires an Identifier directly in each parsed statement 'select foo.bar' and 'select foo . bar'. The draft checks member-access grouping only in standalone schema expressions, leaving g",
+      "cites": "test: for sql in ('schema . name', 'schema.name'):"
+     },
+     {
+      "what": "The reference requires an Identifier directly in the parsed statement 'select a.b.c', covering three-part qualified names. The draft covers only two-part member access.",
+      "cites": "test: for sql in ('schema . name', 'schema.name'):"
+     }
+    ]
+   },
+   "described": {
+    "n": 4,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires BETWEEN and AND to be direct statement-level Keyword tokens in both 'a BETWEEN .03 AND .06' and its lowercase variant. The draft checks lexer output for these bare expressions a",
+      "cites": "test: assert toks[1][0] is T.Keyword | test: sql = 'SELECT * FROM t WHERE x BETWEEN .03 AND .06' | test: direct = [t for"
+     },
+     {
+      "what": "The reference checks that parsing the lowercase bare expression preserves Float values exactly as ['.03', '.06']. The draft's lowercase case checks only lexer token types; its parsed Float-value check",
+      "cites": "test: 'x between .03 and .06',     # lower case keyword | test: assert toks[2][0] is T.Number.Float | test: assert toks["
+     },
+     {
+      "what": "The reference requires a direct Identifier group after SELECT for both 'select foo.bar' and 'select foo . bar'. The draft checks member-access grouping only in standalone 'schema' expressions, allowin",
+      "cites": "test: for sql in ('schema . name', 'schema.name'):"
+     },
+     {
+      "what": "The reference requires 'select a.b.c' to contain a direct Identifier group. The draft does not test three-part member-access grouping.",
+      "cites": "test: for sql in ('schema . name', 'schema.name'):"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "따옴표를 유지한 '\"tbl\"' 을 돌려주는 것",
+     "choice": "따옴표를 제거한 'tbl' 을 기대값으로 삼음(sqlparse/sql.py 의 _get_first_name 이 remove_quotes 를 쓰는 것에 맞춤)",
+     "differs_on": "\"db\".\"my schema\".\"tbl\"",
+     "expected": "real 'tbl', parent 'db' (따옴표 제거)",
+     "input": "'\"db\".\"my schema\".\"tbl\"' 의 get_real_name(), get_parent_name()",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "따옴표로 감싼 3부분 이름도 마지막 구성요소를 따옴표 없이 돌려준다",
+     "source": "worker_choice",
+     "test": "test_real_name_three_parts_quoted",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "마지막 이름 토큰인 별칭 'd' 를 돌려주는 것",
+     "choice": "별칭이 붙은 3부분 이름의 real name을 'c' 로 정함",
+     "differs_on": "a.b.c AS d",
+     "expected": "real 'c', alias 'd', name 'd'",
+     "input": "'a.b.c AS d' 의 get_real_name(), get_alias(), get_name()",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "AS 별칭이 있어도 real name은 마지막 점 뒤 구성요소이고 별칭이 아니다",
+     "source": "worker_choice",
+     "test": "test_real_name_three_parts_with_as_alias",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "별칭 'd' 를 돌려주는 것",
+     "choice": "real name을 'c' 로 정함(tests/test_grouping.py 의 'foo.bar baz' 계약을 3부분으로 확장)",
+     "differs_on": "a.b.c d",
+     "expected": "real 'c', alias 'd'",
+     "input": "'a.b.c d' 의 get_real_name(), get_alias()",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "AS 없는 별칭이 있어도 real name은 마지막 점 뒤 구성요소다",
+     "source": "worker_choice",
+     "test": "test_real_name_three_parts_with_alias_without_as",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "와일드카드는 이름이 아니므로 None 을 돌려주는 것",
+     "choice": "와일드카드를 real name 으로 돌려줌(_get_first_name 의 types 에 T.Wildcard 가 있는 것에 맞춤)",
+     "differs_on": "a.b.*",
+     "expected": "'*'",
+     "input": "'a.b.*' 의 get_real_name()",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "마지막 점 뒤가 와일드카드면 '*' 를 돌려준다",
+     "source": "worker_choice",
+     "test": "test_real_name_three_parts_wildcard",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 2,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference checks that get_name() returns 'col' for a four-part identifier; the draft checks get_name() without an alias only for a three-part identifier.",
+      "cites": "test: assert _ident('a.b.c').get_name() == 'c'"
+     },
+     {
+      "what": "The draft does not check that get_real_name() returns 'func' for the qualified function call 'mydb.sch.func(1)', as the reference requires.",
+      "cites": "test: assert _ident('a.b').get_real_name() == 'b'"
+     }
+    ]
+   },
+   "described": {
+    "n": 2,
+    "cite_description": 1,
+    "items": [
+     {
+      "what": "The reference requires get_name() on the four-part identifier 'db.schema.tbl.col' to return 'col'; the draft checks get_name() without an alias only on a three-part identifier.",
+      "cites": "test: assert _ident('a.b.c').get_name() == 'c'"
+     },
+     {
+      "what": "The reference requires get_real_name() on the qualified function call 'mydb.sch.func(1)' to return 'func'; the draft does not test qualified function calls.",
+      "cites": "description: 검사함: 3부분 열/테이블 이름 / 검사 안 함: 3부분 한정 함수 호출(a.b.foo())과 배열 인덱스(a.b.c[1])"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "hidden_tests_pass": false,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "원래 코드처럼 CREATE 문 안의 BEGIN 블록에서만 CASE 를 추적한다",
+     "choice": "CASE 는 어디서든 스택에 쌓고, END 는 스택 맨 위의 CASE 또는 BEGIN 하나만 닫는다",
+     "differs_on": "'BEGIN\\n SELECT CASE WHEN a = 1 THEN 2 ELSE 3 END;\\n SELECT 2;\\nEND;\\nSELECT 3;' (대안은 4문장으로 쪼갠다)",
+     "expected": "두 문장: BEGIN…END; 블록 전체, 'SELECT 3;'",
+     "input": "sqlparse.split('BEGIN\\n SELECT CASE WHEN a = 1 THEN 2 ELSE 3 END;\\n SELECT 2;\\nEND;\\nSELECT 3;')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "CREATE 문이 아닌 BEGIN 블록 안에서 CASE 식의 END 는 블록을 닫지 않는다",
+     "source": "worker_choice",
+     "test": "test_case_inside_plain_begin_block",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "원래 코드처럼 깊이 카운터와 _in_case 플래그로 센다",
+     "choice": "BEGIN/CASE 를 스택에 쌓아 END 마다 맨 위 하나만 닫는다",
+     "differs_on": "위 입력 (대안은 안쪽 'END;' 에서 문장을 끊는다)",
+     "expected": "두 문장: 바깥 BEGIN…END; 블록 전체, 'SELECT 3;'",
+     "input": "sqlparse.split('BEGIN\\n BEGIN\\n SELECT CASE WHEN a = 1 THEN 2 END;\\n END;\\n SELECT 2;\\nEND;\\nSELECT 3;')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "중첩된 BEGIN 블록과 CASE 는 각각 자기 END 로만 닫힌다",
+     "source": "worker_choice",
+     "test": "test_nested_begin_blocks_with_case",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "원래 코드처럼 DECLARE 가 올린 레벨을 내리지 않아 뒤따르는 문장이 같은 문장에 붙는다",
+     "choice": "DECLARE 를 스택에 쌓았다가 BEGIN 이 그것을 대체한다",
+     "differs_on": "위 입력 (대안은 1문장)",
+     "expected": "두 문장: 함수 정의 전체, 'SELECT 2;'",
+     "input": "sqlparse.split('CREATE OR REPLACE FUNCTION foo() RETURNS INTEGER AS\\nDECLARE\\n v_foo INTEGER;\\nBEGIN\\n RETURN 1;\\nEND;\\nSELECT 2;')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "CREATE 문의 DECLARE 구역은 본문의 BEGIN 에서 끝나고, 본문의 END; 뒤에서 문장이 끊긴다",
+     "source": "worker_choice",
+     "test": "test_split_after_create_with_declare_section",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "모든 CASE 를 블록 시작으로 본다",
+     "choice": "END 바로 뒤(공백·주석 제외)의 CASE 는 무시한다",
+     "differs_on": "위 입력 (대안은 CASE 가 닫히지 않아 1문장)",
+     "expected": "두 문장: 프로시저 전체, 'SELECT 2;'",
+     "input": "sqlparse.split('CREATE PROCEDURE p()\\nBEGIN\\n CASE x WHEN 1 THEN SELECT 1; END CASE;\\nEND;\\nSELECT 2;')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "'END CASE' 의 CASE 는 새 CASE 블록을 열지 않는다",
+     "source": "worker_choice",
+     "test": "test_split_after_procedure_with_end_case",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "FOR 를 블록으로 쌓고 END LOOP 으로 닫는다",
+     "choice": "FOR/IF/WHILE 을 추적하지 않는다 (END IF/END LOOP/END WHILE 은 별도 토큰이라 무시된다)",
+     "differs_on": "'BEGIN SELECT a FROM t FOR UPDATE; END; SELECT 2;' (대안은 FOR 가 닫히지 않는다)",
+     "expected": "두 문장: 프로시저 전체, 'SELECT 2;'",
+     "input": "sqlparse.split('CREATE PROCEDURE p()\\nBEGIN\\n FOR r IN SELECT a FROM t LOOP\\n SELECT 1;\\n END LOOP;\\nEND;\\nSELECT 2;')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "FOR … END LOOP 은 바깥 BEGIN 블록의 닫힘에 영향을 주지 않는다",
+     "source": "worker_choice",
+     "test": "test_split_after_procedure_with_for_loop",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "원래 코드처럼 CREATE 안의 BEGIN 블록에서 IF 를 레벨로 센다",
+     "choice": "IF 를 블록으로 추적하지 않는다",
+     "differs_on": "위 입력 (대안은 1문장)",
+     "expected": "두 문장: 프로시저 전체, 'SELECT 2;'",
+     "input": "sqlparse.split('CREATE PROCEDURE p AS\\nBEGIN\\n IF @flag = 1\\n SELECT 1;\\nEND;\\nSELECT 2;')",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "END IF 없는 IF 가 있어도 BEGIN 블록은 END 로 닫힌다",
+     "source": "worker_choice",
+     "test": "test_split_after_procedure_with_if_without_end_if",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 6,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires an anonymous BEGIN block containing a FOR ... DO loop closed by END FOR to remain one statement; the draft only tests a FOR ... LOOP closed by END LOOP inside CREATE PROCEDURE.",
+      "cites": "test: '  FOR r IN SELECT a FROM t LOOP\\n' | test: '  END LOOP;\\n'"
+     },
+     {
+      "what": "The reference requires an anonymous BEGIN block containing IF ... THEN ... ELSE ... END IF and an inline CASE ... END AS COUNT expression to remain one statement. The draft does not test that combinat",
+      "cites": "test: '  SELECT CASE WHEN a = 1 THEN 2 ELSE 3 END;\\n' | test: '  IF @flag = 1\\n'"
+     },
+     {
+      "what": "The reference requires FOR UPDATE and FOR SHARE inside an anonymous BEGIN block to preserve balancing and allow a following SELECT 3 to split into a second statement; the draft tests neither locking c",
+      "cites": "test: '  FOR r IN SELECT a FROM t LOOP\\n'"
+     },
+     {
+      "what": "The reference requires two sequential FOR ... LOOP ... END LOOP constructs inside an anonymous BEGIN block to balance and allow a following SELECT 3 to split. The draft tests only one loop inside CREA",
+      "cites": "test: 'CREATE PROCEDURE p()\\n' | test: '  FOR r IN SELECT a FROM t LOOP\\n'"
+     },
+     {
+      "what": "The reference requires a procedural CASE with multiple WHEN branches and ELSE, closed by END CASE inside an anonymous BEGIN block, to preserve the split before a following SELECT 3. The draft tests on",
+      "cites": "test: 'CREATE PROCEDURE p()\\n' | test: '  CASE x WHEN 1 THEN SELECT 1; END CASE;\\n'"
+     },
+     {
+      "what": "The reference requires standalone SELECT * FROM foo FOR UPDATE; SELECT 3; to split into exactly those two statement strings; the draft has no standalone FOR UPDATE assertion.",
+      "cites": "test: assert stmts == ['SELECT (1; 2);', 'SELECT 3);', 'SELECT 4;']"
+     }
+    ]
+   },
+   "described": {
+    "n": 6,
+    "cite_description": 3,
+    "items": [
+     {
+      "what": "The reference requires an anonymous BEGIN…END block containing FOR R DO…END FOR; to remain one statement and retain END FOR;. The draft does not test END FOR closing syntax.",
+      "cites": "description: \"검사 안 함: 'END FOR', 'END REPEAT' 처럼 END 뒤 단어가 별도 토큰인 닫는 구문 (구현도 처리하지 않는다)\""
+     },
+     {
+      "what": "The reference requires an anonymous BEGIN…END block containing IF…ELSE…END IF and an inline CASE…END AS COUNT expression to remain one statement and retain END AS COUNT;. The draft tests inline CASE w",
+      "cites": "test: '  SELECT CASE WHEN a = 1 THEN 2 ELSE 3 END;\\n' | test: assert stmts == [block, 'SELECT 3;']"
+     },
+     {
+      "what": "The reference requires both FOR UPDATE and FOR SHARE inside an anonymous BEGIN…END block to preserve balancing, producing two statements with SELECT 3; in the second. The draft does not execute either",
+      "cites": "description: \"갈리는 입력: 'BEGIN SELECT a FROM t FOR UPDATE; END; SELECT 2;' (대안은 FOR 가 닫히지 않는다)\""
+     },
+     {
+      "what": "The reference requires two sequential FOR…END LOOP loops inside an anonymous BEGIN…END block to balance and split the following SELECT 3; into a second statement. The draft tests only one loop inside ",
+      "cites": "test: 'CREATE PROCEDURE p()\\n' | test: '  FOR r IN SELECT a FROM t LOOP\\n' | test: assert stmts == [proc, 'SELECT 2;']"
+     },
+     {
+      "what": "The reference requires a procedural CASE with multiple WHEN branches and ELSE, closed by END CASE inside an anonymous BEGIN block, to produce two statements with the following SELECT 3; in the second.",
+      "cites": "test: 'CREATE PROCEDURE p()\\n' | test: '  CASE x WHEN 1 THEN SELECT 1; END CASE;\\n' | test: assert stmts == [proc, 'SELE"
+     },
+     {
+      "what": "The reference requires standalone SELECT * FROM foo FOR UPDATE; SELECT 3; to split into exactly ['SELECT * FROM foo FOR UPDATE;', 'SELECT 3;']. The draft has no standalone FOR UPDATE assertion.",
+      "cites": "description: \"갈리는 입력: 'BEGIN SELECT a FROM t FOR UPDATE; END; SELECT 2;' (대안은 FOR 가 닫히지 않는다)\""
+     }
+    ]
+   }
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "첫 원소를 꺼낸 뒤 n=0 임을 확인하고 끝낸다 (원소 하나가 소비됨)",
+     "choice": "n=0 이면 원본에서 원소를 하나도 꺼내지 않는다 (chunked 가 take(0, ...) 로 아무것도 소비하지 않는 것과 같게 함)",
+     "differs_on": "iterator = iter([1, 2, 3]); list(mi.ichunked(iterator, 0)) 뒤의 list(iterator): [1, 2, 3] 대 [2, 3]",
+     "expected": "ichunked 결과는 [], 남은 iterator 는 [1, 2, 3]",
+     "input": "iterator = iter([1, 2, 3]); mi.ichunked(iterator, 0) 을 소진한 뒤 list(iterator)",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "n=0 일 때 원본 iterable 의 원소를 하나도 소비하지 않는다",
+     "source": "worker_choice",
+     "test": "test_zero_does_not_consume",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 2,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires the negative-n ValueError message to contain 'n must be at least 0'; the drafted test accepts any ValueError message.",
+      "cites": "test: with self.assertRaises(ValueError):"
+     },
+     {
+      "what": "The reference checks n=-1 with an infinite source, count(); the drafted test checks negative n only with finite sources, leaving infinite-source behavior unchecked.",
+      "cites": "test: [list(c) for c in mi.ichunked([1, 2, 3], -1)]"
+     }
+    ]
+   },
+   "described": {
+    "n": 2,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires negative n=-1 to raise ValueError for an infinite count() source; the drafted negative tests cover only finite sources and would accept an implementation that fails to terminate",
+      "cites": "test: [list(c) for c in mi.ichunked([1, 2, 3], -1)]"
+     },
+     {
+      "what": "The reference requires the ValueError message to contain 'n must be at least 0'; the drafted test accepts any ValueError message.",
+      "cites": "test: with self.assertRaises(ValueError):"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "gc.get_objects() 로 itertools.chain 객체 수가 늘지 않는지 세거나 s._source 가 원본 반복자 그대로인지 확인",
+     "choice": "tracemalloc 순증가 32KiB 미만(2000회 호출, 준비 100회)을 '유한'의 기준으로 정함",
+     "differs_on": "peek 마다 chain 은 쓰지 않지만 다른 객체(예: 리스트)에 항목을 계속 쌓는 구현: chain 개수 검사는 통과하고 메모리 검사는 실패",
+     "expected": "2000회 동안 순 할당 증가가 32768바이트 미만이고 list(s) == [10, 20, 30]",
+     "input": "seekable([10, 20, 30], maxlen=0); 100회 준비 호출 뒤 peek() 2000회를 tracemalloc 으로 측정하고 list(s) 를 호출",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "maxlen=0 에서 peek() 을 반복해도 미리보기 저장 공간이 호출 횟수에 비례해 늘지 않는다",
+     "source": "worker_choice",
+     "test": "test_repeated_peek_storage_is_bounded",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "default 없는 peek 만 검사",
+     "choice": "default 가 있는 peek 경로에도 같은 32KiB 한계를 적용",
+     "differs_on": "default 가 주어졌을 때만 원본을 감싸는 구현에서 peek(None) 을 2000회 호출",
+     "expected": "순 할당 증가 32768바이트 미만, list(s) == [10, 20, 30]",
+     "input": "seekable([10, 20, 30], maxlen=0); peek(None) 을 100회 준비 뒤 2000회 측정하고 list(s) 를 호출",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "default 인자를 준 peek 반복도 저장 공간이 유한하다",
+     "source": "worker_choice",
+     "test": "test_repeated_peek_default_storage_is_bounded",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "peek 만 검사하고 bool 은 기존 test_maxlen_zero_bool_does_not_drop_items 에 맡김",
+     "choice": "bool() 반복에도 32KiB 한계를 적용",
+     "differs_on": "__bool__ 이 peek 과 별도 경로로 원본을 감싸는 구현에서 bool(s) 를 2000회 호출",
+     "expected": "순 할당 증가 32768바이트 미만, list(s) == [10, 20, 30]",
+     "input": "seekable([10, 20, 30], maxlen=0); bool(s) 를 100회 준비 뒤 2000회 측정하고 list(s) 를 호출",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "bool() 은 peek 을 거치므로 반복해도 저장 공간이 유한하다",
+     "source": "worker_choice",
+     "test": "test_repeated_bool_storage_is_bounded",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "같은 항목을 연속으로 peek 하는 경우만 유한하면 된다고 봄",
+     "choice": "peek 과 next 를 번갈아 호출하는 경우에도 32KiB 한계를 적용",
+     "differs_on": "무한 원본에서 peek(); next() 를 2000회 반복: 소비된 래퍼가 중첩된 채 남는 구현은 실패",
+     "expected": "순 할당 증가 32768바이트 미만",
+     "input": "seekable(repeatfunc(int), maxlen=0) 에서 peek() 뒤 next() 를 100회 준비 후 2000회 측정",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "미리본 항목을 소비한 뒤에도 미리보기 저장 구조가 남아 쌓이지 않는다",
+     "source": "worker_choice",
+     "test": "test_peek_between_items_storage_is_bounded",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "peek 마다 원본을 더 읽어 여러 항목을 버퍼에 두는 것도 허용",
+     "choice": "peek 을 반복해도 원본은 한 항목만 앞서 읽는다고 정함",
+     "differs_on": "peek() 5회 뒤 원본에서 꺼낸 값의 기록: [10] 대 [10, 20, ...]",
+     "expected": "peek 5회 뒤 기록은 [10], list(s) == [10, 20, 30], 최종 기록은 [10, 20, 30]",
+     "input": "(10, 20, 30) 을 내며 꺼낸 값을 기록하는 제너레이터를 seekable(..., maxlen=0) 로 감싸고 peek() 5회 뒤 list(s)",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "미리보기는 원본에서 항목 하나만 꺼내 한 번만 보관한다",
+     "source": "worker_choice",
+     "test": "test_source_read_once_per_item",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 5,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference checks retained growth below 256 * 1024 bytes over 10,000 iterations that each call peek() followed by bool() on the same iterator. The draft checks separate 2,000-call runs below 32 * 1",
+      "cites": "test: self.assertLess(traced_growth(s.peek), LIMIT)"
+     },
+     {
+      "what": "The reference measures growth starting immediately after the first peek. The draft excludes 100 warmup calls, allowing allocations during calls 2 through 100 to escape the measured growth.",
+      "cites": "test: for _ in range(WARMUP):"
+     },
+     {
+      "what": "The reference requires elements() to remain empty after repeated lookahead while the peeked item is still pending. The draft checks zero-cache elements() only after exhaustion.",
+      "cites": "test: self.assertEqual(list(s.elements()), [])"
+     },
+     {
+      "what": "The reference skips the allocation check on non-CPython implementations with the reason 'retained allocation check uses CPython tracemalloc'. The draft runs its allocation checks without this implemen",
+      "cites": "test: def test_repeated_peek_storage_is_bounded(self):"
+     },
+     {
+      "what": "The reference skips when tracemalloc is already tracing, with the reason 'do not disturb an existing allocation trace'. The draft proceeds using the existing trace instead.",
+      "cites": "test: was_tracing = tracemalloc.is_tracing()"
+     }
+    ]
+   },
+   "described": {
+    "n": 6,
+    "cite_description": 1,
+    "items": [
+     {
+      "what": "The reference measures 10,000 iterations, each calling peek() followed by bool() on the same iterator. The draft measures 2,000 calls to each independently, so it misses growth that emerges later or d",
+      "cites": "test: REPEATS = 2000 | test: self.assertLess(traced_growth(s.peek), LIMIT) | test: self.assertLess(traced_growth(lambda:"
+     },
+     {
+      "what": "The reference allows retained growth below 256 KiB; the draft requires growth below 32 KiB. These acceptance boundaries differ.",
+      "cites": "test: LIMIT = 32 * 1024"
+     },
+     {
+      "what": "The reference starts tracing before the first peek and takes its baseline immediately after that peek. The draft performs 100 warmup calls before starting tracing or taking its baseline, excluding gro",
+      "cites": "test: WARMUP = 100 | test: for _ in range(WARMUP): | test: before = tracemalloc.get_traced_memory()[0]"
+     },
+     {
+      "what": "The reference checks that elements() is empty immediately after repeated lookahead, before consuming the iterator. The draft checks emptiness only after exhausting an iterator in another test, so it c",
+      "cites": "test: self.assertEqual(list(s), [10, 20, 30]) | description: item 5"
+     },
+     {
+      "what": "The reference skips the allocation test on non-CPython implementations with the message 'retained allocation check uses CPython tracemalloc'. The draft imports tracemalloc unconditionally and has no i",
+      "cites": "test: import tracemalloc"
+     },
+     {
+      "what": "The reference skips when allocation tracing is already active, with the message 'do not disturb an existing allocation trace'. The draft proceeds with its measurement using the existing trace.",
+      "cites": "test: was_tracing = tracemalloc.is_tracing() | test: if not was_tracing:"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [],
+   "bare": {
+    "n": 2,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference checks the keys immediately after a validator-accepted membership miss. The draft retrieves the absent bucket before checking keys, allowing that retrieval to remove a phantom key left b",
+      "cites": "test: self.assertEqual(list(D[40]), [])"
+     },
+     {
+      "what": "The reference checks keys after three distinct membership misses with no intervening bucket retrievals. The draft interleaves each membership miss with retrieval, allowing retrieval to clean up phanto",
+      "cites": "test: self.assertEqual(list(s[missing]), [])"
+     }
+    ]
+   },
+   "described": {
+    "n": 1,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference checks the key set immediately after a validator-accepted membership miss. The draft first performs an absent-key item lookup, so it could accept an implementation that creates a phantom",
+      "cites": "test: self.assertNotIn(40, D) | test: self.assertEqual(list(D[40]), []) | test: self.assertEqual(set(D), {10, 20})"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [],
+   "bare": {
+    "n": 3,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires one() to raise the falsy custom exception on an infinite count() iterator. The draft only checks finite iterables, so it could accept an implementation that exhausts the iterato",
+      "cites": "test: mi.one([1, 2], too_long=exc)"
+     },
+     {
+      "what": "The reference requires one() to raise OverflowError without evaluating item reprs on an infinite generator. The draft checks only a two-item list, leaving infinite generator handling unchecked in this",
+      "cites": "test: OverflowError, lambda: mi.one(it, too_long=OverflowError) | test: it = [BadRepr(), BadRepr()]"
+     },
+     {
+      "what": "The reference checks only() with three items whose reprs fail and requires OverflowError. The draft checks this exception class only with two such items, so failures specific to longer iterables could",
+      "cites": "test: OverflowError, lambda: mi.only(it, too_long=OverflowError) | test: it = [BadRepr(), BadRepr()]"
+     }
+    ]
+   },
+   "described": {
+    "n": 3,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires one() to raise the falsy custom too_long exception on an infinite count() iterator. The draft checks only finite inputs, so it could accept an implementation that exhausts the i",
+      "cites": "test: mi.one([1, 2], too_long=exc) | test: mi.one(iter('ab'), too_long=exc)"
+     },
+     {
+      "what": "The reference requires one() to raise OverflowError without evaluating item reprs on an infinite generator of items whose repr raises. The draft uses a two-item list, so it does not check this behavio",
+      "cites": "test: it = [BadRepr(), BadRepr()] | test: OverflowError, lambda: mi.one(it, too_long=OverflowError)"
+     },
+     {
+      "what": "The reference checks that only() raises the supplied OverflowError without evaluating reprs when there are three items whose repr raises. The draft checks this only with two items, leaving the three-i",
+      "cites": "test: it = [BadRepr(), BadRepr()] | test: OverflowError, lambda: mi.only(it, too_long=OverflowError)"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "tomli",
+   "commit": "1e6e869a",
+   "hidden_tests_pass": false,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "재귀 한도와 무관한 고정 상수 500",
+     "choice": "min(sys.getrecursionlimit(), 500) 으로 구현해 재귀 한도보다 커지지 않게 했다",
+     "differs_on": "재귀 한도가 500 미만(예: 300)인 상태에서 tomli 를 import 하면 내 선택은 300, 대안은 500",
+     "expected": "MAX_INLINE_NESTING <= sys.getrecursionlimit()",
+     "input": "tomli._parser.MAX_INLINE_NESTING 과 sys.getrecursionlimit()",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "한도는 인터프리터 재귀 한도를 넘지 않는다",
+     "source": "worker_choice",
+     "test": "test_limit_does_not_exceed_recursion_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "한도를 950 같은 더 큰 값으로 낮추기",
+     "choice": "한도를 500 으로 정해 900 단계가 거부된다",
+     "differs_on": "900 단계 중첩 배열: 내 선택은 RecursionError, 대안은 정상 파싱",
+     "expected": "RecursionError, 메시지 'TOML inline arrays/tables are nested more than the allowed N levels'",
+     "input": "sys.setrecursionlimit(20000) 후 'arr = ' + '['*900 + ']'*900",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "인터프리터 재귀 한도가 충분히 커도 900 단계 배열 중첩은 라이브러리 한도로 거부된다",
+     "source": "worker_choice",
+     "test": "test_900_nested_arrays_rejected",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "한도를 950 같은 더 큰 값으로 낮추기",
+     "choice": "한도를 500 으로 정해 900 단계가 거부된다",
+     "differs_on": "900 단계 중첩 인라인 테이블: 내 선택은 RecursionError, 대안은 정상 파싱",
+     "expected": "RecursionError, 메시지 'TOML inline arrays/tables are nested more than the allowed N levels'",
+     "input": "sys.setrecursionlimit(20000) 후 'key = {'*900 + '}'*900",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "900 단계 인라인 테이블 중첩도 같은 한도로 거부된다",
+     "source": "worker_choice",
+     "test": "test_900_nested_tables_rejected",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 3,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires 401 nested arrays to parse. The draft checks acceptance at a boundary derived from MAX_INLINE_NESTING instead of checking the fixed depth 401.",
+      "cites": "test: obj = tomli.loads(nested_array_toml(limit + 1))"
+     },
+     {
+      "what": "The reference requires 402 nested arrays to raise RecursionError under the normal interpreter recursion limit. The draft instead requires 470 nested arrays to parse and checks rejection at a variable ",
+      "cites": "test: obj = tomli.loads(nested_array_toml(470)) | test: sys.setrecursionlimit(20000) | test: tomli.loads(nested_array_to"
+     },
+     {
+      "what": "The reference requires 402 nested inline tables to raise RecursionError under the normal interpreter recursion limit. The draft checks rejection at 900 and at a boundary derived from MAX_INLINE_NESTIN",
+      "cites": "test: sys.setrecursionlimit(20000) | test: tomli.loads(nested_table_toml(900)) | test: tomli.loads(nested_table_toml(lim"
+     }
+    ]
+   },
+   "described": {
+    "n": 3,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference explicitly requires 401 nested arrays to parse; the draft checks 470 and a boundary derived from MAX_INLINE_NESTING, without checking the fixed 401-depth input.",
+      "cites": "test: obj = tomli.loads(nested_array_toml(470)) | test: obj = tomli.loads(nested_array_toml(limit + 1))"
+     },
+     {
+      "what": "The reference requires 402 nested arrays to raise RecursionError. The draft instead requires 470 nested arrays to parse and MAX_INLINE_NESTING to be at least 469, placing its rejection boundary above ",
+      "cites": "test: self.assertGreaterEqual(_parser.MAX_INLINE_NESTING, 469) | test: obj = tomli.loads(nested_array_toml(470)) | test:"
+     },
+     {
+      "what": "The reference requires 402 nested inline tables to raise RecursionError. The draft checks rejection at 900 and at a configurable boundary that its minimum permitted MAX_INLINE_NESTING places above 402",
+      "cites": "test: self.assertGreaterEqual(_parser.MAX_INLINE_NESTING, 469) | test: tomli.loads(nested_table_toml(900)) | test: tomli"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "tomli",
+   "commit": "e1fdb94b",
+   "hidden_tests_pass": true,
+   "lupus_done": true,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "An exclusive limit, where a key with exactly sys.getrecursionlimit() parts is already rejected",
+     "choice": "The limit is inclusive: a key may have up to sys.getrecursionlimit() parts (MAX_KEY_PARTS)",
+     "differs_on": "A key/value pair whose key has exactly sys.getrecursionlimit() parts (1000 by default)",
+     "expected": "Parses without error; the result is nested exactly sys.getrecursionlimit() levels deep",
+     "input": "'a.a. … .a = 1' with exactly sys.getrecursionlimit() parts",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "A key with exactly the limit number of parts is still accepted",
+     "source": "worker_choice",
+     "test": "test_key_value_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "An exclusive limit for table header keys",
+     "choice": "The same inclusive limit applies to table header keys",
+     "differs_on": "A '[…]' header with exactly sys.getrecursionlimit() parts",
+     "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+     "input": "'[a.a. … .a]\\nb = 1' with exactly sys.getrecursionlimit() parts in the header",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "A table header key at the limit is accepted",
+     "source": "worker_choice",
+     "test": "test_table_header_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "Limit only the keys of key/value pairs, since the request names only key_value_rule's loop",
+     "choice": "The limit is enforced in parse_key, so it covers every key including '[table]' headers",
+     "differs_on": "A '[…]' header with sys.getrecursionlimit() + 1 parts",
+     "expected": "RecursionError",
+     "input": "'[a.a. … .a]\\nb = 1' with sys.getrecursionlimit() + 1 parts in the header",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "The limit also applies to table header keys",
+     "source": "worker_choice",
+     "test": "test_table_header_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "An exclusive limit for array-of-tables header keys",
+     "choice": "The same inclusive limit applies to array-of-tables header keys",
+     "differs_on": "A '[[…]]' header with exactly sys.getrecursionlimit() parts",
+     "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+     "input": "'[[a.a. … .a]]\\nb = 1' with exactly sys.getrecursionlimit() parts",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "An array-of-tables header key at the limit is accepted",
+     "source": "worker_choice",
+     "test": "test_array_of_tables_header_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "Limit only the keys of key/value pairs",
+     "choice": "The limit is enforced in parse_key, so it covers '[[array]]' headers too",
+     "differs_on": "A '[[…]]' header with sys.getrecursionlimit() + 1 parts",
+     "expected": "RecursionError",
+     "input": "'[[a.a. … .a]]\\nb = 1' with sys.getrecursionlimit() + 1 parts",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "The limit also applies to array-of-tables header keys",
+     "source": "worker_choice",
+     "test": "test_array_of_tables_header_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "An exclusive limit for inline table keys",
+     "choice": "The same inclusive limit applies to keys inside inline tables",
+     "differs_on": "An inline table key with exactly sys.getrecursionlimit() parts",
+     "expected": "Parses; the nesting depth under 't' equals sys.getrecursionlimit()",
+     "input": "'t = {a.a. … .a = 1}' with exactly sys.getrecursionlimit() parts in the inline key",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "An inline table key at the limit is accepted",
+     "source": "worker_choice",
+     "test": "test_inline_table_key_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "Limit only top-level key/value keys",
+     "choice": "The limit is enforced in parse_key, so it covers inline table keys too",
+     "differs_on": "An inline table key with sys.getrecursionlimit() + 1 parts",
+     "expected": "RecursionError",
+     "input": "'t = {a.a. … .a = 1}' with sys.getrecursionlimit() + 1 parts in the inline key",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "The limit also applies to keys inside inline tables",
+     "source": "worker_choice",
+     "test": "test_inline_table_key_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "An exclusive limit",
+     "choice": "Quoted parts count the same as bare parts, with an inclusive limit",
+     "differs_on": "A key of exactly sys.getrecursionlimit() quoted parts",
+     "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+     "input": "Keys made of basic-string parts (\"a\".\"a\"…) and of literal-string parts ('a'.'a'…), with exactly sys.getrecursionlimit() parts",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "A key of quoted parts at the limit is accepted",
+     "source": "worker_choice",
+     "test": "test_quoted_parts_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "Apply the limit only to bare key parts",
+     "choice": "Every key part counts as one, whatever its notation",
+     "differs_on": "A key with sys.getrecursionlimit() + 1 parts written as \"a\".\"a\"…",
+     "expected": "RecursionError",
+     "input": "Keys made of basic-string parts and of literal-string parts, with sys.getrecursionlimit() + 1 parts",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "Parts are counted regardless of whether they are bare or quoted",
+     "source": "worker_choice",
+     "test": "test_quoted_parts_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "A limit on the source length of the key",
+     "choice": "The limit is on the number of parts, not on key length or characters",
+     "differs_on": "A key with exactly sys.getrecursionlimit() parts and spaces around every dot",
+     "expected": "Parses; nesting depth equals sys.getrecursionlimit()",
+     "input": "'a . a . … . a = 1' with exactly sys.getrecursionlimit() parts",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "Whitespace around dots does not change the part count at the limit",
+     "source": "worker_choice",
+     "test": "test_whitespace_around_dots_limit",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "A limit on the source length of the key",
+     "choice": "The limit is on the number of parts, with whitespace ignored",
+     "differs_on": "A key with sys.getrecursionlimit() + 1 parts and spaces around every dot",
+     "expected": "RecursionError",
+     "input": "'a . a . … . a = 1' with sys.getrecursionlimit() + 1 parts",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "Whitespace around dots does not let a key exceed the limit",
+     "source": "worker_choice",
+     "test": "test_whitespace_around_dots_limit",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 4,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference explicitly requires successful parsing of a 311-part key; the drafted test does not check that count.",
+      "cites": "test: doc = dotted_key(LIMIT) + \" = 1\""
+     },
+     {
+      "what": "The reference explicitly requires successful parsing of a key with sys.getrecursionlimit() - 1 parts; the drafted test instead checks acceptance at sys.getrecursionlimit() parts.",
+      "cites": "test: self.assertEqual(nesting_depth(tomli.loads(doc)), LIMIT)"
+     },
+     {
+      "what": "The reference checks rejection of a key with sys.getrecursionlimit() + 3 parts; the drafted test checks rejection at LIMIT + 1 and LIMIT * 10, leaving that specific count unchecked.",
+      "cites": "test: tomli.loads(dotted_key(LIMIT + 1) + \" = 1\")"
+     },
+     {
+      "what": "The reference requires the RecursionError message to match 'TOML key has more than the allowed [0-9]+ parts'; the drafted test accepts any RecursionError message.",
+      "cites": "test: with self.assertRaises(RecursionError):"
+     }
+    ]
+   },
+   "described": {
+    "n": 4,
+    "cite_description": 2,
+    "items": [
+     {
+      "what": "The reference requires a 311-part key to parse successfully; the draft does not check this input.",
+      "cites": "test: doc = dotted_key(LIMIT) + \" = 1\""
+     },
+     {
+      "what": "The reference requires a key with sys.getrecursionlimit() - 1 parts to parse successfully; the draft checks acceptance at the limit instead.",
+      "cites": "description: item 1"
+     },
+     {
+      "what": "The reference requires RecursionError for a key with sys.getrecursionlimit() + 3 parts; the draft checks limit + 1 and limit * 10, leaving this specific boundary unchecked.",
+      "cites": "description: item 2 | description: item 3"
+     },
+     {
+      "what": "The reference requires the exception message to match 'TOML key has more than the allowed [0-9]+ parts'; the draft accepts any RecursionError message.",
+      "cites": "test: with self.assertRaises(RecursionError):"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "tomli",
+   "commit": "9eb2125e",
+   "hidden_tests_pass": true,
+   "lupus_done": false,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "최상위 key = value 에서만 허용한다",
+     "choice": "값이 올 수 있는 모든 위치에서 초 생략을 허용한다",
+     "differs_on": "a = [07:32]",
+     "expected": "{'a': [time(7, 32), datetime(1979, 5, 27, 7, 32)], 'b': {'t': time(8, 15)}}",
+     "input": "a = [07:32, 1979-05-27T07:32]\\nb = {t = 08:15}",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "초 없는 값이 배열과 인라인 테이블 안에서도 파싱된다",
+     "source": "worker_choice",
+     "test": "test_without_seconds_in_array_and_inline_table",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "초 없는 값 바로 뒤에 줄 끝을 요구한다",
+     "choice": "초 없는 값 뒤의 공백·주석을 다른 값과 똑같이 처리한다",
+     "differs_on": "t = 07:32 # comment",
+     "expected": "{'t': datetime.time(7, 32)}",
+     "input": "t = 07:32 # comment\\n",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "초 없는 시간 뒤에 공백과 주석이 올 수 있다",
+     "source": "worker_choice",
+     "test": "test_without_seconds_then_comment",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "07:32.5 를 분의 소수(07:32:30)로 받아들인다",
+     "choice": "초 없이 소수부만 있으면 오류로 한다",
+     "differs_on": "t = 07:32.5",
+     "expected": "TOMLDecodeError",
+     "input": "t = 07:32.5 / dt = 1979-05-27T07:32.5 (먼저 t = 07:32 가 파싱되는지 확인)",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "소수 초는 초가 있을 때만 쓸 수 있다",
+     "source": "worker_choice",
+     "test": "test_fraction_without_seconds_is_invalid",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "분도 생략할 수 있게 해 1979-05-27T07 을 07:00 으로 받아들인다",
+     "choice": "초만 선택 사항으로 하고 시·분의 두 자리 형식과 범위 검사는 그대로 둔다",
+     "differs_on": "dt = 1979-05-27T07",
+     "expected": "각각 TOMLDecodeError",
+     "input": "t = 07:32: / t = 07:3 / t = 7:32 / t = 24:00 / t = 07:60 / t = 07 / dt = 1979-05-27T07 / dt = 1979-05-27T07:32: (먼저 t = 07:32 가 파싱되는지 확인)",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "생략할 수 있는 것은 초뿐이다. 분 생략, 한 자리 시·분, 범위 밖 시·분, 끝의 콜론은 여전히 오류다",
+     "source": "worker_choice",
+     "test": "test_malformed_without_seconds_is_invalid",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 2,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference checks that 00:00:00.99999999999999 truncates to 00:00:00.999999. The drafted test checks only short fractional seconds, so it could accept a parser that mishandles fractions longer than",
+      "cites": "test: doc = \"a = 07:32\\nb = 07:32:01\\nc = 07:32:01.5\\nd = 1979-05-27T07:32:01.25Z\""
+     },
+     {
+      "what": "The reference requires the existing no-seconds, common-34, common-31, and common-29 fixtures to parse successfully and match their normalized expected values, removing their expected-failure exception",
+      "cites": ""
+     }
+    ]
+   },
+   "described": {
+    "n": 4,
+    "cite_description": 2,
+    "items": [
+     {
+      "what": "The reference requires 2025-04-18T20:05 to parse as a local datetime with seconds zero. The draft tests a different date and time, so it does not pin this value.",
+      "cites": "test: tomllib.loads(\"dt = 1979-05-27T07:32\")"
+     },
+     {
+      "what": "The reference retains acceptance of lowercase t and z in datetimes with seconds, including 1988-10-27t01:01:01 and 1988-10-27t01:01:01z. The draft never checks these forms.",
+      "cites": "test: doc = \"a = 07:32\\nb = 07:32:01\\nc = 07:32:01.5\\nd = 1979-05-27T07:32:01.25Z\""
+     },
+     {
+      "what": "The reference requires 00:00:00.99999999999999 to produce microseconds 999999, including when followed by a seconds-omitted time in the same document. The draft checks only shorter fractional precisio",
+      "cites": "description: item 9"
+     },
+     {
+      "what": "The reference makes successful parsing and expected-value comparison mandatory for the existing no-seconds, common-34, common-31, and common-29 fixtures by removing their expected-failure exemptions. ",
+      "cites": "test: from . import tomllib | description: items 1–11"
+     }
+    ]
+   }
+  },
+  {
+   "repo": "tomli",
+   "commit": "2a2aa62f",
+   "hidden_tests_pass": true,
+   "lupus_done": false,
+   "has_description": true,
+   "chosen": [
+    {
+     "alternative": "줄바꿈만 허용하고 인라인 테이블 안의 주석은 TOMLDecodeError 로 거부한다",
+     "choice": "배열과 같은 방식(skip_comments_and_array_ws)으로 줄바꿈과 함께 주석도 건너뛴다. TOML 1.1 스펙이 그렇다고 기억하지만 요청문에는 주석 언급이 없다",
+     "differs_on": "t = {\\n a = 1, # c\\n}",
+     "expected": "{'t': {'a': 1, 'b': 2}}",
+     "input": "t = { # opening\\n a = 1, # after a\\n # own line\\n b = 2 # before close\\n}\\n",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "여러 줄 인라인 테이블 안에서 주석을 허용한다",
+     "source": "worker_choice",
+     "test": "test_comments_inside_inline_table",
+     "test_in_file": true,
+     "where": ""
+    },
+    {
+     "alternative": "인라인 테이블 안이면 '=' 앞뒤의 줄바꿈도 허용한다",
+     "choice": "줄바꿈은 키/값 쌍 사이와 중괄호·쉼표 주변에서만 허용하고, 한 쌍 내부(키, '=', 값 사이)에서는 거부한다",
+     "differs_on": "t = {a =\\n1}",
+     "expected": "TOMLDecodeError",
+     "input": "t = {a\\n= 1} / t = {a =\\n1}",
+     "quote": "",
+     "quote_in_request": true,
+     "rule": "키와 '=' 사이, '=' 와 값 사이에는 줄바꿈을 허용하지 않는다",
+     "source": "worker_choice",
+     "test": "test_newline_around_equals_is_invalid",
+     "test_in_file": true,
+     "where": ""
+    }
+   ],
+   "bare": {
+    "n": 4,
+    "cite_description": 0,
+    "items": [
+     {
+      "what": "The reference requires quoted keys and multiple key/value pairs on one line within a multiline inline table: \"a\" = 1, \"b\" = 2,. The draft only checks bare keys in multiline tables.",
+      "cites": "test: doc = \"t = {\\n  a = 1,\\n  b = 2\\n}\\n\""
+     },
+     {
+      "what": "The reference checks a multiline integer array inside an inline table, with a trailing comma, yielding c = [1, 2, 3]. The draft's nested array contains only an inline table.",
+      "cites": "test: tomllib.loads(doc), {\"t\": {\"inner\": {\"x\": 1}, \"arr\": [{\"y\": 2}]}}"
+     },
+     {
+      "what": "The reference requires accepting a comment immediately after an array's closing bracket and separator, with no intervening whitespace: ],# comment. The draft only checks separator-following comments w",
+      "cites": "test: \"  a = 1, # after a\\n\""
+     },
+     {
+      "what": "The reference checks a nested empty inline table containing only a comment and newlines, followed by a trailing comma, yielding f = {}. The draft checks empty multiline tables and comments separately,",
+      "cites": "test: self.assertEqual(tomllib.loads(\"t = {\\n\\n  \\t\\n}\"), {\"t\": {}})"
+     }
+    ]
+   },
+   "described": {
+    "n": 4,
+    "cite_description": 1,
+    "items": [
+     {
+      "what": "The reference checks quoted keys inside a multiline inline table (\"a\" and \"b\"), including two pairs on the same line. The draft checks only bare keys in multiline tables.",
+      "cites": "test: doc = \"t = {\\n  a = 1,\\n  b = 2\\n}\\n\""
+     },
+     {
+      "what": "The reference checks a multiline array of integers inside a multiline inline table, preserving the value [1, 2, 3]. The draft's multiline array contains only an inline table.",
+      "cites": "test: \"    { y = 2, },\\n\" | test: tomllib.loads(doc), {\"t\": {\"inner\": {\"x\": 1}, \"arr\": [{\"y\": 2}]}}"
+     },
+     {
+      "what": "The reference checks a comment immediately adjacent to the comma following an array value (`],# comment`), followed by another table entry. The draft checks comments after an opening brace and scalar ",
+      "cites": "test: \"t = { # opening\\n\" | test: \"  a = 1, # after a\\n\" | test: \"  b = 2 # before close\\n\""
+     },
+     {
+      "what": "The reference checks a nested empty inline table containing only whitespace and a comment, producing an empty dictionary. The draft checks whitespace-only empty tables and comments in nonempty tables ",
+      "cites": "test: self.assertEqual(tomllib.loads(\"t = {\\n\\n  \\t\\n}\"), {\"t\": {}}) | description: item 7 | description: item 8"
+     }
+    ]
+   }
+  }
+ ]
+}
