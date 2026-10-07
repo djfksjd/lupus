@@ -8,6 +8,7 @@ import unittest
 
 from lupus import gitx, goals, projects, quick, supervisor
 from lupus.kernel import Kernel
+from lupus.util import LupusError
 
 from .helpers import Env, fake
 
@@ -108,7 +109,7 @@ class IsolationTests(GitEnv):
         self.assertEqual(sh(self.root, "branch", "--list", "lupus/*").strip(), "")
         self.assertEqual(goals.get(self.k, made["goal_id"])["status"], "CANCELLED")
 
-    def test_accept_refuses_a_moved_branch_and_a_conflicting_uncommitted_file(self):
+    def test_accept_refuses_a_conflicting_uncommitted_file_and_a_branch_that_moved_in_the_same_place(self):
         isolated, made = self.start()
         self.assertTrue(supervisor.run_goal(self.k, made["goal_id"], fake(FIX))["done"])
         (self.root / "calc.py").write_text("def add(a, b):\n    return a - b  # my own work in progress\n")
@@ -117,10 +118,97 @@ class IsolationTests(GitEnv):
         sh(self.root, "checkout", "-q", "calc.py")
         (self.root / "other.txt").write_text("x\n")
         sh(self.root, "add", "other.txt")
-        sh(self.root, "commit", "-q", "-m", "the user moved on")
-        self.assertRefused("BASELINE_CHANGED", gitx.accept, self.k, made["goal_id"], "user")
-        self.assertNotIn("return a + b", (self.root / "calc.py").read_text())
+        (self.root / "calc.py").write_text("def add(a, b):\n    return b + a\n")
+        sh(self.root, "add", "-A")
+        sh(self.root, "commit", "-q", "-m", "the user moved on, in the same place")
+        head = sh(self.root, "rev-parse", "HEAD")
+        with self.assertRaises(LupusError) as refused:
+            gitx.accept(self.k, made["goal_id"], "user")
+        self.assertEqual(refused.exception.code, "BASELINE_CONFLICT")
+        self.assertIn("calc.py", refused.exception.detail)
+        self.assertEqual((sh(self.root, "rev-parse", "HEAD"), sh(self.root, "status", "--porcelain")), (head, ""))      # nothing half-merged
+        self.assertIn("return b + a", (self.root / "calc.py").read_text())
         gitx.discard(self.k, made["goal_id"], "user")
+
+    def test_two_results_of_one_repository_are_accepted_one_after_the_other(self):
+        # two goals worked on side by side, each in a checkout of the same commit
+        (self.root / "text.py").write_text("def shout(s):\n    return s.lower()\n")
+        (self.root / "test_text.py").write_text("import unittest\nfrom text import shout\nclass T(unittest.TestCase):\n"
+                                                 "    def test_shout(self): self.assertEqual(shout('a'), 'A')\n")
+        sh(self.root, "add", "-A")
+        sh(self.root, "commit", "-q", "-m", "two things are broken")
+        (_, one), (_, two) = self.start(), self.start()
+        both = "import pathlib\npathlib.Path('calc.py').write_text('def add(a, b):\\n    return a + b\\n')\n"
+        self.assertTrue(supervisor.run_goal(self.k, one["goal_id"], fake(both + "pathlib.Path('text.py').write_text('def shout(s):\\n    return s.upper()\\n')\n"))["done"])
+        self.assertTrue(supervisor.run_goal(self.k, two["goal_id"], fake(both + "pathlib.Path('text.py').write_text('def shout(s):\\n    return s.upper()\\n')\npathlib.Path('extra.py').write_text('X = 1\\n')\n"))["done"])
+        first = gitx.accept(self.k, one["goal_id"], "user")
+        self.assertNotIn("combined_with", first)
+        second = gitx.accept(self.k, two["goal_id"], "user")           # the branch has moved: combined, checked again, accepted
+        self.assertEqual(second["combined_with"], first["commit"])
+        self.assertEqual(second["files"], ["extra.py"])                # the identical edits merged to nothing new
+        self.assertEqual(sh(self.root, "rev-list", "--count", "HEAD").strip(), "4")
+        self.assertEqual(sh(self.root, "status", "--porcelain"), "")
+        self.assertEqual(sh(self.root, "branch", "--list", "lupus/*").strip(), "")
+
+    def test_a_result_the_branch_already_contains_adds_no_empty_commit(self):
+        (_, one), (isolated, two) = self.start(), self.start()
+        for made in (one, two):                      # both make exactly the same edit
+            self.assertTrue(supervisor.run_goal(self.k, made["goal_id"], fake(FIX))["done"])
+        first = gitx.accept(self.k, one["goal_id"], "user")
+        second = gitx.accept(self.k, two["goal_id"], "user")
+        self.assertEqual((second["commit"], second["files"]), (first["commit"], []))
+        self.assertEqual(sh(self.root, "rev-list", "--count", "HEAD").strip(), "2")
+        self.assertFalse(os.path.exists(isolated["canonical_root"]))
+        self.assertRefused("ISOLATION_CLOSED", gitx.accept, self.k, two["goal_id"], "user")
+
+    def test_a_branch_that_contains_the_result_but_no_longer_passes_is_not_called_accepted(self):
+        isolated, made = self.start()
+        self.assertTrue(supervisor.run_goal(self.k, made["goal_id"], fake(FIX))["done"])
+        # the user makes the same edit themselves, and also commits a test that it does not pass
+        (self.root / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+        (self.root / "test_calc.py").write_text(TEST + "    def test_more(self): self.assertEqual(add(1, 1), 3)\n")
+        sh(self.root, "add", "-A")
+        sh(self.root, "commit", "-q", "-m", "same fix, stricter test")
+        self.assertRefused("ACCEPT_UNVERIFIED", gitx.accept, self.k, made["goal_id"], "user")
+        self.assertTrue(os.path.exists(isolated["canonical_root"]))
+
+    def test_a_checkouts_fingerprint_sees_the_repositorys_refs_and_a_branch_that_moves_mid_check_is_refused(self):
+        from lupus import review
+        isolated, made = self.start()
+        root = __import__("pathlib").Path(isolated["canonical_root"])
+        before = review.fingerprint(root)
+        sh(self.root, "tag", "v1")                                      # shared metadata: no file of the checkout changed
+        self.assertNotEqual(review.fingerprint(root), before)
+        self.assertTrue(supervisor.run_goal(self.k, made["goal_id"], fake(FIX))["done"])
+        (self.root / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+        sh(self.root, "add", "-A")
+        sh(self.root, "commit", "-q", "-m", "the same fix by hand")
+        real = gitx._verify_commit
+
+        def moves_meanwhile(*args):
+            real(*args)
+            (self.root / "later.txt").write_text("x\n")
+            sh(self.root, "add", "-A")
+            sh(self.root, "commit", "-q", "-m", "and one more")
+        gitx._verify_commit = moves_meanwhile
+        self.addCleanup(setattr, gitx, "_verify_commit", real)
+        self.assertRefused("BASELINE_CHANGED", gitx.accept, self.k, made["goal_id"], "user")
+        self.assertTrue(os.path.exists(isolated["canonical_root"]))    # the result is still there
+        gitx._verify_commit = real
+        self.assertTrue(gitx.accept(self.k, made["goal_id"], "user")["accepted"])      # asked again, on the branch as it now is
+
+    def test_a_combination_that_no_longer_passes_is_not_accepted(self):
+        isolated, made = self.start()
+        self.assertTrue(supervisor.run_goal(self.k, made["goal_id"], fake(FIX))["done"])
+        # meanwhile the user commits something that merges cleanly but breaks the same tests
+        (self.root / "test_calc.py").write_text(TEST + "    def test_more(self): self.assertEqual(add(1, 1), 3)\n")
+        sh(self.root, "add", "-A")
+        sh(self.root, "commit", "-q", "-m", "a stricter test")
+        head = sh(self.root, "rev-parse", "HEAD")
+        self.assertRefused("ACCEPT_UNVERIFIED", gitx.accept, self.k, made["goal_id"], "user")
+        self.assertEqual(sh(self.root, "rev-parse", "HEAD"), head)
+        self.assertNotIn("return a + b", (self.root / "calc.py").read_text())
+        self.assertTrue(os.path.exists(isolated["canonical_root"]))    # the result is still there to look at
 
     def test_a_crash_mid_run_still_leaves_the_origin_alone_and_the_checkout_recoverable(self):
         from .helpers import run_script

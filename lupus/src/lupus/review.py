@@ -30,7 +30,7 @@ from typing import Callable
 
 from . import goals, protect, service
 from .kernel import Kernel
-from .util import LupusError, atomic_write, find_secret, find_secret_bytes, sha256_file
+from .util import LupusError, atomic_write, find_secret, find_secret_bytes, sha256_file, sha256_json
 
 MAX_FILE = 512 * 1024
 MAX_FILES = 5000
@@ -42,6 +42,7 @@ CONTEXT_LINES = 25
 MAX_BACKUP_FILES = 20_000
 MAX_BACKUP_BYTES = 512 * 1024 * 1024
 MANIFEST = "manifest.json"
+MAX_FINGERPRINT_BYTES = 64 * 1024 * 1024
 DEPENDENCY_DIRS = {"node_modules", ".venv", "venv"}      # too large to copy: watched by fingerprint, like a frozen tree
 # Files that hold credentials by convention. The worker's own provider already sees the project;
 # a reviewer is a second provider, and gets none of these, whatever their content looks like.
@@ -133,6 +134,61 @@ def _every_file(root: Path) -> tuple[list[str], dict[str, str], dict[str, str]]:
                 if len(out) > MAX_BACKUP_FILES:
                     raise LupusError("REVIEW_TOO_LARGE", f"more than {MAX_BACKUP_FILES} files")
     return out, links, trees
+
+
+def _git_state(root: Path) -> str:
+    """What of a repository's metadata decides the answer of a command such as `git diff --quiet`:
+    where HEAD is, what is staged, the refs and the configuration. By content, not by time: git
+    rewrites these files with the same content often."""
+    meta = root / ".git"
+    if meta.is_file():                      # a worktree: the metadata lives elsewhere
+        text = meta.read_text(errors="replace").strip()
+        meta = Path(text[8:].strip()) if text.startswith("gitdir:") else meta
+        meta = meta if meta.is_absolute() else root / meta
+    if not meta.is_dir():
+        return ""
+    places = [meta]
+    if (meta / "commondir").is_file():      # a worktree keeps HEAD and index here; refs and config are the repository's
+        shared = Path((meta / "commondir").read_text(errors="replace").strip())
+        places.append(shared if shared.is_absolute() else meta / shared)
+    seen = []
+    for i, place in enumerate(places):
+        for name in ("HEAD", "index", "config", "config.worktree", "packed-refs", "MERGE_HEAD", "info/exclude"):
+            if (place / name).is_file():
+                seen.append([i, name, sha256_file(place / name)])
+        for current, dirs, files in os.walk(place / "refs"):
+            dirs.sort()
+            for name in sorted(files):
+                seen.append([i, os.path.relpath(os.path.join(current, name), place), sha256_file(Path(current) / name)])
+                if len(seen) > 5000:
+                    raise LupusError("REVIEW_TOO_LARGE", "more than 5000 git refs")
+    return sha256_json(seen)
+
+
+def fingerprint(root: Path) -> str | None:
+    """One hash over every file of the project (content and mode), its links, its dependency
+    trees, and what the file listing leaves out but a check could still read: git's own state
+    (HEAD, index, refs, config) and tool caches. None when the project is too large to read
+    through: then nothing is concluded from it."""
+    try:
+        every, links, trees = _every_file(root)
+        for current, dirs, _ in os.walk(root):
+            for name in sorted(dirs):
+                rel = os.path.relpath(Path(current) / name, root)
+                if name in protect.SKIP_DIRS and name != ".git" and rel not in trees and not (Path(current) / name).is_symlink():
+                    trees[rel] = protect.tree_fingerprint(root, rel)
+            dirs[:] = [d for d in dirs if d not in protect.SKIP_DIRS and not (Path(current) / d).is_symlink()]
+        trees[".git"] = _git_state(root)
+        entries, total = [], 0
+        for rel in every:
+            stat = (root / rel).stat()
+            total += stat.st_size
+            if total > MAX_FINGERPRINT_BYTES:
+                return None
+            entries.append([rel, sha256_file(root / rel), stat.st_mode & 0o777])
+    except (LupusError, OSError):
+        return None
+    return sha256_json([entries, sorted(links.items()), sorted(trees.items())])
 
 
 def backup(k: Kernel, label: str, root: Path) -> Path:

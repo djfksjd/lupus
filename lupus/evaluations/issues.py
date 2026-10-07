@@ -12,7 +12,7 @@
 Usage:
   PYTHONPATH=src python3 evaluations/issues.py mine <workdir> instances.json [per_repo]
   PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit] [reviewer] [arms]
-  (arms: "plain,do" by default; "do" alone repeats only the Lupus arm)
+  (arms: "plain,do" by default; "do" alone repeats only the Lupus arm; "lean" is `lupus do --lean`)
 """
 
 from __future__ import annotations
@@ -58,6 +58,17 @@ def checkout(clone: Path, commit: str, dest: Path) -> None:
     subprocess.run(["git", "clone", "-q", str(clone), str(dest)], check=True)
     git(dest, "checkout", "-q", commit)
     shutil.rmtree(dest / ".git")
+
+
+def added_lines(pristine: Path, root: Path) -> int:
+    """Lines the arm added to the project, not counting test files (the size `--lean` is about)."""
+    out = subprocess.run(["git", "diff", "--no-index", "--numstat", str(pristine), str(root)], capture_output=True, text=True).stdout
+    total = 0
+    for line in out.splitlines():
+        added, _, name = line.split("\t", 2)
+        if added.isdigit() and "test" not in name.lower() and "__pycache__" not in name and ".pytest_cache" not in name:
+            total += int(added)
+    return total
 
 
 def mine(work: Path, out_path: str, per_repo: int) -> None:
@@ -144,6 +155,8 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
     out = {"driver": driver, "reviewer": reviewer, "arms": list(arms), "date": time.strftime("%Y-%m-%d"), "rows": []}
     for i, inst in enumerate(instances):
         clone = work / "clones" / inst["repo"]
+        pristine = base / f"{i}-pristine"
+        checkout(clone, inst["commit"] + "~1", pristine)
         for arm in arms:
             root = base / f"{i}-{arm}"
             checkout(clone, inst["commit"] + "~1", root)
@@ -157,7 +170,7 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
                                      root, lambda pid: None, timeout_s=420)
                 else:
                     project = projects.register(k, root, root.name, ["anthropic", "openai"])
-                    draft = quick.draft_check(k, project, inst["request"], "user", allow_failing=True)
+                    draft = quick.draft_check(k, project, inst["request"], "user", allow_failing=True, lean=arm == "lean")
                     row["already_failing"] = len(draft["already_failing"])
                     first = supervisor.run_goal(k, draft["goal_id"], adapter, timeout_s=420, max_steps=3)
                     row["check_drafted"] = first["done"]
@@ -191,18 +204,20 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
             except LupusError as exc:
                 row["refused"] = f"{exc.code}: {exc.detail[:120]}"
             row["seconds"] = round(time.monotonic() - started, 1)
+            row["added_lines"] = added_lines(pristine, root)
             passed, detail = score(clone, inst, root)
             row.update(hidden_tests_pass=passed, **usage_of(log), **({} if passed else {"hidden_detail": detail[-160:]}))
             out["rows"].append(row)
             print(json.dumps(row, ensure_ascii=False)[:330], flush=True)
             summary = {}
-            for a in ("plain", "do"):
+            for a in arms:
                 sel = [r for r in out["rows"] if r["arm"] == a]
                 if sel:
                     summary[a] = {"n": len(sel), "hidden_pass": sum(r["hidden_tests_pass"] for r in sel),
+                                  "added_lines_mean": round(sum(r["added_lines"] for r in sel) / len(sel), 1),
                                   "tokens_mean": round(sum(r["tokens"] for r in sel) / len(sel)),
                                   "seconds_mean": round(sum(r["seconds"] for r in sel) / len(sel), 1)}
-                    if a == "do":
+                    if a != "plain":
                         said_done = [r for r in sel if r.get("lupus_done")]
                         summary[a].update(lupus_said_done=len(said_done),
                                           said_done_but_hidden_fail=sum(not r["hidden_tests_pass"] for r in said_done))

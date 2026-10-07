@@ -18,15 +18,19 @@ explicitly promoted to global knowledge.
 from __future__ import annotations
 
 import json
+import queue
+import threading
+import time
 from typing import Any, Callable
 
-from . import budget, goals, projects, supervisor
+from . import budget, goals, projects, runs, supervisor
 from .adapters import Adapter
 from .kernel import Kernel
-from .util import LupusError, new_id
+from .util import LupusError, container_stop, new_id, proc_start, stop_group
 
 DRIVERS = ("native_claude", "native_codex")
 RETRYABLE = ("quota", "rate_limit", "auth", "unavailable")
+MAX_PARALLEL = 4      # worker steps in flight at once (`alpha-run --parallel`)
 
 
 def ensure(k: Kernel, project_id: str | None = None) -> dict:
@@ -144,10 +148,43 @@ def _unblock(k: Kernel, goal_id: str, driver: str) -> bool:
     return moved
 
 
+def _advance(k: Kernel, goal_id: str, drivers: list[str], make_adapter: Callable[[str], Adapter], timeout_s: float,
+             unavailable: dict[str, str]) -> dict[str, Any]:
+    """One turn for one goal: at most one worker step, or only the completion check when no task
+    is left. Returns what happened; `moved` is False when the goal is exactly where it was."""
+    goal = goals.get(k, goal_id)
+    driver, why = route(k, goal, drivers, unavailable)
+    if driver is None:
+        return {"skip": "no usable AI: " + json.dumps(why, ensure_ascii=False), "moved": False}
+    if goal["status"] == "EXTERNAL_BLOCKED" and not _unblock(k, goal_id, driver):
+        return {"skip": "blocked on its provider and no other approved AI is available", "moved": False}
+    if goals.get(k, goal_id)["status"] != "ACTIVE":
+        return {"moved": False}
+    if goals.next_runnable(k, goal_id) is None:
+        report = supervisor._run_goal(k, goal_id, make_adapter(driver), 0, timeout_s, 8)   # completion only
+        if report["done"]:
+            return {"step": {"goal_id": goal_id, "driver": None, "status": "DONE", "done": True}, "moved": True}
+        return {"skip": "waiting: " + ";".join(report["completion_blockers"])[:200], "moved": False}
+    report = supervisor._run_goal(k, goal_id, make_adapter(driver), 1, timeout_s, 8)
+    last = report["steps"][-1] if report["steps"] else {"status": "NOTHING"}
+    out: dict[str, Any] = {"step": {"goal_id": goal_id, "driver": driver, "status": last.get("status"), "done": report["done"],
+                                    "reason": last.get("reason") or last.get("blockers")}, "moved": False}
+    if last.get("error_class") in RETRYABLE:
+        # This AI cannot work right now; do not offer it to the other goals either.
+        out["unavailable"] = {driver: f"{last['error_class']} during this run"}
+        out["moved"] = True
+    elif last.get("status") in ("DONE", "PENDING") or report["done"]:
+        out["moved"] = True
+    return out
+
+
 def run(k: Kernel, drivers: list[str], make_adapter: Callable[[str], Adapter], *, max_steps: int = 30,
-        timeout_s: float = 600, unavailable: dict[str, str] | None = None) -> dict[str, Any]:
+        timeout_s: float = 600, unavailable: dict[str, str] | None = None, parallel: int = 1) -> dict[str, Any]:
     """Advance every unfinished goal, one step each in turn, until nothing can move or the step
-    limit is reached. One supervisor, one worker at a time."""
+    limit is reached. One supervisor. With `parallel` > 1, up to that many goals have their step
+    running at the same time, never two in the same project (see `_run_parallel`)."""
+    if not 1 <= parallel <= MAX_PARALLEL:
+        raise LupusError("PARALLEL_INVALID", f"1..{MAX_PARALLEL}")
     with k.supervisor_lock():
         recovered = supervisor._recover(k, False)
         steps: list[dict] = []
@@ -155,6 +192,9 @@ def run(k: Kernel, drivers: list[str], make_adapter: Callable[[str], Adapter], *
         skipped: dict[str, str] = {}
         if recovered["writers_alive"]:
             return {"steps": [], "stopped": "WRITER_NOT_STOPPED", "writers_alive": recovered["writers_alive"]}
+        if parallel > 1:
+            _run_parallel(k, drivers, make_adapter, max_steps, timeout_s, unavailable, parallel, steps, skipped)
+            return {"steps": steps, "skipped": skipped, "unavailable": unavailable, "portfolio": portfolio(k), "parallel": parallel}
         while len(steps) < max_steps:
             moved = False
             queue = k.q("SELECT goal_id FROM goal WHERE status IN ('ACTIVE','EXTERNAL_BLOCKED') "
@@ -162,36 +202,111 @@ def run(k: Kernel, drivers: list[str], make_adapter: Callable[[str], Adapter], *
             for row in queue:
                 if len(steps) >= max_steps:
                     break
-                goal = goals.get(k, row["goal_id"])
-                driver, why = route(k, goal, drivers, unavailable)
-                if driver is None:
-                    skipped[goal["goal_id"]] = "no usable AI: " + json.dumps(why, ensure_ascii=False)
-                    continue
-                if goal["status"] == "EXTERNAL_BLOCKED" and not _unblock(k, goal["goal_id"], driver):
-                    skipped[goal["goal_id"]] = "blocked on its provider and no other approved AI is available"
-                    continue
-                if goals.get(k, goal["goal_id"])["status"] != "ACTIVE":
-                    continue
-                if goals.next_runnable(k, goal["goal_id"]) is None:
-                    report = supervisor._run_goal(k, goal["goal_id"], make_adapter(driver), 0, timeout_s, 8)   # completion only
-                    if report["done"]:
-                        steps.append({"goal_id": goal["goal_id"], "driver": None, "status": "DONE", "done": True})
-                        moved = True
-                    else:
-                        skipped[goal["goal_id"]] = "waiting: " + ";".join(report["completion_blockers"])[:200]
-                    continue
-                report = supervisor._run_goal(k, goal["goal_id"], make_adapter(driver), 1, timeout_s, 8)
-                last = report["steps"][-1] if report["steps"] else {"status": "NOTHING"}
-                step = {"goal_id": goal["goal_id"], "driver": driver, "status": last.get("status"),
-                        "done": report["done"], "reason": last.get("reason") or last.get("blockers")}
-                steps.append(step)
-                skipped.pop(goal["goal_id"], None)
-                if last.get("error_class") in RETRYABLE:
-                    # This AI cannot work right now; do not offer it to the other goals either.
-                    unavailable[driver] = f"{last['error_class']} during this run"
-                    moved = True
-                elif last.get("status") in ("DONE", "PENDING") or report["done"]:
-                    moved = True
+                out = _advance(k, row["goal_id"], drivers, make_adapter, timeout_s, unavailable)
+                _note(out, row["goal_id"], steps, skipped, unavailable)
+                moved = moved or out["moved"]
             if not moved:
                 break
         return {"steps": steps, "skipped": skipped, "unavailable": unavailable, "portfolio": portfolio(k)}
+
+
+def _note(out: dict, goal_id: str, steps: list[dict], skipped: dict[str, str], unavailable: dict[str, str]) -> None:
+    if "step" in out:
+        steps.append(out["step"])
+        skipped.pop(goal_id, None)
+    if "skip" in out:
+        skipped[goal_id] = out["skip"]
+    unavailable.update(out.get("unavailable", {}))
+
+
+# ---------------------------------------------------------------- several goals at once
+
+def _run_parallel(k: Kernel, drivers: list[str], make_adapter: Callable[[str], Adapter], max_steps: int, timeout_s: float,
+                  unavailable: dict[str, str], parallel: int, steps: list[dict], skipped: dict[str, str]) -> None:
+    """The same turns as the sequential loop, with up to `parallel` of them in flight.
+
+    The scheduling is adapted from Ruflo's dual-mode orchestrator (MIT, Copyright (c) 2024-2026
+    ruvnet; `v3/@claude-flow/codex/src/dual-mode/orchestrator.ts`): a bounded set of workers, and
+    writers that run together must each have a working tree of their own. Ruflo runs fixed waves
+    and keeps a separate cap for writers; here every step is a writer, a slot is refilled as soon
+    as it frees, and "a tree of its own" is what the kernel already enforces: one writer per
+    registered project, so goals of one repository run together only as isolated checkouts.
+
+    What stays as it was: one supervisor (this process, holding the lock), one budget ledger,
+    one completion rule. Each thread works through its own connection (`Kernel.fork`), and every
+    claim, reservation and verdict is still a transaction of the single database.
+
+    If this function is left by an exception (Ctrl-C, `lupus stop`, a failure in one thread),
+    the threads are stopped the way a crash would stop them: their process groups are ended and
+    they can record nothing further, so the next start's recovery closes what they left."""
+    stop = threading.Event()
+    results: queue.Queue = queue.Queue()
+    flying: dict[str, tuple[str, threading.Thread]] = {}      # goal -> (project, thread)
+    turns: dict[str, int] = {}                                # turns given in this run: the fewest goes first
+    idle: set[str] = set()                                    # a turn changed nothing; asked again once something else has
+
+    def work(goal_id: str, blocked: dict[str, str]) -> None:
+        try:
+            own = k.fork(stop)
+            try:
+                results.put((goal_id, _advance(own, goal_id, drivers, make_adapter, timeout_s, blocked), None))
+            finally:
+                own.close()
+        except BaseException as exc:      # reported to the scheduler, which stops the others and re-raises it
+            results.put((goal_id, None, exc))
+
+    try:
+        while True:
+            if len(steps) + len(flying) < max_steps:
+                busy = {project for project, _ in flying.values()}
+                waiting = [row for row in k.q("SELECT goal_id, project_id FROM goal WHERE status IN ('ACTIVE','EXTERNAL_BLOCKED') "
+                                              "ORDER BY priority DESC, created_at, rowid")
+                           if row["goal_id"] not in flying and row["goal_id"] not in idle]
+                for row in sorted(waiting, key=lambda r: turns.get(r["goal_id"], 0)):      # stable: the user's order within a count
+                    if len(flying) >= parallel or len(steps) + len(flying) >= max_steps:
+                        break
+                    if row["project_id"] in busy:
+                        continue          # its project already has a writer; it waits for that slot, as always
+                    thread = threading.Thread(target=work, args=(row["goal_id"], dict(unavailable)), daemon=True)
+                    flying[row["goal_id"]] = (row["project_id"], thread)
+                    busy.add(row["project_id"])
+                    turns[row["goal_id"]] = turns.get(row["goal_id"], 0) + 1
+                    thread.start()
+            if not flying:
+                return
+            try:
+                goal_id, out, failure = results.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            flying.pop(goal_id)[1].join()
+            if failure is not None:
+                raise failure
+            _note(out, goal_id, steps, skipped, unavailable)
+            if out["moved"]:
+                idle.clear()
+            else:
+                idle.add(goal_id)
+    except BaseException:
+        stop.set()
+        _stop_flying(k, flying)
+        raise
+
+
+def _stop_flying(k: Kernel, flying: dict[str, tuple[str, threading.Thread]], patience_s: float = 60.0) -> None:
+    """End what the threads are waiting on (a worker CLI, a verifier) until they have all returned.
+    Only process groups this runtime recorded, and only while the recorded leader is still the
+    same process."""
+    projects_busy = sorted({project for project, _ in flying.values()})
+    deadline = time.monotonic() + patience_s
+    while any(thread.is_alive() for _, thread in flying.values()) and time.monotonic() < deadline:
+        marks = ",".join("?" * len(projects_busy))
+        rows = k.q(f"SELECT pid, proc_start, '' AS purpose FROM run WHERE project_id IN ({marks}) AND status <> 'STOPPED' "
+                   f"AND pid IS NOT NULL UNION ALL SELECT pid, proc_start, purpose FROM aux_process WHERE project_id IN ({marks})",
+                   *projects_busy, *projects_busy)
+        for row in rows:
+            if proc_start(row["pid"]) == row["proc_start"]:
+                stop_group(row["pid"], grace_s=2.0)
+            if runs.container_of(row["purpose"]):
+                container_stop(runs.container_of(row["purpose"]))
+        for _, thread in flying.values():
+            thread.join(timeout=0.2)

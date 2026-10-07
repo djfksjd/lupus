@@ -11,6 +11,15 @@ procedures. A proposal is stored as a CANDIDATE and treated like any other unpro
 
 The model that proposes cannot change a verifier, a budget, a policy or an evaluation: it gets no
 tool, runs in an empty directory, and its output is parsed as data.
+
+A pass is recorded as one unit with what it added, and can be taken back as one unit (`undo`).
+That part is adapted from Prime Agent's refinement planner (MIT, Copyright (c) 2025-2026 Prime
+Intellect Ltd.; `crates/pa-core/src/refinement/planner.rs`, `apply_refinement_proposal` and
+`rollback_proposal`): every applied edit keeps a snapshot, a rollback is the recorded inverse of
+those edits, and an entry that changed since the pass is left alone instead of being overwritten.
+Prime's refinements edit prompts, skills and memory and are accepted on a model's judgement;
+here a pass can only add candidate notes, and what happens to them is decided by verifier
+results, so the rollback is for the user who does not want to wait for that.
 """
 
 from __future__ import annotations
@@ -21,7 +30,7 @@ import secrets
 
 from . import alpha, budget, memory, service
 from .kernel import Kernel
-from .util import LupusError, find_secret
+from .util import LupusError, find_secret, new_id, sha256_json
 
 MAX_CASES = 8
 MAX_PROCEDURES = 3
@@ -34,7 +43,10 @@ def triggers(k: Kernel, project_id: str) -> list[dict]:
     for task in k.q(
             "SELECT t.task_id, t.title, t.status, t.attempt_count FROM task t JOIN goal g ON g.goal_id = t.goal_id "
             "WHERE g.project_id = ? AND (t.status = 'NO_PROGRESS' OR (t.status = 'DONE' AND t.attempt_count >= 2)) "
-            "AND NOT EXISTS (SELECT 1 FROM event e WHERE e.type = 'learn.case' AND e.aggregate_id = t.task_id) "
+            "AND NOT EXISTS (SELECT 1 FROM event e WHERE e.type = 'learn.case' AND e.aggregate_id = t.task_id "
+            # (a case whose pass was taken back may be learned from again)
+            "  AND NOT EXISTS (SELECT 1 FROM event r WHERE r.type = 'learn.rolled_back' "
+            "                  AND json_extract(r.payload, '$.rollback_of') = json_extract(e.payload, '$.pass'))) "
             "ORDER BY t.updated_at DESC LIMIT ?", project_id, MAX_CASES):
         failures: list[str] = []
         for ev in k.q("SELECT detail FROM evidence WHERE task_id = ? AND result = 'FAIL' AND detail <> '' ORDER BY seq", task["task_id"]):
@@ -77,7 +89,7 @@ def parse(text: str, cases: list[dict]) -> tuple[list[dict], int]:
         return [], 0
     accepted, rejected = [], 0
     for item in found[:MAX_PROCEDURES * 2]:
-        title, body = " ".join(str(item.get("title", "")).split()), " ".join(str(item.get("body", "")).split())
+        title, body = (" ".join(memory.visible(str(item.get(key, ""))).split()) for key in ("title", "body"))
         refs = [n for n in item.get("cases", []) if isinstance(n, int) and 1 <= n <= len(cases)] if isinstance(
             item.get("cases"), list) else []
         if (not refs or not 3 <= len(title) <= 60 or not 20 <= len(body) <= 400 or find_secret(title + body)
@@ -107,6 +119,7 @@ def refine(k: Kernel, project: dict, driver: str, actor: str) -> dict:
         raise LupusError("LEARN_UNAVAILABLE", f"{driver}: {result.error_class}")
     proposals, rejected = parse(result.text, cases)
     learned = []
+    pass_id = new_id("learn")
     with k.tx():
         for p in proposals:
             try:
@@ -115,8 +128,47 @@ def refine(k: Kernel, project: dict, driver: str, actor: str) -> dict:
             except LupusError:
                 rejected += 1
                 continue
+            if node.get("already_stored"):      # nothing new was added, so there is nothing of this pass to take back
+                continue
             learned.append({"node_id": node["node_id"], "title": node["title"], "body": node["body"], "status": node["status"]})
         for case in cases:      # used once: the same failure is not paid for again
-            k.emit("supervisor", "learn.case", "task", case["task_id"], driver=driver)
-    return {"cases": len(cases), "learned": learned, "rejected": rejected, "usage": result.usage,
-            "note": "후보로 저장했습니다. 이후 작업에서 검증 결과에 따라 승격되거나 은퇴합니다(note-list 로 확인, note-retire 로 철회)"}
+            k.emit("supervisor", "learn.case", "task", case["task_id"], driver=driver, **{"pass": pass_id})
+        k.emit("supervisor", "learn.pass", "project", project["project_id"], driver=driver, **{"pass": pass_id},
+               added=[{"node_id": n["node_id"], "snapshot": _snapshot(n)} for n in learned])
+    return {"pass": pass_id, "cases": len(cases), "learned": learned, "rejected": rejected, "usage": result.usage,
+            "note": "후보로 저장했습니다. 이후 작업에서 검증 결과에 따라 승격되거나 은퇴합니다(note-list 로 확인, note-retire 로 하나씩, "
+                    "`lupus learn --undo` 로 이번 묶음 전체를 철회)"}
+
+
+def _snapshot(node: dict) -> str:
+    return sha256_json([node["title"], node["body"]])
+
+
+def undo(k: Kernel, project: dict, actor: str, pass_id: str | None = None) -> dict:
+    """Take back everything one learning pass added, as one recorded step. A note the user has
+    since confirmed, or whose text is no longer what the pass wrote, is left as it is and
+    reported. The failures the pass was made from become available to learn from again."""
+    if actor != "user":
+        raise LupusError("USER_AUTHORITY_REQUIRED", "a learning pass is taken back by the user")
+    with k.tx():
+        taken_back = {json.loads(r["payload"])["rollback_of"] for r in k.q(
+            "SELECT payload FROM event WHERE type = 'learn.rolled_back' AND aggregate_id = ?", project["project_id"])}
+        passes = [json.loads(r["payload"]) for r in k.q(
+            "SELECT payload FROM event WHERE type = 'learn.pass' AND aggregate_id = ? ORDER BY seq DESC", project["project_id"])]
+        target = next((p for p in passes if p["pass"] not in taken_back and pass_id in (None, p["pass"])), None)
+        if target is None:
+            raise LupusError("LEARN_PASS_NOT_FOUND", pass_id or "this project has no learning pass that was not already taken back")
+        retired, kept = [], []
+        for entry in reversed(target["added"]):
+            node = memory.get(k, entry["node_id"])
+            if node["status"] == "retired":
+                continue
+            if node["status"] == "verified" or _snapshot(node) != entry["snapshot"]:
+                kept.append({"node_id": node["node_id"], "title": node["title"],
+                             "why": "사용자가 확인한 기록" if node["status"] == "verified" else "묶음 이후에 내용이 바뀜"})
+                continue
+            memory._retire(k, node["node_id"], f"learning pass {target['pass']} taken back", "user")
+            retired.append(node["node_id"])
+        k.emit("user", "learn.rolled_back", "project", project["project_id"], rollback_of=target["pass"], retired=retired,
+               kept=[entry["node_id"] for entry in kept])
+    return {"rolled_back": target["pass"], "retired": retired, "kept": kept}

@@ -7,3 +7,22 @@ Copyright (c) 2011-2017 Almende B.V. and (c) 2017-2019 visjs contributors,
 dual-licensed Apache-2.0 OR MIT. Upstream: https://github.com/visjs/vis-network
 Pinned source and hashes: lupus/src/lupus/viewer/vendor/upstream-lock.json
 Details: lupus/THIRD_PARTY_NOTICES.md
+
+Parts of Lupus are adapted from the following MIT-licensed projects. The adapted code was
+rewritten for Lupus (Python, standard library only); each place names its source.
+
+Ponytail — Copyright (c) 2026 DietrichGebert — https://github.com/DietrichGebert/ponytail
+  The guidance file skills/ponytail/SKILL.md is bundled unmodified
+  (lupus/src/lupus/vendor/ponytail/); lupus/src/lupus/economy.py ports its mode filter.
+
+Ruflo — Copyright (c) 2024-2026 ruvnet — https://github.com/ruvnet/ruflo
+  lupus/src/lupus/alpha.py (bounded parallel scheduling) and lupus/src/lupus/gitx.py
+  (integration of worktree results in order) adapt the dual-mode orchestrator and the
+  worktree coordinator.
+
+Prime Agent — Copyright (c) 2025-2026 Prime Intellect Ltd. — https://github.com/PrimeIntellect-ai/prime-agent
+  lupus/src/lupus/supervisor.py (a failed check is not re-run over unchanged files) and
+  lupus/src/lupus/learn.py (a learning pass taken back as one recorded unit) adapt the
+  autonomous quality gates and the refinement planner.
+
+Licence texts and pinned commits: lupus/THIRD_PARTY_NOTICES.md

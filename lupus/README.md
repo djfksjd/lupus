@@ -47,7 +47,8 @@ lupus do "<요청>" --driver claude [--two-step]       # 한 번 호출로 실�
 lupus do "<요청>" --driver claude --review [codex]   # 검사 통과 뒤 구현을 쓰지 않은 AI가 요청과 변경을 대조(이의는 요청 인용 필수, 한 번 돌려보냄)
                                                      # 승인 때 edit 입력: 테스트를 직접 고쳐서 승인. --allow-failing: 지금 실패하는 기존 테스트는 그대로 둠
 lupus do "<요청>" --driver claude --isolated          # 커밋된 HEAD의 별도 체크아웃에서 작업 (fix-tests도 가능). --shell: worker가 명령 실행 가능
-lupus diff <goal_id> | lupus accept <goal_id> | lupus discard <goal_id>   # 결과 보기 / 커밋 하나로 가져오기 / 버리기
+lupus diff <goal_id> | lupus accept <goal_id> | lupus discard <goal_id>   # 결과 보기 / 커밋 하나로 가져오기(브랜치가 움직였으면 합쳐서 다시 검사한 뒤) / 버리기
+lupus do "<요청>" --driver claude --lean              # 구현 방식 지침 추가(재사용 우선·최소 변경. 선택 사항, fix-tests도 가능)
 lupus write "<요청>" --out docs/plan.md --driver claude [--judge codex] [--must "<기준>"] [--web]
                                                      # 문서: 기준 승인 -> 작성 -> 다른 AI가 인용하며 평가 -> 판본 승인
 lupus session --driver claude [-- <CLI 인자>]        # 평소의 대화형 CLI. 테스트 고정, 종료 시 Lupus가 검증
@@ -59,10 +60,11 @@ lupus session --driver claude [-- <CLI 인자>]        # 평소의 대화형 CLI
 lupus alpha-status                                   # 모든 프로젝트의 열린 목표, 대기 사유, 공유 예산
 lupus alpha-budget [--project <id>] --calls 300 --attempts 40 --minutes 600 [--tokens N]
 lupus goal-priority <goal_id> 5                      # 큰 수가 먼저
-lupus alpha-run --drivers claude,codex [--background]   # 열린 목표를 차례로. 한도가 떨어지면 다른 AI로 인계
+lupus alpha-run --drivers claude,codex [--background] [--parallel N]   # 열린 목표를 차례로(또는 N개 동시에: 서로 다른 프로젝트·격리된 체크아웃). 한도가 떨어지면 다른 AI로 인계
 lupus run <goal_id> --driver claude --background     # 터미널을 닫아도 계속
 lupus jobs | lupus logs <job_id> | lupus stop <job_id>
 lupus learn --driver claude                          # 기록된 실패에서 절차 후보 생성(사건이 없으면 호출하지 않음)
+lupus learn --undo [PASS]                            # 학습 묶음이 추가한 후보를 한 번에 철회(모델 호출 없음)
 lupus approve <goal_id> | lupus revise <goal_id> "<의견>" --driver claude   # 문서 목표의 승인·수정
 lupus revalidate <goal_id> --note "…"                # 권한 철회 뒤 계속 허용
 lupus project-remove <project_id> | lupus prune --days 30
@@ -124,5 +126,6 @@ python3 -m lupus graph --open                                     # 그래프 �
 | `service`, `judging`, `author` | 프로젝트 밖에서 실행되는 모델 호출, 문서 평가와 승인, `write` |
 | `session`, `hook` | 대화형 세션과 그 안의 확인 |
 | `alpha`, `jobs` | 여러 프로젝트의 순서·공유 예산·AI 전환, 백그라운드 실행 |
-| `learn` | 기록된 실패에서 절차 후보 만들기 |
+| `learn` | 기록된 실패에서 절차 후보 만들기, 묶음 단위 되돌리기 |
+| `economy` | `--lean` 지침: 동봉한 Ponytail 원문에서 worker에게 맞는 부분만 골라 붙임 |
 | `gitx` | `.git` 보호, 격리된 체크아웃과 diff·accept·discard |

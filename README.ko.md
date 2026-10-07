@@ -33,10 +33,10 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 | **문서·기획·조사** | `lupus write`: 먼저 판정 기준을 승인받고, 작성자와 다른 AI가 평가하되 충족이라고 볼 때마다 문서를 인용해야 하며, 마지막에 그 판본을 사용자가 승인합니다. |
 | **평소의 대화형 세션** | `lupus session`은 평소 쓰던 `claude`/`codex` 화면을 사용자 설정 그대로 띄우고, 테스트를 고정한 뒤, 종료하면 직접 검증합니다. |
 | **Claude ↔ Codex 인계** | 한쪽이 멈추면(한도, 중단, 선택) 다른 쪽이 검증된 checkpoint에서 이어갑니다. 끝난 단계는 다시 하지 않고 예산과 시도 횟수도 초기화되지 않습니다. |
-| **여러 프로젝트, 백그라운드** | `lupus alpha-run`은 열려 있는 모든 목표를 공유 예산 아래 차례로 진행하고, 한 AI의 한도가 떨어지면 다른 AI로 넘깁니다. `--background`는 터미널을 닫아도 계속 실행합니다. |
+| **여러 프로젝트, 백그라운드** | `lupus alpha-run`은 열려 있는 모든 목표를 공유 예산 아래 차례로 진행하고, 한 AI의 한도가 떨어지면 다른 AI로 넘깁니다. `--background`는 터미널을 닫아도 계속 실행합니다. `--parallel N`은 서로 다른 프로젝트나 격리된 체크아웃의 목표를 N개까지 동시에 진행합니다. |
 | **예산과 반복 통제** | 호출·시도·시간·토큰을 시작 전에 예약합니다. 같은 실패의 반복은 모델을 부르기 전에 거부합니다. |
 | **중단에 안전한 checkpoint** | 복구 자료를 DB commit보다 먼저 내구 저장합니다. 모든 경계에서 프로세스를 죽여 시험했습니다. |
-| **작업 폴더는 그대로** | `--isolated`는 커밋된 HEAD의 별도 체크아웃에서 작업합니다. `lupus diff`로 결과를 보고, `lupus accept`로 커밋 하나로 가져오고(빨리 감기만, 그 커밋 자체를 다시 검사), `lupus discard`로 버립니다. |
+| **작업 폴더는 그대로** | `--isolated`는 커밋된 HEAD의 별도 체크아웃에서 작업합니다. `lupus diff`로 결과를 보고, `lupus accept`로 커밋 하나로 가져오고(빨리 감기만, 그 커밋 자체를 다시 검사. 그사이 브랜치가 움직였으면 합친 결과를 다시 검사한 뒤에만 반영), `lupus discard`로 버립니다. |
 | **OS 수준의 가두기** | Claude worker와 모든 검증기는 Lupus가 적용한 macOS 샌드박스 안에서 실행됩니다. 검증기는 Docker 컨테이너에서 돌릴 수도 있습니다. |
 | **자리를 증명해야 하는 기억** | 프로젝트 지식을 유형과 연결이 있는 노드로 둡니다. `lupus learn`은 기록된 실패에서 절차를 제안하고, 이후의 검증 결과가 승격하거나 은퇴시킬 때까지 후보로 남습니다. |
 
@@ -111,6 +111,7 @@ lupus do "export 명령에 --json 옵션 추가" --driver claude
                                      # 한 번 호출: 실패하는 테스트 + 따로 보관한 구현안 -> 테스트 승인 -> 적용·검증
 lupus do "…" --driver claude --review     # 검사 통과 뒤 다른 AI가 요청과 변경을 대조 (선택 사항. 위 파일럿 참고)
 lupus do "…" --driver claude --isolated   # 같은 일을 별도 체크아웃에서. 이후: lupus diff | accept | discard <goal>
+lupus do "…" --driver claude --lean       # worker에게 재사용 우선·최소 변경 지침 추가 (선택 사항. 측정된 이득 없음, 계약 문서 참고)
 lupus session --driver claude        # 평소의 대화형 Claude Code, 테스트 고정, 종료 시 검증
 lupus write "결제 테이블 이전 계획" --out docs/plan.md --driver claude
                                      # 기준 승인 -> 작성 -> 다른 AI가 평가 -> 최종 승인
@@ -121,9 +122,11 @@ lupus write "결제 테이블 이전 계획" --out docs/plan.md --driver claude
 ```bash
 lupus alpha-budget --calls 300 --attempts 40 --minutes 600     # 전체에 하나의 상한
 lupus alpha-run --drivers claude,codex --background            # 열린 목표를 차례로, 한도가 떨어지면 AI 전환
+lupus alpha-run --drivers claude,codex --parallel 2            # 목표 둘을 동시에 (서로 다른 프로젝트나 격리된 체크아웃)
 lupus jobs        # 실행 중인 것          lupus logs <job>        lupus stop <job>
 lupus alpha-status                                             # 모든 프로젝트 한눈에
 lupus learn --driver claude                                    # 기록된 실패에서 절차 후보 만들기
+lupus learn --undo                                             # 가장 최근 학습 묶음이 추가한 것을 철회
 ```
 
 직접 정의한 검사로 목표 만들기, 다른 언어, 컨테이너, 지식 그래프, 전체 명령: [`lupus/README.md`](./lupus/README.md).
@@ -155,19 +158,31 @@ lupus learn --driver claude                                    # 기록된 실�
 - **직접 시작해야 합니다.** `lupus session`이 대화형 CLI를 감쌉니다. `claude`를 직접 실행하면 Lupus는 관여하지 않습니다. 대화형 세션의 토큰 사용량은 CLI가 보고하지 않으므로 예약 전액으로 청구합니다.
 - **평가자의 판정은 의견입니다.** 인용 확인은 근거 없는 통과를 막을 뿐 사실의 오류는 막지 못합니다. 그래서 사용자의 승인이 마지막 조건입니다. 이미지와 시각 디자인은 판정하지 못합니다.
 - **테스트는 시험 대상 코드가 실행합니다.** 출력 판독은 우연과 값싼 속임수에는 견디지만, 테스트 프로세스 안에서 러너의 요약 전체를 작정하고 위조하는 코드는 Lupus가 알아낼 수 없습니다. 소스 파일 안의 Rust 단위 테스트는 고정할 수 없습니다(이름은 고정되고 본문은 아닙니다).
-- **한 번에 worker 하나.** `alpha-run`은 목표를 차례로 진행하며 프로젝트를 병렬로 실행하지 않습니다.
-- 학습은 후보를 제안하고 이후의 검증 결과에 판단을 맡깁니다. 고정 평가셋은 없으며 Prime 자체는 연결하지 않았습니다.
+- **프로젝트당 writer 하나.** `alpha-run --parallel`은 목표를 최대 4개까지 동시에 진행하지만, 같은 폴더에서 둘을 동시에 돌리지는 않습니다. 한 저장소의 목표들은 각각 격리된 체크아웃일 때만 함께 실행되고, 결과는 차례로 반영합니다. 요청을 여러 작업으로 자동 분해하지 않으며, 한 목표 안의 작업들은 여전히 차례로 실행됩니다.
+- 학습은 후보를 제안하고 이후의 검증 결과에 판단을 맡깁니다. 고정 평가셋은 없습니다.
 - jest와 vitest는 실제 설치본으로, Go와 Rust는 확인을 위해 임시로 설치한 도구로 검증했습니다. Linux와 Windows에서는 OS 샌드박스를 지원하지 않습니다.
 - 대기 상태에는 항상 빠져나올 명령이 있습니다. `lupus status <goal>`이 이유를 알려 주고 `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise`로 이어갑니다. `lupus prune`은 오래된 잔여 파일을 지웁니다.
-- 코드가 젊습니다. 외부 리뷰 17회에서 결함 118건을 찾아 117건을, 사용성 점검에서 16건을 더 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
+- 코드가 젊습니다. 외부 리뷰 20회에서 결함 125건을 찾아 124건을, 사용성 점검에서 16건을 더 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
+
+## 다른 프로젝트에서 가져와 바꾼 것
+
+Lupus는 자체 코드(Python, 표준 라이브러리만)이지만, 다섯 부분은 MIT 라이선스인 세 프로젝트의 코드를 고정 커밋에서 읽고 Lupus의 규칙(supervisor 하나, 증거로만 완료, 사용자 권한)에 맞게 바꿔 옮긴 것입니다. 원본에서 실제로 동작하는 부분만 가져왔습니다. 검토하고 가져오지 않은 것과 그 이유는 계약 문서에 있습니다.
+
+| 출처 | 가져온 것 | Lupus에서 바꾼 것 |
+|---|---|---|
+| [Ruflo](https://github.com/ruvnet/ruflo) | 제한된 수의 병렬 worker와 writer별 작업 트리, 결과를 순서대로 합치기, 회상 결과의 다양성(MMR), 작은 저장소에서의 BM25 하한, 중복 기록 차단, 프롬프트 주입 패턴 | 자리가 비는 대로 다음 목표를 넣음. 프로젝트당 writer 하나는 커널이 그대로 강제. 합친 결과는 반영 전에 다시 검사 |
+| [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent) | 파일이 바뀌지 않았으면 실패한 검사를 다시 돌리지 않기, 학습 묶음을 단위로 기록하고 되돌리기 | git 상태 대신 프로젝트 전체 지문, 같은 supervisor 프로세스 안에서만 적용. 학습은 후보를 추가만 하고 이후의 검증 결과가 판정 |
+| [Ponytail](https://github.com/DietrichGebert/ponytail) | 구현 경제성 지침(원문을 수정 없이 동봉)과 수준별 필터 | 세 절만 사용, 요청 아래에 붙이고 요청을 줄이는 근거로 쓰지 못하게 함. 기본은 꺼짐 |
+
+2026-10-07 측정(각 1회): 한 저장소의 두 목표가 차례로는 19.7초, 동시에는 9.0초 걸렸습니다(Codex. Claude는 18.1초와 11.1초). `--lean`은 숨긴 테스트 통과 결과를 바꾸지 못했고(Codex 8건 중 7건, Claude 6건 중 5건으로 켜든 끄든 같음) 대부분의 과제에서 토큰을 더 써서 선택 사항으로 남겼습니다. 기억 쪽 변경은 오프라인 시험만 있습니다.
 
 ## 문서
 
 - [기계 계약](./lupus/docs/CONTRACT.md) — 코드가 강제하는 규칙과 범위 밖 항목
 - [구현 기록](./docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) — 결정, 리뷰, 모든 측정과 한계
 - [설계](./docs/design/LUPUS-PLAN.md) — 구현이 그 일부인 전체 설계
-- [서드파티 고지](./lupus/THIRD_PARTY_NOTICES.md) — 그래프 화면에 vis-network를 수정 없이 포함
+- [서드파티 고지](./lupus/THIRD_PARTY_NOTICES.md) — vis-network와 Ponytail 지침 원문을 수정 없이 포함. Ruflo·Prime Agent·Ponytail에서 옮겨 온 코드와 출처 목록
 
 ## 라이선스
 
-[Apache-2.0](./LICENSE). 포함된 vis-network는 MIT로 사용합니다.
+[Apache-2.0](./LICENSE). 포함된 vis-network와 Ponytail 원문, 그리고 Ruflo·Prime Agent·Ponytail에서 옮겨 온 코드는 MIT입니다(고지 문서 참고).

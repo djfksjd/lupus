@@ -10,6 +10,7 @@ import fcntl
 import json
 import os
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from importlib import resources
@@ -21,6 +22,11 @@ from .util import PROTECTED_STATE, LupusError, canonical_json, crash_point, sha2
 # SQLite <= 3.51.2 can corrupt a WAL database when connections write/checkpoint concurrently
 # (https://www.sqlite.org/wal.html#walresetbug). Refuse to run on an affected library.
 MIN_SQLITE = (3, 51, 3)
+
+
+class SupervisorStopping(BaseException):
+    """Raised in a worker thread whose supervisor is shutting down. Deliberately not a LupusError:
+    no handler may turn it into a recorded outcome."""
 
 DEFAULT_POLICY = {
     "max_attempts_per_hypothesis": 2,   # §6.3 initial policy draft
@@ -64,6 +70,8 @@ class Kernel:
         self._depth = 0
         self._now: int | None = None
         self._lock_fd: int | None = None
+        self._owner: Kernel | None = None       # set on a fork: the kernel whose supervisor lock this one works under
+        self._stop: threading.Event | None = None
         PROTECTED_STATE.add(os.path.realpath(self.home))    # no verifier may touch this, see util.sandbox_profile
         if sqlite3.sqlite_version_info < MIN_SQLITE:
             raise LupusError(
@@ -158,6 +166,21 @@ class Kernel:
     def close(self) -> None:
         self.conn.close()
 
+    def fork(self, stop: threading.Event) -> "Kernel":
+        """A second connection for one worker thread of THIS supervisor (parallel goals). It is
+        not a second supervisor: it exists only while this kernel holds the supervisor lock, and
+        works under that lock. Once `stop` is set it refuses to begin any transaction, so a
+        thread that is being shut down can no longer record anything: what it left open is then
+        exactly what a crash leaves, and startup recovery deals with it the same way.
+        Call it IN the thread that will use it (a connection belongs to the thread that opened it)."""
+        if self._lock_fd is None:
+            raise LupusError("SUPERVISOR_LOCK_REQUIRED", "a kernel is forked only by the supervisor that holds the lock")
+        other = Kernel(self.home, self._clock)
+        other._owner, other._stop = self, stop
+        # Several threads commit through one database: wait for the others instead of failing.
+        other.conn.execute("PRAGMA busy_timeout=60000")
+        return other
+
     # ------------------------------------------------------------ transactions
 
     @contextmanager
@@ -172,12 +195,15 @@ class Kernel:
             finally:
                 self._depth -= 1
             return
+        self._refuse_if_stopping()
         self.conn.execute("BEGIN IMMEDIATE")
         self._depth = 1
         try:
+            self._refuse_if_stopping()      # BEGIN may have waited for another connection; shutdown may have begun meanwhile
             self._now = self._advance_clock()
             yield
             crash_point("db.before_commit")
+            self._refuse_if_stopping()      # nor is anything committed that was still being written when it began
             self.conn.execute("COMMIT")
         except BaseException:
             self.conn.execute("ROLLBACK")
@@ -185,6 +211,10 @@ class Kernel:
         finally:
             self._depth = 0
             self._now = None
+
+    def _refuse_if_stopping(self) -> None:
+        if self._stop is not None and self._stop.is_set():
+            raise SupervisorStopping()
 
     def _advance_clock(self) -> int:
         """Time never moves backwards inside the DB, even if the wall clock does."""
@@ -200,6 +230,11 @@ class Kernel:
         open; that is only sound if no other supervisor is alive and using them. The lock is an
         flock, so it disappears with the process that held it."""
         if self._lock_fd is not None:      # re-entrant within this kernel
+            yield
+            return
+        if self._owner is not None:        # a fork: valid only while its supervisor still holds the lock
+            if self._owner._lock_fd is None:
+                raise LupusError("SUPERVISOR_LOCK_REQUIRED", "the supervisor that forked this kernel no longer holds the lock")
             yield
             return
         fd = os.open(self.runtime / "supervisor.lock", os.O_RDWR | os.O_CREAT, 0o600)

@@ -1,0 +1,19 @@
+{
+  "ponytail": {
+    "upstream": "https://github.com/DietrichGebert/ponytail",
+    "commit": "c982cd411abb53323c4baa1baa3c2f020b8d0b08",
+    "license": "MIT",
+    "retrieved": "2026-10-07",
+    "modified": false,
+    "files": {
+      "ponytail/SKILL.md": {
+        "from": "skills/ponytail/SKILL.md",
+        "sha256": "1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2"
+      },
+      "ponytail/LICENSE": {
+        "from": "LICENSE",
+        "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab"
+      }
+    }
+  }
+}

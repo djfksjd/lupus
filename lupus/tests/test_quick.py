@@ -257,6 +257,15 @@ class OneCallTests(Env):
         self.assertNotIn("프로젝트의 기존 파일은 만들거나 수정하지 마라", spec)
         self.assertIn("직접 수정해 구현하라", spec)
 
+    def test_lean_asked_for_once_holds_for_the_draft_and_the_implementation(self):
+        one = quick.draft_check(self.k, self.project, "sub(a, b) 를 추가", "user", lean=True)
+        self.assertIs(goals.tasks(self.k, one["goal_id"])[0]["spec"]["lean"], True)
+        quick.discard_draft(self.k, self.project, one["goal_id"], "user")
+        d, _, sha = self.draft(STAGED % (GOOD_TEST, IMPL))
+        self.k.run("UPDATE task SET spec = json_set(spec, '$.lean', json('true')) WHERE goal_id = ?", d["goal_id"])
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
+        self.assertIs(goals.tasks(self.k, build["goal_id"])[0]["spec"]["lean"], True)      # the implementation step inherits it
+
     def test_a_file_the_user_edited_while_reading_the_test_is_not_overwritten(self):
         d, _, sha = self.draft(STAGED % (GOOD_TEST, IMPL))
         mine = CALC + "# my own note\n"

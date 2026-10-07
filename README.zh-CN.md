@@ -33,10 +33,10 @@ Lupus 把你已经安装并登录的 `claude` 和 `codex` CLI（沿用现有订�
 | **文档、规划、调研** | `lupus write`：先由你批准评判标准；由另一个 AI 评判，每认可一项都必须引用文档原文；最后由你对该版本签字确认。 |
 | **你平时的交互式会话** | `lupus session` 按你自己的配置启动平时的 `claude` / `codex` 界面，冻结测试，并在你退出时自行验证。 |
 | **Claude ↔ Codex 交接** | 一方停下（额度、中断、你的选择）时，另一方从经过验证的 checkpoint 继续。已完成的步骤不重做，预算和尝试次数不清零。 |
-| **多个项目、后台运行** | `lupus alpha-run` 在共享预算下轮流推进所有未完成的目标，并在某个 AI 额度用尽时切换到另一个。`--background` 让它在终端关闭后继续运行。 |
+| **多个项目、后台运行** | `lupus alpha-run` 在共享预算下轮流推进所有未完成的目标，并在某个 AI 额度用尽时切换到另一个。`--background` 让它在终端关闭后继续运行。`--parallel N` 可同时推进最多 N 个目标，每个目标位于不同的项目或独立检出中。 |
 | **预算与循环控制** | 调用、尝试、时间和 token 在开始前预留。重复同一个失败的尝试会在调用模型之前被拒绝。 |
 | **崩溃安全的 checkpoint** | 恢复对象先于数据库提交持久化；已在每个边界处杀进程测试。 |
-| **你的工作区保持原样** | `--isolated` 在已提交 HEAD 的独立检出中工作。`lupus diff` 查看结果，`lupus accept` 以一个提交带回（仅快进，并对该提交本身再次检查），`lupus discard` 丢弃。 |
+| **你的工作区保持原样** | `--isolated` 在已提交 HEAD 的独立检出中工作。`lupus diff` 查看结果，`lupus accept` 以一个提交带回（仅快进，并对该提交本身再次检查；如果你的分支在此期间前进了，则先合并并对合并结果再次检查，通过后才带回），`lupus discard` 丢弃。 |
 | **操作系统级约束** | Claude worker 和所有验证器都在 Lupus 施加的 macOS 沙箱中运行；验证器也可以改在 Docker 容器中运行。 |
 | **必须证明自己价值的记忆** | 项目知识以带类型、带链接的节点保存。`lupus learn` 从记录下来的失败中提出做法，在后续经过验证的结果将其晋升或淘汰之前，它们一直是候选。 |
 
@@ -111,6 +111,7 @@ lupus do "给 export 命令增加 --json 选项" --driver claude
                                      # 一次调用：失败的测试 + 单独存放的方案 -> 你批准测试 -> 应用并验证
 lupus do "…" --driver claude --review     # 检查通过后，由另一个 AI 对照请求与改动（可选；见上面的试验）
 lupus do "…" --driver claude --isolated   # 同样的流程，在独立检出中进行；之后：lupus diff | accept | discard <goal>
+lupus do "…" --driver claude --lean       # 给 worker 加上“优先复用、最小改动”的指引（可选；未测出收益，见契约文档）
 lupus session --driver claude        # 你平时的交互式 Claude Code，测试已冻结，退出时验证
 lupus write "账单表迁移计划" --out docs/plan.md --driver claude
                                      # 你批准标准 -> 撰写 -> 另一个 AI 评判 -> 你签字
@@ -121,9 +122,11 @@ lupus write "账单表迁移计划" --out docs/plan.md --driver claude
 ```bash
 lupus alpha-budget --calls 300 --attempts 40 --minutes 600     # 为所有工作设一个上限
 lupus alpha-run --drivers claude,codex --background            # 轮流推进所有未完成目标；额度用尽时切换 AI
+lupus alpha-run --drivers claude,codex --parallel 2            # 同时处理两个目标（不同项目或独立检出）
 lupus jobs        # 正在运行的任务          lupus logs <job>        lupus stop <job>
 lupus alpha-status                                             # 所有项目一览
 lupus learn --driver claude                                    # 从记录的失败中生成候选做法
+lupus learn --undo                                             # 撤回最近一次学习所添加的内容
 ```
 
 用你自己的检查定义目标、其他语言、容器、知识图谱以及全部命令：[`lupus/README.md`](./lupus/README.md)（韩语）。
@@ -155,19 +158,31 @@ lupus learn --driver claude                                    # 从记录的失
 - **需要你来启动。** `lupus session` 包裹你的交互式 CLI；你自己直接输入 `claude` 时 Lupus 不会介入。CLI 不报告交互式会话的 token 用量，因此按预留的全额计费。
 - **评判者给出的是意见。** 引用检查能挡住没有依据的放行，挡不住错误的事实。所以你的签字是最后一个条件。图片和视觉设计无法评判。
 - **测试是由被测代码运行的。** 输出解析能抵御意外和廉价的把戏；但在测试进程内部蓄意伪造运行器整段汇总的代码，Lupus 无法察觉。位于源文件内的 Rust 单元测试无法冻结（名称被固定，函数体没有）。
-- **一次只有一个 worker。** `alpha-run` 轮流处理目标，不会并行运行多个项目。
-- 学习功能只提出候选，由后续经过验证的结果来决定；没有固定的评估集，也没有接入 Prime 本身。
+- **每个项目只有一个 writer。** `alpha-run --parallel` 最多同时推进 4 个目标，但不会在同一个文件夹里同时运行两个。同一仓库的多个目标只有各自位于独立检出时才会并行，结果依次带回。Lupus 不会把一个请求自动拆成并行的子任务，同一目标内的任务仍然依次执行。
+- 学习功能只提出候选，由后续经过验证的结果来决定；没有固定的评估集。
 - jest 和 vitest 用真实安装验证过；Go 和 Rust 用为验证临时安装的工具链验证过。Linux 和 Windows 上没有操作系统沙箱支持。
 - 任何等待状态都有出路：`lupus status <goal>` 说明原因，再用 `resolve`、`refreeze`、`approve`、`revise`、`revalidate`、`budget-raise` 继续。`lupus prune` 清理旧的遗留文件。
-- 代码还很年轻。17 轮外部评审发现了 118 个缺陷并修复了其中 117 个，一次可用性审查又发现并修复了 16 个，应当假定仍有遗漏。
+- 代码还很年轻。20 轮外部评审发现了 125 个缺陷并修复了其中 124 个，一次可用性审查又发现并修复了 16 个，应当假定仍有遗漏。
+
+## 取自其他项目并加以改造的部分
+
+Lupus 是自己的代码（Python，仅用标准库），但其中有五处改编自三个 MIT 许可项目的代码：在固定的提交上阅读原代码，再按 Lupus 的规则（只有一个 supervisor、只凭证据判定完成、权限属于用户）重写。只采用了原项目中确实能运行的部分。评估后没有采用的内容及原因见契约文档。
+
+| 来源 | 采用了什么 | Lupus 改了什么 |
+|---|---|---|
+| [Ruflo](https://github.com/ruvnet/ruflo) | 数量受限的并行 worker，每个 writer 有自己的工作树；按顺序合并结果；回忆结果的多样性（MMR）、小型存储中 BM25 的下限、重复记录的拦截、提示注入特征 | 有空位就放入下一个目标；每个项目一个 writer 的规则仍由内核强制；合并后的结果在带回前再次检查 |
+| [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent) | 文件未变时不重跑已失败的检查；把一次学习作为一个整体记录并撤回 | 用整个项目的指纹而不是 git 状态，且只在同一个 supervisor 进程内生效；学习只能添加候选，由之后经过验证的结果来判定 |
+| [Ponytail](https://github.com/DietrichGebert/ponytail) | 关于实现经济性的指引（原文未改动地随附）及其级别过滤器 | 只用其中三节，放在请求之后，并且不得作为少做的理由；默认关闭 |
+
+2026-10-07 的测量（各一次）：同一仓库的两个目标，依次运行用了 19.7 秒，同时运行用了 9.0 秒（Codex；Claude 为 18.1 秒和 11.1 秒）。`--lean` 没有改变隐藏测试的通过情况（Codex 8 个中 7 个，Claude 6 个中 5 个，开或关都一样），而且在多数任务上用了更多 token，所以仍是可选项。记忆方面的改动只有离线测试。
 
 ## 文档
 
 - [机器契约](./lupus/docs/CONTRACT.md) — 代码强制执行的规则，以及范围之外的内容（韩语）
 - [实现记录](./docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) — 决策、评审、所有测量及其局限（韩语）
 - [设计](./docs/design/LUPUS-PLAN.md) — 完整设计（韩语）
-- [第三方声明](./lupus/THIRD_PARTY_NOTICES.md) — 图谱视图原样打包了 vis-network
+- [第三方声明](./lupus/THIRD_PARTY_NOTICES.md) — 原样打包了 vis-network 和 Ponytail 的指引原文；并列出改编自 Ruflo、Prime Agent、Ponytail 的代码及其出处
 
 ## 许可证
 
-[Apache-2.0](./LICENSE)。打包的 vis-network 按 MIT 许可使用。
+[Apache-2.0](./LICENSE)。打包的 vis-network 和 Ponytail 原文，以及改编自 Ruflo、Prime Agent、Ponytail 的代码，均为 MIT 许可（见声明）。

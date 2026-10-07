@@ -192,6 +192,20 @@ class LearnTests(Env):
         self.assertEqual(self.k.one("SELECT COUNT(*) FROM reservation WHERE status = 'HELD'")[0], 0)
         self.assertRefused("USER_AUTHORITY_REQUIRED", learn.refine, self.k, self.project, "fake_alt", "worker")
 
+    def test_a_learning_pass_is_taken_back_as_one_unit_except_what_the_user_made_their_own(self):
+        self.rework()
+        out = learn.refine(self.k, self.project, "fake_alt", "user")
+        first, second = (n["node_id"] for n in out["learned"])
+        memory.set_status(self.k, second, "verified", "user")              # the user confirmed this one
+        self.assertRefused("USER_AUTHORITY_REQUIRED", learn.undo, self.k, self.project, "supervisor")
+        undone = learn.undo(self.k, self.project, "user")
+        self.assertEqual((undone["rolled_back"], undone["retired"]), (out["pass"], [first]))
+        self.assertEqual([kept["node_id"] for kept in undone["kept"]], [second])
+        self.assertEqual((memory.get(self.k, first)["status"], memory.get(self.k, second)["status"]), ("retired", "verified"))
+        self.assertEqual(len(learn.triggers(self.k, self.project["project_id"])), 1)     # the failure can be learned from again
+        self.assertRefused("LEARN_PASS_NOT_FOUND", learn.undo, self.k, self.project, "user")      # not twice
+        self.assertEqual(self.k.one("SELECT COUNT(*) FROM service_call")[0], 1)                   # taking back called no model
+
     def test_a_candidate_is_judged_by_later_verified_outcomes_not_by_its_author(self):
         self.rework()
         node_id = learn.refine(self.k, self.project, "fake_alt", "user")["learned"][0]["node_id"]

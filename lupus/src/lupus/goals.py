@@ -214,6 +214,7 @@ def add_task(
     criterion_ids: list[str],
     depends_on: list[str] | None = None,
     inputs: list[str] | None = None,
+    lean: bool = False,
 ) -> dict:
     with k.tx():
         goal = get(k, goal_id)
@@ -229,7 +230,8 @@ def add_task(
         k.run(
             "INSERT INTO task(task_id, goal_id, title, spec, status, created_at, updated_at) "
             "VALUES (?,?,?,?, 'PENDING', ?,?)",
-            task_id, goal_id, title, canonical_json({"prompt": prompt, "criteria": criterion_ids, "inputs": list(inputs or [])}), now, now,
+            task_id, goal_id, title, canonical_json({"prompt": prompt, "criteria": criterion_ids, "inputs": list(inputs or []),
+                                     **({"lean": True} if lean else {})}), now, now,      # (absent when off: older specs hash the same)
         )
         for dep in depends_on or []:
             dep_row = k.one("SELECT goal_id FROM task WHERE task_id = ?", dep)

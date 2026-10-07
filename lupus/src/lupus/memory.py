@@ -42,9 +42,25 @@ _ACTIONABLE = re.compile(
     r"|[|;&`$]\s*\(?\s*\w|\$\(|base64|ignore (?:all|previous|the above)|이전 지시|지시를 무시"
     # interpreter / tool invocations and anything phrased as "run this"
     r"|\b(?:python\d?(?:\.\d+)?|node|deno|ruby|perl|php|make|npx|yarn|pnpm|docker|git|pytest|tox)\s+[\w./-]"
-    r"|\b(?:run|execute|invoke|install|download)\b|\S+\.(?:sh|py|js|rb|pl|ps1|bat)\b|실행(?:하|할|해|시)|설치(?:하|할|해)|다운로드",
+    r"|\b(?:run|execute|invoke|install|download)\b|\S+\.(?:sh|py|js|rb|pl|ps1|bat)\b|실행(?:하|할|해|시)|설치(?:하|할|해)|다운로드"
+    # Text shaped to be read as a turn of the conversation or as a new role, not as an observation.
+    # (These classes are from Ruflo's tool-output guardrail, MIT, Copyright (c) 2024-2026 ruvnet:
+    # `v3/@claude-flow/security/src/tool-output-guardrail.ts`. There they flag tool output and are
+    # off by default; here a worker's note that matches one is simply not stored.)
+    r"|<\|(?:im_start|im_end|system|assistant|user|endoftext)\|>|\[/?INST\]|</?system>"
+    r"|\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+|my\s+|your\s+|these\s+|those\s+)?"
+    r"(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules?|directives?)\b"
+    r"|\byou\s+are\s+(?:now|actually|secretly)\s+(?:a|an|the)\s|\b(?:act|behave|pretend|role[-\s]?play)\s+as\s+(?:if\s+)?(?:a|an|the)\s"
+    r"|\b(?:new|updated|revised|additional)\s+(?:instructions?|task|directives?|objectives?)\s*[:.]"
+    r"|\b(?:developer\s+mode|jailbreak\s+mode|do\s+anything\s+now)\b|\b(?:tool_call|function_call|mcp_tool)\s*[:=]\s*[\"'{]"
+    r"|\b(?:exfiltrate|leak|send|post|upload|transmit)\b[^.\n]{0,80}\b(?:secret|token|api[-_\s]?keys?|password|credential|env\s+vars?)\b",
     re.I)
+# Characters that reorder or hide text on screen (bidirectional controls, zero-width). What a note
+# shows a person must be what it shows a model, so they are removed from anything a program wrote.
+_HIDDEN = re.compile("[\u202a-\u202e\u2066-\u2069\u200b-\u200d\ufeff]")
 MAX_WORKER_LESSONS = 2
+NEAR_DUPLICATE = 0.8      # token overlap (Jaccard) at which a program-written note repeats one already stored
+MMR_RELEVANCE = 0.7       # recall: weight of relevance against likeness to notes already picked
 
 _WORD = re.compile("[a-z0-9_]{2,}|[\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]+")
 # Bigrams that are almost always particles/endings. They carry no topic, and counting them
@@ -77,6 +93,42 @@ def estimate_tokens(text: str) -> int:
 
 def _normalise(text: str) -> str:
     return " ".join(text.split())
+
+
+def visible(text: str) -> str:
+    """Without the characters that hide or reorder text. Anything a guard is to judge goes through
+    this first: otherwise a split word passes the guard and is whole again once they are removed."""
+    return _HIDDEN.sub("", text)
+
+
+def likeness(a: set[str], b: set[str]) -> float:
+    """Jaccard overlap of two token sets."""
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def diverse(nodes: list[dict]) -> list[dict]:
+    """The order in which to offer nodes to a limited budget: the most relevant first, then each
+    time the one that adds most beyond what is already taken, so that three notes saying the same
+    thing do not take three of the few places.
+
+    Adapted from the MMR rerank of Ruflo's smart retrieval (MIT, Copyright (c) 2024-2026 ruvnet;
+    `v3/@claude-flow/memory/src/smart-retrieval.ts`, `mmrRerank`): greedy selection by
+    `lambda * relevance - (1 - lambda) * max likeness to the selected`, with token Jaccard as the
+    likeness. Ruflo falls back to Jaccard only without embeddings; Lupus has none by design, and
+    uses its own tokens (Korean/CJK as bigrams). Scores are scaled to 0..1 first, since here they
+    are unbounded BM25 products and would otherwise drown the likeness term."""
+    if len(nodes) <= 1:
+        return list(nodes)
+    rest = sorted(nodes, key=lambda n: -n["score"])
+    top = rest[0]["score"] or 1.0
+    tokens = {n["node_id"]: set(tokenize(n["title"] + " " + n["body"])) for n in rest}
+    picked = [rest.pop(0)]
+    while rest:
+        best = max(rest, key=lambda n: MMR_RELEVANCE * (n["score"] / top) - (1 - MMR_RELEVANCE) * max(
+            likeness(tokens[n["node_id"]], tokens[p["node_id"]]) for p in picked))      # (max keeps the first of equals)
+        rest.remove(best)
+        picked.append(best)
+    return picked
 
 
 def _scope(project_id: str | None) -> str:
@@ -125,9 +177,12 @@ def add(
     source_task_id: str | None = None,
     source_attempt_id: str | None = None,
 ) -> dict:
-    """Record one piece of knowledge. Returns the existing node when the same statement is
-    already stored in that scope."""
+    """Record one piece of knowledge. Returns the existing node (marked `already_stored`) when
+    the same statement is already stored in that scope, or, for a note written by a program,
+    when a live note of the same kind says nearly the same thing in nearly the same words."""
     title, body = _normalise(title), body.strip()
+    if origin != "user":
+        title, body = visible(title), visible(body)
     if kind not in KINDS:
         raise LupusError("NODE_KIND_INVALID", kind)
     if origin not in ("user", "supervisor", "worker"):
@@ -152,7 +207,19 @@ def add(
         existing = k.one("SELECT * FROM node WHERE coalesce(project_id, '') = ? AND content_hash = ?",
                          _scope(project_id), content_hash)
         if existing is not None:
-            return dict(existing)
+            return {**dict(existing), "already_stored": True}
+        if origin != "user":
+            # Workers restate the same lesson in slightly different words, and each restatement would
+            # otherwise be a new candidate competing for the same few places in a prompt. (Dedup at the
+            # store, as in Ruflo's `intelligence.cjs` `deduplicateByContent`, MIT, (c) 2024-2026 ruvnet;
+            # there it is an exact fingerprint only, here near-duplicates count too. The user's own
+            # notes are never folded together: what they wrote twice, they meant twice.)
+            mine = set(tokenize(title + " " + body))
+            for other in k.q("SELECT * FROM node WHERE coalesce(project_id, '') = ? AND kind = ? AND status <> 'retired' "
+                             "ORDER BY created_at DESC LIMIT 500", _scope(project_id), kind):
+                if likeness(mine, set(tokenize(other["title"] + " " + other["body"]))) >= NEAR_DUPLICATE:
+                    k.emit(actor, "memory.duplicate_skipped", "node", other["node_id"], origin=origin)
+                    return {**dict(other), "already_stored": True}
         node_id = new_id("node")
         now = k.now()
         cursor = k.conn.execute(
@@ -269,7 +336,13 @@ def search(k: Kernel, project_id: str | None, query: str, limit: int = 30) -> li
         if overlap < min(k.policy["memory_min_overlap"], len(wanted)):
             continue          # a single shared bigram is noise, not relevance
         utility = (node["helped"] + 1) / (node["helped"] + node["unhelped"] + 2)
-        node["score"] = -node.pop("rank") * STATUS_WEIGHT[node["status"]] * utility * overlap
+        # BM25 weighs a term by how rare it is, and in a store of a few notes about one project the
+        # terms of a relevant query are in most of them: the weight falls to nearly nothing and the
+        # order becomes noise. The share of the query a note covers is used as a floor. (The same
+        # floor, for the same reason, as `bridgeSearchEntries` in Ruflo's memory bridge, MIT,
+        # (c) 2024-2026 ruvnet: `lexicalScore = max(bm25, coverage)`.)
+        relevance = max(-node.pop("rank"), overlap / len(wanted))
+        node["score"] = relevance * STATUS_WEIGHT[node["status"]] * utility * overlap
         out.append(node)
     return sorted(out, key=lambda n: -n["score"])
 
@@ -304,7 +377,7 @@ def recall(k: Kernel, *, project_id: str, goal_id: str, attempt_id: str, query: 
         # The budget covers everything that is actually appended to the prompt: the header
         # line and each rendered line including its status label and conflict remark.
         picked, used = [], estimate_tokens(_HEADER)
-        for node in sorted(chosen.values(), key=lambda n: -n["score"]):
+        for node in diverse(list(chosen.values())):
             cost = estimate_tokens(_line(node))
             if len(picked) >= k.policy["memory_max_nodes"] or used + cost > budget_tokens:
                 continue
@@ -374,7 +447,7 @@ def capture_worker_lessons(k: Kernel, text: str, *, project_id: str, goal_id: st
         line = line.strip().lstrip("-*• ").strip()
         if not line.upper().startswith(LESSON_PREFIX) or len(out) >= MAX_WORKER_LESSONS:
             continue
-        body = _normalise(line[len(LESSON_PREFIX):])[:400]
+        body = _normalise(visible(line[len(LESSON_PREFIX):]))[:400]      # judged as it will be stored and shown
         if len(body) < 10 or _ACTIONABLE.search(body):
             continue          # too short, or it carries a URL / shell command rather than an observation
         try:
