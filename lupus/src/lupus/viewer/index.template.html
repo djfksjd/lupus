@@ -44,7 +44,7 @@
   #empty[hidden] { display:none; }
   #empty strong { font-size:15px; font-weight:600; }
   #empty span { color:var(--muted); max-width:38ch; text-wrap:balance; }
-  #hint { position:fixed; left:16px; bottom:14px; color:var(--muted); font-size:11.5px; pointer-events:none; }
+  #hint { position:fixed; left:16px; bottom:14px; color:var(--muted); font-size:12px; pointer-events:none; }
   kbd { display:inline-block; min-width:16px; padding:0 4px; border:1px solid var(--line-strong); border-radius:4px; font:inherit;
         font-size:10.5px; line-height:15px; text-align:center; }
   #tools { position:fixed; right:calc(var(--side) + 14px); bottom:14px; display:flex; flex-direction:column;
@@ -56,9 +56,40 @@
 
   #side { position:fixed; top:0; right:0; bottom:0; width:var(--side); display:flex; flex-direction:column;
           border-left:1px solid var(--line); background:var(--panel); }
-  #side > header { display:flex; align-items:center; gap:10px; padding:16px 16px 12px; }
-  #side > header svg.mark { width:22px; height:22px; stroke:none; fill:var(--accent); flex:none; }
-  h1 { flex:1; margin:0; font-size:14px; font-weight:600; white-space:nowrap; }
+  #side > header { display:flex; align-items:center; gap:8px; padding:14px 16px 12px; }
+  /* the Lupus wolf, kept as a mask so it takes the ink of whichever theme is showing */
+  .mark { width:30px; height:30px; flex:none; background:var(--ink);
+          -webkit-mask:url(data:image/png;base64,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) center / contain no-repeat; mask:url(data:image/png;base64,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) center / contain no-repeat; }
+  h1 { flex:1; min-width:0; margin:0; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #lang { flex:none; width:auto; height:28px; margin:0; padding:0 4px; background:none; color:var(--muted); font-size:12px; cursor:pointer; }
+  #lang:hover { background:var(--raised); color:var(--ink); }
+
+  /* the reading pane: a vault page laid over the graph, the way a note opens beside it */
+  #reader { position:fixed; top:0; bottom:0; right:var(--side); width:min(720px, calc(100% - var(--side))); display:flex; flex-direction:column;
+            background:var(--panel); border-left:1px solid var(--line); box-shadow:-18px 0 40px -24px rgb(0 0 0 / .45);
+            transition:transform .32s cubic-bezier(.16,1,.3,1), opacity .2s; }
+  #reader[hidden] { display:flex !important; transform:translateX(24px); opacity:0; pointer-events:none; visibility:hidden;
+                    transition:transform .2s, opacity .2s, visibility 0s .2s; }
+  #reader > header { display:flex; align-items:center; gap:4px; padding:10px 12px; border-bottom:1px solid var(--line); }
+  #r-path { flex:1; min-width:0; margin:0 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--muted);
+            direction:rtl; text-align:left; }
+  #r-back:disabled { opacity:.35; cursor:default; }
+  #r-body { flex:1; overflow:auto; padding:28px 36px 56px; font-size:15px; line-height:1.75; }
+  #r-body > * { max-width:68ch; }
+  #r-body h1 { margin:0 0 18px; font-size:26px; line-height:1.3; font-weight:700; letter-spacing:-.01em; text-wrap:balance; word-break:break-word; }
+  #r-body h2 { margin:34px 0 10px; font-size:17px; font-weight:600; color:var(--ink); }
+  #r-body p { margin:0 0 14px; word-break:break-word; }
+  #r-body ul { margin:0 0 14px; padding-left:20px; } #r-body li { margin:4px 0; word-break:break-word; } #r-body li::marker { color:var(--muted); }
+  #r-body blockquote { margin:0 0 16px; padding:12px 16px; border-radius:10px; background:var(--raised); white-space:pre-wrap; word-break:break-word; }
+  #r-body blockquote.note { padding:0; background:none; font-size:12.5px; line-height:1.6; color:var(--muted); }
+  #r-body code { padding:1px 5px; border-radius:5px; background:var(--raised); font:12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break:break-all; }
+  #r-body a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; cursor:pointer;
+              text-decoration-color:color-mix(in srgb, var(--accent) 40%, transparent); }
+  #r-body a:hover { text-decoration-color:var(--accent); }
+  #r-body .table { max-width:none; margin:0 0 16px; overflow-x:auto; }
+  #r-body table { border-collapse:collapse; font-size:13px; line-height:1.5; }
+  #r-body th, #r-body td { padding:7px 14px 7px 0; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  #r-body th { font-weight:600; color:var(--muted); white-space:nowrap; }
   h1 b { font-weight:700; letter-spacing:.3em; margin-right:.25em; }
   .icon { width:30px; height:30px; display:grid; place-items:center; padding:0; border:1px solid transparent; border-radius:7px;
           background:none; color:var(--muted); cursor:pointer; }
@@ -72,7 +103,7 @@
                 color:var(--ink); font:inherit; }
   .find input::placeholder { color:var(--muted); }
   .find input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
-  .find output { position:absolute; right:10px; top:8px; font-size:11.5px; color:var(--muted); }
+  .find output { position:absolute; right:10px; top:8px; font-size:12px; color:var(--muted); }
   .find output.none { color:var(--danger); }
 
   #scroll { flex:1; overflow:auto; padding:4px 16px 16px; }
@@ -111,7 +142,8 @@
   #d-links button:hover { background:var(--raised); }
   #d-links span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #d-links small { font-size:11px; color:var(--muted); }
-  #d-page { display:inline-flex; align-items:center; gap:6px; margin-top:12px; color:var(--accent); text-decoration:underline;
+  #d-page { display:inline-flex; align-items:center; gap:6px; margin-top:12px; padding:0; border:0; background:none; font:inherit; cursor:pointer;
+            color:var(--accent); text-decoration:underline;
             text-underline-offset:3px; text-decoration-color:color-mix(in srgb, var(--accent) 40%, transparent); }
   #d-page:hover { text-decoration-color:var(--accent); }
   #d-page svg { width:13px; height:13px; }
@@ -123,14 +155,14 @@
   summary::-webkit-details-marker { display:none; }
   summary svg { width:14px; height:14px; transition:transform .2s cubic-bezier(.16,1,.3,1); }
   details[open] summary svg { transform:rotate(90deg); }
-  label.slide { display:grid; grid-template-columns:72px 1fr; align-items:center; gap:10px; margin:8px 0 0; color:var(--muted); font-size:12px; }
+  label.slide { display:grid; grid-template-columns:84px 1fr; align-items:center; gap:10px; margin:8px 0 0; color:var(--muted); font-size:12px; }
   .text { margin-top:10px; height:28px; padding:0 10px; border:1px solid var(--line); border-radius:7px; background:none; color:var(--ink);
           font:inherit; font-size:12px; cursor:pointer; }
   .text:hover { background:var(--raised); border-color:var(--line-strong); }
   .key { display:grid; grid-template-columns:34px 1fr; align-items:center; gap:4px 10px; margin:10px 0 0; font-size:12px; color:var(--muted); }
   .key svg { width:34px; height:12px; }
-  footer { padding:10px 16px 12px; border-top:1px solid var(--line); font-size:11px; line-height:1.6; color:var(--muted); }
-  footer p { margin:0; } footer span { white-space:nowrap; }
+  footer { display:flex; align-items:center; gap:10px; padding:10px 16px 12px; border-top:1px solid var(--line); font-size:11px; line-height:1.6; color:var(--muted); }
+  footer div { flex:1; min-width:0; } footer p { margin:0; } footer span { white-space:nowrap; }
 
   @media (max-width: 760px) {
     #graph, #empty { inset:0 0 46% 0; }
@@ -142,82 +174,98 @@
     footer p + p { display:none; }
     #tools { right:12px; bottom:calc(46% + 12px); }
     #hint { display:none; }
+    #reader { right:0; width:100%; z-index:2; border-left:0; }
+    #r-body { padding:20px 18px 40px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 </head>
 <body>
-<div id="graph" role="application" aria-label="지식 그래프"></div>
+<div id="graph" role="application" data-t-aria="title" aria-label="지식 그래프"></div>
 <div id="empty" hidden><strong id="empty-title"></strong><span id="empty-text"></span></div>
-<div id="hint">끌어서 이동 · 휠로 확대 · 더블클릭하면 문서 열기 · <kbd>/</kbd> 검색 · <kbd>Esc</kbd> 선택 해제</div>
+<div id="hint"><span data-t="hint_move">끌어서 이동 · 휠로 확대 · 더블클릭하면 문서 열기</span> · <kbd>/</kbd> <span data-t="hint_search">검색</span> · <kbd>Esc</kbd> <span data-t="hint_esc">선택 해제</span></div>
 <div id="tools">
-  <button id="zoom-in" title="확대" aria-label="확대"><svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
-  <button id="zoom-out" title="축소" aria-label="축소"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button>
-  <button id="fit" title="화면에 맞추기" aria-label="화면에 맞추기"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
+  <button id="zoom-in" data-t-title="zoom_in" title="확대" aria-label="확대"><svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+  <button id="zoom-out" data-t-title="zoom_out" title="축소" aria-label="축소"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button>
+  <button id="fit" data-t-title="fit" title="화면에 맞추기" aria-label="화면에 맞추기"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
 </div>
+<article id="reader" hidden aria-live="polite">
+  <header>
+    <button class="icon" id="r-back" data-t-title="back" title="뒤로" aria-label="뒤로"><svg viewBox="0 0 16 16"><path d="M9.5 3.5 5 8l4.5 4.5"/></svg></button>
+    <p id="r-path"></p>
+    <button class="icon" id="r-close" data-t-title="close" title="닫기" aria-label="닫기"><svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
+  </header>
+  <div id="r-body" tabindex="0"></div>
+</article>
 <aside id="side">
   <header>
-    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a10.5 10.5 0 1 0 0 21 10.5 10.5 0 0 0 0-21Zm1.6 2.6a8.6 8.6 0 1 1 0 17.2 8.6 8.6 0 0 1 0-17.2Z"/></svg>
-    <h1><b>LUPUS</b>지식 그래프</h1>
-    <button class="icon" id="theme" title="밝게 / 어둡게" aria-label="밝게 또는 어둡게 전환">
+    <span class="mark" role="img" aria-label="Lupus"></span>
+    <h1><b>LUPUS</b><span data-t="title">지식 그래프</span></h1>
+    <button class="icon" id="docs" data-t-title="doc_index" title="Vault 색인" aria-label="Vault 색인">
+      <svg viewBox="0 0 16 16"><path d="M4 2.5h5.5L12.5 5.5V13.5H4ZM9.5 2.5V5.5H12.5M6.2 8.3h4M6.2 10.8h4"/></svg>
+    </button>
+    <button class="icon" id="theme" data-t-title="theme" title="밝게 / 어둡게" aria-label="밝게 / 어둡게">
       <svg class="moon" viewBox="0 0 16 16"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8Z"/></svg>
       <svg class="sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1"/></svg>
     </button>
   </header>
   <div class="find">
     <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="m10.2 10.2 3.3 3.3"/></svg>
-    <input type="search" id="search" placeholder="제목과 내용에서 찾기" autocomplete="off" spellcheck="false" aria-label="노드 검색">
+    <input type="search" id="search" data-t-placeholder="search" placeholder="제목과 내용에서 찾기" autocomplete="off" spellcheck="false" aria-label="제목과 내용에서 찾기">
     <output id="s-count" for="search"></output>
   </div>
   <div id="scroll">
-    <h2 id="kinds-title">종류</h2>
+    <h2 id="kinds-title" data-t="kinds">종류</h2>
     <div class="kinds" id="kinds"></div>
-    <select id="scope" aria-label="범위"></select>
-    <label class="row"><input type="checkbox" id="recalls" checked> 회상된 곳으로 가는 연결 표시</label>
-    <label class="row"><input type="checkbox" id="retired"> 은퇴한 노드 표시</label>
+    <select id="scope" data-t-aria="all_projects" aria-label="범위"></select>
+    <label class="row"><input type="checkbox" id="recalls" checked> <span data-t="show_recalls">회상된 곳으로 가는 연결 표시</span></label>
+    <label class="row"><input type="checkbox" id="retired"> <span data-t="show_retired">은퇴한 노드 표시</span></label>
 
     <div class="picked">
-    <h2>선택한 노드</h2>
+    <h2 data-t="selected">선택한 노드</h2>
     <section id="detail" class="idle" aria-live="polite">
       <div id="d-kind" hidden><i class="dot" id="d-dot"></i><span id="d-kind-text"></span></div>
       <p id="d-title">노드를 누르면 내용과 연결이 여기에 표시됩니다.</p>
       <p id="d-body" hidden></p>
       <dl id="d-use" hidden>
-        <div><dt>회상</dt><dd id="d-recalled"></dd></div>
-        <div><dt>도움 됨</dt><dd id="d-helped"></dd></div>
-        <div><dt>도움 안 됨</dt><dd id="d-unhelped"></dd></div>
+        <div><dt data-t="recalled">회상</dt><dd id="d-recalled"></dd></div>
+        <div><dt data-t="helped">도움 됨</dt><dd id="d-helped"></dd></div>
+        <div><dt data-t="unhelped">도움 안 됨</dt><dd id="d-unhelped"></dd></div>
       </dl>
       <p id="d-meta" hidden></p>
       <ul id="d-links" hidden></ul>
-      <a id="d-page" hidden>Vault 문서 열기<svg viewBox="0 0 16 16"><path d="M6 3.5h6.5V10M12.5 3.5 4 12"/></svg></a>
+      <button type="button" id="d-page" hidden><span data-t="open_page">문서 읽기</span><svg viewBox="0 0 16 16"><path d="M6 3.5h6.5V10M12.5 3.5 4 12"/></svg></button>
     </section>
     </div>
 
     <details id="layout">
-      <summary>배치 조정<svg viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></summary>
-      <label class="slide">반발력<input type="range" id="f-repel" min="20" max="400" value="180"></label>
-      <label class="slide">연결 거리<input type="range" id="f-link" min="40" max="320" value="165"></label>
-      <label class="slide">중심 인력<input type="range" id="f-center" min="0" max="100" value="18"></label>
-      <label class="slide">노드 크기<input type="range" id="f-size" min="4" max="24" value="9"></label>
-      <label class="row"><input type="checkbox" id="pin"> 끌어다 놓은 위치에 고정</label>
-      <button class="text" id="unpin">고정 모두 해제</button>
+      <summary><span data-t="layout">배치 조정</span><svg viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></summary>
+      <label class="slide"><span data-t="f_repel">반발력</span><input type="range" id="f-repel" min="20" max="400" value="180"></label>
+      <label class="slide"><span data-t="f_link">연결 거리</span><input type="range" id="f-link" min="40" max="320" value="165"></label>
+      <label class="slide"><span data-t="f_center">중심 인력</span><input type="range" id="f-center" min="0" max="100" value="18"></label>
+      <label class="slide"><span data-t="f_size">노드 크기</span><input type="range" id="f-size" min="4" max="24" value="9"></label>
+      <label class="row"><input type="checkbox" id="pin"> <span data-t="pin">끌어다 놓은 위치에 고정</span></label>
+      <button class="text" id="unpin" data-t="unpin">고정 모두 해제</button>
     </details>
 
     <details id="legend">
-      <summary>표기<svg viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></summary>
+      <summary><span data-t="legend">표기</span><svg viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></summary>
       <div class="key">
-        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4" fill="currentColor" stroke="var(--ink)" stroke-width="2"/></svg><span>사용자가 확인한 지식</span>
-        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4.4" fill="currentColor" stroke="none"/></svg><span>반복해서 쓰인 지식</span>
-        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4" stroke-dasharray="2.2 2"/></svg><span>아직 검증되지 않은 지식</span>
-        <svg viewBox="0 0 34 12"><path d="M2 6h28M27 3l4 3-4 3" stroke-width="1.8"/></svg><span>지식 사이의 관계</span>
-        <svg viewBox="0 0 34 12"><path d="M2 6h28M27 3l4 3-4 3" stroke="var(--danger)" stroke-width="1.8"/></svg><span>서로 상충</span>
-        <svg viewBox="0 0 34 12"><path d="M2 6h30" stroke-width="1"/></svg><span>기록된 목표</span>
-        <svg viewBox="0 0 34 12"><path d="M2 6h30" stroke-width="1" stroke-dasharray="3 3"/></svg><span>회상된 목표</span>
+        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4" fill="currentColor" stroke="var(--ink)" stroke-width="2"/></svg><span data-t="k_verified">사용자가 확인한 지식</span>
+        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4.4" fill="currentColor" stroke="none"/></svg><span data-t="k_confirmed">반복해서 쓰인 지식</span>
+        <svg viewBox="0 0 34 12"><circle cx="17" cy="6" r="4" stroke-dasharray="2.2 2"/></svg><span data-t="k_candidate">아직 검증되지 않은 지식</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h28M27 3l4 3-4 3" stroke-width="1.8"/></svg><span data-t="k_relation">지식 사이의 관계</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h28M27 3l4 3-4 3" stroke="var(--danger)" stroke-width="1.8"/></svg><span data-t="k_contradicts">서로 상충</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h30" stroke-width="1"/></svg><span data-t="k_recorded">기록된 목표</span>
+        <svg viewBox="0 0 34 12"><path d="M2 6h30" stroke-width="1" stroke-dasharray="3 3"/></svg><span data-t="k_recalled">회상된 목표</span>
       </div>
     </details>
   </div>
-  <footer><p><span id="count"></span> · 읽기 전용 · <span id="generated"></span> 생성</p>
-  <p>vis-network (Apache-2.0 / MIT)를 수정 없이 포함</p></footer>
+  <footer><div><p><span id="count"></span> · <span data-t="read_only">읽기 전용</span> · <span id="generated"></span></p>
+  <p data-t="vendor">vis-network (Apache-2.0 / MIT)를 수정 없이 포함</p></div>
+  <select id="lang" data-t-title="language" title="언어" aria-label="언어">
+    <option value="ko">한국어</option><option value="en">English</option><option value="ja">日本語</option><option value="zh">简体中文</option>
+  </select></footer>
 </aside>
 <script type="application/json" id="data">__DATA__</script>
 <script src="vis-network.min.js"></script>
