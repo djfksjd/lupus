@@ -328,6 +328,7 @@
   // those pages use and builds elements with textContent only, so nothing in a page can become markup.
   var pages = data.pages || {}, pageOf = {}, trail = [];
   data.nodes.forEach(function (n) { if (n.page) { pageOf[n.page] = n.id; } });
+  $("docs").hidden = !pages["index.md"];      // nothing to browse when the export carries no pages
   function resolve(from, rel) {
     var parts = from.split("/").slice(0, -1);
     rel.split("/").forEach(function (p) { if (p === "..") { parts.pop(); } else if (p && p !== ".") { parts.push(p); } });
