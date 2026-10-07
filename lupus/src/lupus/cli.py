@@ -231,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-steps", type=int, default=30)
     p.add_argument("--timeout", type=float, default=600)
     p.add_argument("--background", action="store_true")
+    p.add_argument("--parallel", type=int, default=1, choices=range(1, alpha.MAX_PARALLEL + 1), metavar=f"1..{alpha.MAX_PARALLEL}",
+                   help="goals worked on at the same time, each in a different project or isolated checkout (default 1)")
     p = sub.add_parser("alpha-budget", help="a cap shared by all goals of a project, or of everything (omit --project)")
     p.add_argument("--project")
     p.add_argument("--calls", type=int, required=True)
@@ -249,7 +251,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("job-run", help=argparse.SUPPRESS).add_argument("job_id")
     p = sub.add_parser("learn", help="turn recorded failures of a project into candidate procedures (one small model call)")
     p.add_argument("--project", help="project id (default: this folder's project)")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--driver", choices=("claude", "codex"))
+    p.add_argument("--undo", nargs="?", const="", metavar="PASS",
+                   help="take back what a learning pass added (default: the latest one); no model call")
 
     p = sub.add_parser("fix-tests", help="one command, no goal file: make this folder's failing tests pass")
     p.add_argument("--driver", choices=("claude", "codex"), required=True)
@@ -258,6 +262,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--isolated", action="store_true",
                    help="work in a separate checkout of the committed HEAD; your files are untouched until `lupus accept`")
     p.add_argument("--shell", action="store_true", help="let the worker run commands to check its own work (inside the sandbox)")
+    p.add_argument("--lean", action="store_true",
+                   help="add implementation-economy guidance to the worker: reuse, standard library, smallest change "
+                        "(adapted from Ponytail; off by default, it can cost more on some models)")
     p.add_argument("--check", help="your own test command for a project Lupus does not recognise; its exit status decides")
     p.add_argument("--protect", action="append", default=[], help="with --check: a file or folder workers may not change")
     p.add_argument("--container", metavar="IMAGE", help="run the tests in a Docker container of this image (no network) "
@@ -292,6 +299,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--isolated", action="store_true",
                    help="work in a separate checkout of the committed HEAD; your files are untouched until `lupus accept`")
     p.add_argument("--shell", action="store_true", help="let the worker run commands to check its own work (inside the sandbox)")
+    p.add_argument("--lean", action="store_true",
+                   help="add implementation-economy guidance to the worker: reuse, standard library, smallest change "
+                        "(adapted from Ponytail; off by default, it can cost more on some models)")
     p.add_argument("--allow-failing", action="store_true",
                    help="start even though some existing tests fail now; those same tests may keep failing, no others")
     p.add_argument("--review", nargs="?", const="other", choices=("other", "claude", "codex"),
@@ -628,6 +638,12 @@ def _learn(k: Kernel, args: argparse.Namespace) -> int:
     project = projects.get(k, args.project) if args.project else projects.resolve(k, os.getcwd())
     if project is None:
         raise LupusError("PROJECT_NOT_FOUND", os.getcwd())
+    if args.undo is not None:
+        _confirm_user(f"프로젝트 {project['name']}의 학습 묶음 {args.undo or '(가장 최근)'}이 추가한 절차 후보를 철회합니다")
+        _out(learn.undo(k, project, "user", args.undo or None))
+        return 0
+    if not args.driver:
+        raise LupusError("DRIVER_REQUIRED", "lupus learn --driver claude|codex")
     cases = learn.triggers(k, project["project_id"])
     if not cases:
         _out({"learned": [], "note": "배울 사건이 없습니다(재시도나 막힌 작업이 없었음). 모델을 호출하지 않았습니다"})
@@ -731,7 +747,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 _confirm_user(f"실패하는 테스트를 고칩니다: {project['canonical_root']} ({args.driver})")
             project = _isolate(k, project, args)
             made = quick.fix_tests(k, project, "user", check=args.check, protect_paths=args.protect,
-                                   container=args.container)
+                                   container=args.container, lean=args.lean)
             if "goal_id" not in made:
                 if gitx.info(k, project["project_id"]):      # nothing to do: the checkout made for it goes again
                     found = gitx.info(k, project["project_id"])
@@ -762,7 +778,8 @@ def _dispatch(args: argparse.Namespace) -> int:
             project = _project_here(k, "요청 구현", args)
             _confirm_user(f"요청: {args.request}\n먼저 이 요청을 판정할 테스트를 작성합니다 ({args.driver})")
             project = _isolate(k, project, args)
-            draft = quick.draft_check(k, project, args.request, "user", stage=not args.two_step, allow_failing=args.allow_failing)
+            draft = quick.draft_check(k, project, args.request, "user", stage=not args.two_step, allow_failing=args.allow_failing,
+                                      lean=args.lean)
             if draft["already_failing"]:
                 print(f"지금 실패하는 기존 테스트 {len(draft['already_failing'])}개는 그대로 실패해도 되는 것으로 봅니다: "
                       + ", ".join(draft["already_failing"][:5]) + (" …" if len(draft["already_failing"]) > 5 else ""), file=sys.stderr)
@@ -839,11 +856,11 @@ def _dispatch(args: argparse.Namespace) -> int:
                 raise LupusError("DRIVER_UNKNOWN", args.drivers)
             if args.background:
                 _out(jobs.start(k, ["alpha-run", "--drivers", ",".join(names), "--max-steps", str(args.max_steps),
-                                    "--timeout", str(args.timeout)]))
+                                    "--timeout", str(args.timeout), "--parallel", str(args.parallel)]))
             else:
                 stale = {DRIVER[n]: why for n in names if (why := _stale(k, n, DRIVER[n]))}
                 report = alpha.run(k, [DRIVER[n] for n in names], adapters.native, max_steps=args.max_steps,
-                                   timeout_s=args.timeout, unavailable=stale)
+                                   timeout_s=args.timeout, unavailable=stale, parallel=args.parallel)
                 try:
                     report["vault"] = vault.sync(k)
                 except LupusError as exc:

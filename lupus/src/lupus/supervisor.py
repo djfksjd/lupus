@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import adapters, budget, gitx, goals, handoff, judging, memory, projects, protect, recovery, runs, service, usage, verify
+from . import adapters, budget, economy, gitx, goals, handoff, judging, memory, projects, protect, recovery, review, runs, service, usage, verify
 from .adapters import Adapter
 from .kernel import Kernel
 from .util import LupusError, container_stop, crash_point, find_secret_bytes, proc_start, sha256_json
@@ -237,6 +237,8 @@ def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recall
         # and writing blind in one pass would only produce a confident wrong answer.
         whole = root is None or all((root / p).is_file() and f"--- 현재 파일 {p} ---" in inlined for p in task["spec"].get("inputs", []))
         lines.append(SINGLE_PASS if whole else EXPLORE + (" " + SELF_CHECK if shell else ""))
+    if task["spec"].get("lean") and economy.applies(criteria):
+        lines.append(economy.guidance())      # fixed per task by the supervisor; a document task never gets it
     lines += inlined
     if continuation:
         work = continuation["work"]
@@ -295,6 +297,52 @@ def _checkpoint(k: Kernel, goal_id: str, next_action: str, paths: list[str], roo
         k, goal_id, expected_revision=prev["revision"] if prev else 0, done=done, remaining=remaining,
         next_action=next_action, decisions=notes, files=paths, objects=objects, run_id=run_id, token=token,
     )
+
+
+UNCHANGED = "다시 실행하지 않았다: 직전에 이 검사가 실패한 뒤로 프로젝트의 파일이 하나도 바뀌지 않았다(보호된 파일의 수정은 되돌려진다). "
+_NOT_A_RESULT = ("verifier timed out", "verifier command could not be started")
+
+
+def _ME() -> str:
+    return f"{os.getpid()}:{proc_start(os.getpid())}"
+
+
+def _remember_failure(k: Kernel, task_id: str, criteria: list[dict], revision: int, mark: str | None, checked: list[tuple]) -> None:
+    """Record the state of the project in which these checks failed, so that the same checks are
+    not run again over the very same files.
+
+    Adapted from Prime Agent's autonomous quality gates (MIT, Copyright (c) 2025-2026 Prime
+    Intellect Ltd.; `crates/pa-core/src/autonomous/gates.rs`, `run_autonomous_quality_gates`): "a
+    failed gate is not re-run over an unchanged workspace". Prime compares a git status/diff
+    snapshot taken after the failure; here it is a hash of every file (a project under Lupus need
+    not be a git repository), and it must be the same before and after the checks ran: checks that
+    change the project are not remembered at all. A check that timed out or could not start says
+    nothing about the files and is never remembered either.
+    The memory is this supervisor process's own: a later `lupus run` checks for real, since what
+    changed in between may be outside the project (an installed tool, a service)."""
+    failed = [detail for _, verdict, _, detail in checked if verdict != "PASS"]
+    if mark is None or not failed or any(detail.removeprefix(UNCHANGED).startswith(_NOT_A_RESULT) for detail in failed):
+        return
+    k.emit("supervisor", "verify.failed_at", "task", task_id, mark=mark, revision=revision, supervisor=_ME(),
+           results=[[c["id"], sha256_json(c["verifier"]), verdict, digest, detail.removeprefix(UNCHANGED)]
+                    for c, verdict, digest, detail in checked])
+
+
+def _same_failure(k: Kernel, task_id: str, criteria: list[dict], revision: int, mark: str | None) -> list[tuple] | None:
+    """The previous results of this task's checks, when the project is byte for byte what it was
+    when they last failed and the checks are the same; otherwise None."""
+    if mark is None:
+        return None
+    row = k.one("SELECT payload FROM event WHERE type = 'verify.failed_at' AND aggregate_id = ? ORDER BY seq DESC LIMIT 1", task_id)
+    if row is None:
+        return None
+    seen = json.loads(row["payload"])
+    if seen["mark"] != mark or seen["revision"] != revision or seen["supervisor"] != _ME() or [
+            [c["id"], sha256_json(c["verifier"])] for c in criteria] != [
+            r[:2] for r in seen["results"]]:
+        return None
+    return [(c, verdict, digest, (UNCHANGED + detail) if verdict != "PASS" else detail)
+            for c, (_, _, verdict, digest, detail) in zip(criteria, seen["results"])]
 
 
 def _already_satisfied(k: Kernel, goal: dict, task: dict, criteria: list[dict], root: Path, run_id: str,
@@ -481,10 +529,19 @@ def run_task(
         # checks that run are the ones that were frozen.
         undone = protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id)
         gitx.unguard(k, root, taken, goal_id)      # hooks/config a worker left in .git never get to run
-        checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
-        # Running the checks can itself write into protected paths (a test with side effects):
-        # leave the project as frozen, not as the verifier left it.
-        protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "after-verify")
+        mark = review.fingerprint(root)
+        checked = _same_failure(k, task_id, criteria, attempt["acceptance_revision"], mark)
+        if checked is not None:
+            verify_ms = judge_calls = 0          # nothing was run, so nothing is charged
+        else:
+            checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
+            # Running the checks can itself write into protected paths (a test with side effects):
+            # leave the project as frozen, not as the verifier left it.
+            protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "after-verify")
+            # A verdict is remembered only for the state it was given on: if running the checks (or
+            # putting protected files back) changed anything, the next run starts from other files.
+            if mark is not None and any(v != "PASS" for _, v, _, _ in checked) and review.fingerprint(root) != mark:
+                mark = None
     except LupusError as exc:
         # Verification was cut short (e.g. a judge could not answer). What it had already spent is not
         # known here, so its whole reservation is charged.
@@ -518,6 +575,7 @@ def run_task(
                                       acceptance_revision=attempt["acceptance_revision"], verifier=c["verifier"])
             closed = runs.finish_attempt(k, run_id, token, attempt_id, outcome, note, work_actual,
                                          safety_actual, observation)
+            _remember_failure(k, task_id, criteria, attempt["acceptance_revision"], mark, checked)
             memory.feedback(k, attempt_id, outcome)
             if outcome == "PROGRESS" and k.policy["memory_recall_tokens"] > 0:
                 memory.capture_worker_lessons(k, result.text, project_id=goal["project_id"], goal_id=goal_id,

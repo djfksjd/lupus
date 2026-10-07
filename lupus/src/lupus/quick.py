@@ -113,7 +113,7 @@ def suite(k: Kernel, project: dict, check: str | None = None, protect_paths: lis
 
 
 def fix_tests(k: Kernel, project: dict, actor: str, caps: dict | None = None, check: str | None = None,
-              protect_paths: list[str] | None = None, container: str | None = None) -> dict:
+              protect_paths: list[str] | None = None, container: str | None = None, lean: bool = False) -> dict:
     """Create the goal from an observed test failure. Returns {"goal_id": …} or a refusal reason
     under "nothing_to_do". Runs the tests once (in the project, under the same rules as any
     verifier)."""
@@ -134,7 +134,7 @@ def fix_tests(k: Kernel, project: dict, actor: str, caps: dict | None = None, ch
         goals.add_task(
             k, goal["goal_id"], "실패하는 테스트 복구",
             "아래 테스트 실패의 원인을 제품 코드에서 찾아 고쳐라. 테스트 파일과 테스트 설정은 수정하지 마라"
-            "(수정해도 검증 전에 되돌려진다).\n실행 전 관측한 실패:\n" + shown, ["c0"], inputs=found["inputs"])
+            "(수정해도 검증 전에 되돌려진다).\n실행 전 관측한 실패:\n" + shown, ["c0"], inputs=found["inputs"], lean=lean)
     return {"goal_id": goal["goal_id"], "runner": found["runner"], "protect": found["protect"]}
 
 
@@ -163,7 +163,7 @@ MAX_ALLOWED_FAILURES = 300
 
 
 def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict | None = None, stage: bool = True,
-                allow_failing: bool = False) -> dict:
+                allow_failing: bool = False, lean: bool = False) -> dict:
     """Step 1 of `lupus do`: a goal whose only job is to WRITE the acceptance test for a request.
 
     Nothing else in the project may change during this step (everything but the one new test
@@ -241,7 +241,7 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
                "문서로 내지 마라: 소스 파일 자체가 바뀌어 있어야 하고, 그 상태에서 이 테스트와 기존 테스트가 모두 통과해야 한다.\n"
                if stage else "")
             + "프로젝트의 소스 파일: " + (", ".join(sources) or "(없음)"), ["c0"],
-            inputs=sources[:8])      # small ones are handed over in the prompt, so they need not be read one by one
+            inputs=sources[:8], lean=lean)      # small ones are handed over in the prompt, so they need not be read one by one
     return {"goal_id": goal["goal_id"], "test_path": test_path, "runner": found["runner"], "request": request,
             "already_failing": already_failing}
 
@@ -312,7 +312,8 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
             k, goal["goal_id"], "요청 구현",
             f"다음 요청을 구현하라: {request}\n승인된 검사 {test_path} 와 기존 테스트가 모두 통과해야 한다. "
             "테스트 파일과 테스트 설정은 수정하지 마라(수정해도 검증 전에 되돌려진다).",
-            ["c0", "c1"], inputs=[test_path] + related[:8])
+            ["c0", "c1"], inputs=[test_path] + related[:8],
+            lean=any(t["spec"].get("lean") for t in goals.tasks(k, draft_goal_id)))      # as the draft was asked for
         # Freeze NOW, in the same transaction as the approval, and make sure what was frozen is what
         # the user read: no window in which the file can be swapped between approval and first run.
         protect.freeze(k, goal["goal_id"], root)

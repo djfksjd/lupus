@@ -33,10 +33,10 @@ Lupus runs the `claude` and `codex` CLIs you already have (with your existing su
 | **Documents, plans, research** | `lupus write`: a rubric you approve first, a judge that is a different AI and must quote the document for every item it accepts, then your sign-off on the exact version. |
 | **Your normal interactive session** | `lupus session` starts your usual `claude` / `codex` screen with your own configuration, freezes the tests, and verifies by itself when you exit. |
 | **Claude ↔ Codex handoff** | When one AI stops (quota, crash, your choice), the other continues from a validated checkpoint. Finished steps are not redone; budgets and attempt counts are not reset. |
-| **Several projects, in the background** | `lupus alpha-run` advances every open goal in turn under shared budgets and switches AI when one runs out of quota. `--background` keeps it running after the terminal closes. |
+| **Several projects, in the background** | `lupus alpha-run` advances every open goal in turn under shared budgets and switches AI when one runs out of quota. `--background` keeps it running after the terminal closes. `--parallel N` works on up to N goals at once, each in a different project or isolated checkout. |
 | **Budgets and loop control** | Calls, attempts, time and tokens are reserved before work starts. Repeating the same failed attempt is refused before any model is called. |
 | **Crash-safe checkpoints** | Recovery objects are written durably before the database commit; tested by killing the process at every boundary. |
-| **Your working tree stays yours** | `--isolated` does the work in a separate checkout of your committed HEAD. `lupus diff` shows the result, `lupus accept` brings it over as one commit (fast-forward only, re-checked as that exact commit), `lupus discard` drops it. |
+| **Your working tree stays yours** | `--isolated` does the work in a separate checkout of your committed HEAD. `lupus diff` shows the result, `lupus accept` brings it over as one commit (fast-forward only, re-checked as that exact commit; if your branch has moved, the result is combined with it and the combination is checked before anything is accepted), `lupus discard` drops it. |
 | **OS-level confinement** | The Claude worker and every verifier run inside a macOS sandbox applied by Lupus; verifiers can run in a Docker container instead. |
 | **Memory that has to earn its place** | Project knowledge as typed, linked nodes. `lupus learn` proposes procedures from recorded failures; they stay candidates until later verified outcomes promote or retire them. |
 
@@ -111,6 +111,7 @@ lupus do "add a --json flag to the export command" --driver claude
                                      # one call: failing test + proposal kept aside -> you approve the test -> applied and verified
 lupus do "…" --driver claude --review     # after the checks pass, the other AI compares the change with the request (opt-in; see the pilot)
 lupus do "…" --driver claude --isolated   # same, in a separate checkout; then: lupus diff | accept | discard <goal>
+lupus do "…" --driver claude --lean       # add reuse-first, smallest-change guidance for the worker (opt-in; no gain measured, see the contract)
 lupus session --driver claude        # your usual interactive Claude Code, tests frozen, verified on exit
 lupus write "migration plan for the billing tables" --out docs/plan.md --driver claude
                                      # rubric you approve -> written -> judged by the other AI -> your sign-off
@@ -121,9 +122,11 @@ Several goals, unattended:
 ```bash
 lupus alpha-budget --calls 300 --attempts 40 --minutes 600     # one cap for everything
 lupus alpha-run --drivers claude,codex --background            # all open goals in turn; switches AI on quota
+lupus alpha-run --drivers claude,codex --parallel 2            # two goals at a time (different projects or isolated checkouts)
 lupus jobs        # what is running          lupus logs <job>        lupus stop <job>
 lupus alpha-status                                             # every project at a glance
 lupus learn --driver claude                                    # candidate procedures from recorded failures
+lupus learn --undo                                             # take back what the latest learning pass added
 ```
 
 A goal with your own checks, other languages, containers, the knowledge graph and every command: [`lupus/README.md`](./lupus/README.md).
@@ -155,19 +158,31 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 - **You start it.** `lupus session` wraps your interactive CLI; nothing activates Lupus when you type `claude` yourself. Token usage of an interactive session is not reported by the CLIs, so it is charged at its full reservation.
 - **A judge is an opinion.** The quote check stops unsupported passes, not wrong facts. That is why your sign-off is the last condition. Images and visual design cannot be judged.
 - **Tests are run by the code they test.** Output parsing resists accidents and cheap tricks; code that sets out to forge a runner's whole summary from inside the test process is not something Lupus can detect. Rust unit tests inside source files cannot be frozen (their names are pinned, their bodies are not).
-- **One worker at a time.** `alpha-run` takes goals in turn; it does not run projects in parallel.
-- Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set, and Prime itself is not connected.
+- **One writer per project.** `alpha-run --parallel` runs up to 4 goals at once, but never two in the same folder: goals of one repository run together only as isolated checkouts, and their results are accepted one after the other. A request is not split into parallel subtasks, and the tasks of one goal still run in turn.
+- Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set.
 - jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
 - A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
-- Young code. Seventeen external review rounds found 118 defects, 117 of them fixed, and a usability audit another 16; assume more remain.
+- Young code. Twenty external review rounds found 125 defects, 124 of them fixed, and a usability audit another 16; assume more remain.
+
+## Adapted from other projects
+
+Lupus is its own code (Python, standard library only), but five parts of it are adaptations of code from three MIT-licensed projects, read at pinned commits and reshaped to Lupus's rules (one supervisor, completion only on evidence, the user's authority). Only what actually works in the original was taken; the contract lists what was reviewed and left out, and why.
+
+| From | What Lupus took | What Lupus changed |
+|---|---|---|
+| [Ruflo](https://github.com/ruvnet/ruflo) | Bounded parallel workers, each writer in its own working tree; integration of results in order; recall diversity (MMR), a floor for BM25 on small stores, duplicate notes, prompt-injection patterns | Slots refill as they free; one writer per project is still enforced by the kernel; a combined result is checked again before it is accepted |
+| [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent) | A failed check is not re-run over unchanged files; a learning pass is recorded and taken back as a unit | Whole-project fingerprint instead of git status, same supervisor process only; learning can only add candidates that later verified outcomes judge |
+| [Ponytail](https://github.com/DietrichGebert/ponytail) | The implementation-economy guidance (bundled unmodified) and its mode filter | Three sections only, below the request and never a reason to build less; off by default |
+
+Measured on 2026-10-07: two goals of one repository took 19.7 s in turn and 9.0 s side by side on Codex (18.1 s and 11.1 s on Claude), one run each. `--lean` did not change which hidden tests passed (Codex 7 of 8 either way, Claude 5 of 6 either way) and used more tokens on most tasks, so it stays opt-in. The memory changes have offline tests only.
 
 ## Documentation
 
 - [Machine contract](./lupus/docs/CONTRACT.md) — the rules the code enforces, and what is out of scope
 - [Implementation record](./docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) — decisions, review rounds, every measurement and its limits (Korean)
 - [Design](./docs/design/LUPUS-PLAN.md) — the full design the implementation is a slice of (Korean)
-- [Third-party notices](./lupus/THIRD_PARTY_NOTICES.md) — vis-network is bundled unmodified for the graph view
+- [Third-party notices](./lupus/THIRD_PARTY_NOTICES.md) — vis-network and Ponytail's guidance text are bundled unmodified; code adapted from Ruflo, Prime Agent and Ponytail is listed with its sources
 
 ## License
 
-[Apache-2.0](./LICENSE). The bundled vis-network is used under MIT; see the notices.
+[Apache-2.0](./LICENSE). The bundled vis-network and Ponytail text, and the code adapted from Ruflo, Prime Agent and Ponytail, are MIT; see the notices.

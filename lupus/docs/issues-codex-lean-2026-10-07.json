@@ -1,0 +1,321 @@
+{
+ "driver": "native_codex",
+ "reviewer": null,
+ "arms": [
+  "do",
+  "lean"
+ ],
+ "date": "2026-10-07",
+ "rows": [
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 67.9,
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 170861,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 49.2,
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 127993,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 41.2,
+   "added_lines": 1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 161025,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 40.4,
+   "added_lines": 1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 161733,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 42.7,
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 155021,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 44.2,
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 212625,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 82.0,
+   "added_lines": 58,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 284113,
+   "errors": [],
+   "hidden_detail": "st_split_for_update_in_begin_end - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 45 passed in 0.06s"
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 96.1,
+   "added_lines": 55,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 283088,
+   "errors": [],
+   "hidden_detail": "st_split_for_update_in_begin_end - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 45 passed in 0.06s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 51.4,
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 132511,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 54.4,
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 135672,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 68.6,
+   "added_lines": 17,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 164697,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 71.8,
+   "added_lines": 8,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 200509,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 54.9,
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 130349,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 60.5,
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 136732,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 57.7,
+   "added_lines": 9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 128702,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "lean",
+   "already_failing": 0,
+   "check_drafted": true,
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 58.2,
+   "added_lines": 9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 148522,
+   "errors": []
+  }
+ ],
+ "summary": {
+  "do": {
+   "n": 8,
+   "hidden_pass": 7,
+   "added_lines_mean": 12.9,
+   "tokens_mean": 165910,
+   "seconds_mean": 58.3,
+   "lupus_said_done": 8,
+   "said_done_but_hidden_fail": 1
+  },
+  "lean": {
+   "n": 8,
+   "hidden_pass": 7,
+   "added_lines_mean": 11.4,
+   "tokens_mean": 175859,
+   "seconds_mean": 59.4,
+   "lupus_said_done": 8,
+   "said_done_but_hidden_fail": 1
+  }
+ }
+}

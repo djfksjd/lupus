@@ -266,8 +266,12 @@ def diff(k: Kernel, goal_id: str) -> str:
 
 def accept(k: Kernel, goal_id: str, actor: str) -> dict:
     """Bring the verified result into the user's repository as one commit. Refused unless the goal
-    is DONE and the user's branch still points at the commit the work started from; git itself
-    refuses if an uncommitted file of the user would be overwritten. Nothing is forced."""
+    is DONE; git itself refuses if an uncommitted file of the user would be overwritten. Nothing
+    is forced.
+
+    When the user's branch has moved since the work started (another result was accepted first,
+    or the user committed), the result is combined with the branch as it is now, and that
+    combination is what gets checked and accepted (see `_onto`). Any conflict refuses."""
     if actor != "user":
         raise LupusError("USER_AUTHORITY_REQUIRED", "only the user accepts a result")
     goal, found = _of_goal(k, goal_id)
@@ -276,9 +280,7 @@ def accept(k: Kernel, goal_id: str, actor: str) -> dict:
     if k.one("SELECT 1 FROM run WHERE project_id = ? AND status <> 'STOPPED'", goal["project_id"]):
         raise LupusError("WRITER_NOT_STOPPED", goal["project_id"])
     origin, path, git_dir = found["origin_root"], found["path"], found["git_dir"]
-    if run(origin, "rev-parse", "HEAD").strip() != found["base"]:
-        raise LupusError("BASELINE_CHANGED", "your branch has moved since this work started; look at `lupus diff` and apply it "
-                                             f"yourself (branch {found['branch']}), or discard it")
+    head = run(origin, "rev-parse", "HEAD").strip()
     # What is accepted is checked again as the exact commit (below). Two things that re-check cannot
     # vouch for must still be as they were when the goal was verified: the frozen tests it runs,
     # and anything judged by a model or approved by the user.
@@ -299,8 +301,30 @@ def accept(k: Kernel, goal_id: str, actor: str) -> dict:
         git_dir=git_dir)
     commit = run(path, "rev-parse", "HEAD", git_dir=git_dir).strip()
     try:
+        if head != found["base"]:
+            commit = _onto(k, goal, found, commit, head)
+            if commit is None:
+                # Everything this result changed is already in the user's branch (another result made
+                # the same edits): there is nothing to add, and an empty commit would only be noise.
+                # "Accepted" still has to mean "these files pass this goal's checks", and the branch
+                # may hold other changes besides: the branch as it is gets checked like any result.
+                _verify_commit(k, goal, found, head)
+                if run(origin, "rev-parse", "HEAD").strip() != head:
+                    # No merge follows on this path, so nothing else would notice that the branch
+                    # that was just checked is no longer the one the user is on.
+                    raise LupusError("BASELINE_CHANGED", "your branch moved while the result was being checked; nothing was "
+                                                         "changed, run `lupus accept` again")
+                run(path, "reset", "-q", "--soft", found["base"], git_dir=git_dir, check=False)
+                with k.tx():
+                    k.emit("user", "isolation.accepted", "project", goal["project_id"], goal=goal_id, commit=head, combined_with=head,
+                           nothing_new=True)
+                run(origin, "worktree", "remove", "--force", path, check=False)
+                run(origin, "branch", "-D", found["branch"], check=False)
+                return {"accepted": True, "commit": head, "files": [], "combined_with": head,
+                        "note": "your branch already contains everything this result changed; no commit was added"}
         # The checks passed in the checkout, which may hold files git ignores. What the user gets is
-        # the commit, so the commit alone is checked once more, in a clean export of it.
+        # the commit, so the commit alone is checked once more, in a clean export of it. After a
+        # moved branch this is also the first time the COMBINED files are checked at all.
         _verify_commit(k, goal, found, commit)
         # --no-overwrite-ignore: an ignored file of the user's (an .env, say) is not replaced either.
         run(origin, "merge", "--ff-only", "--no-overwrite-ignore", "-q", commit)
@@ -310,10 +334,48 @@ def accept(k: Kernel, goal_id: str, actor: str) -> dict:
             raise
         raise LupusError("ACCEPT_REFUSED_BY_GIT", exc.detail + f" — nothing was changed; the result stays on branch {found['branch']}") from exc
     with k.tx():
-        k.emit("user", "isolation.accepted", "project", goal["project_id"], goal=goal_id, commit=commit)
+        k.emit("user", "isolation.accepted", "project", goal["project_id"], goal=goal_id, commit=commit,
+               **({"combined_with": head} if head != found["base"] else {}))
     run(origin, "worktree", "remove", "--force", path, check=False)
     run(origin, "branch", "-D", found["branch"], check=False)
-    return {"accepted": True, "commit": commit, "files": run(origin, "show", "--name-only", "--format=", commit).split()}
+    return {"accepted": True, "commit": commit, "files": run(origin, "show", "--name-only", "--format=", commit).split(),
+            **({"combined_with": head} if head != found["base"] else {})}
+
+
+def _onto(k: Kernel, goal: dict, found: dict, commit: str, head: str) -> str | None:
+    """The result as one commit on top of `head`, the user's branch as it is now; None when
+    combining adds nothing to it.
+
+    Integration in order, one result after another, is how Ruflo's worktree coordinator brings
+    parallel writers together (MIT, Copyright (c) 2024-2026 ruvnet;
+    `v3/@claude-flow/codex/src/worktrees/coordinator.ts`, `integrate`). Two things differ here.
+    The merge is computed without touching any working tree (`git merge-tree`), so a conflict
+    leaves nothing half-merged anywhere. And a clean merge is not yet a result: the caller
+    checks the combined files against every criterion before the user's branch moves."""
+    path, git_dir = found["path"], found["git_dir"]
+    proc = subprocess.run(
+        [_git(), *SAFE, f"--git-dir={git_dir}", "merge-tree", "--write-tree", "--name-only", f"--merge-base={found['base']}", head, commit],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, env=scrubbed_env({"GIT_TERMINAL_PROMPT": "0"}), timeout=120)
+    lines = proc.stdout.split("\n")
+    if proc.returncode == 1:
+        clash = [name for name in lines[1:lines.index("")] if name] if "" in lines else []
+        raise LupusError("BASELINE_CONFLICT", "your branch has moved since this work started and both changed the same place: "
+                         + ", ".join(clash[:5]) + f". Nothing was changed; apply it yourself (branch {found['branch']}) or discard it")
+    if proc.returncode != 0:      # e.g. a git too old for this: say that the branch moved, as before
+        raise LupusError("BASELINE_CHANGED", "your branch has moved since this work started; look at `lupus diff` and apply it "
+                                             f"yourself (branch {found['branch']}), or discard it")
+    # A judge's verdict and the user's sign-off are about exact bytes and are not asked again here:
+    # if combining changed what they looked at, they no longer cover what would be accepted.
+    opinions = sorted({p for c in goals.criteria(k, goal["goal_id"]) if c["verifier"]["kind"] in ("judge", "user_approval")
+                       for p in ([c["verifier"]["path"]] if "path" in c["verifier"] else c["verifier"].get("paths", []))})
+    tree = lines[0].strip()
+    if opinions and run(path, "diff", "--name-only", commit, tree, "--", *opinions, git_dir=git_dir).strip():
+        raise LupusError("RESULT_CHANGED", "your branch has moved and changed a document that was judged or approved: "
+                         + ", ".join(opinions[:5]))
+    if tree == run(path, "rev-parse", f"{head}^{{tree}}", git_dir=git_dir).strip():
+        return None
+    message = run(path, "log", "-1", "--format=%B", commit, git_dir=git_dir).strip()
+    return run(path, "commit-tree", tree, "-p", head, "-m", message, git_dir=git_dir).strip()
 
 
 def _verify_commit(k: Kernel, goal: dict, found: dict, commit: str) -> None:

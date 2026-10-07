@@ -18,4 +18,4 @@ lupus = "lupus.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-lupus = ["migrations/*.sql", "viewer/*", "viewer/vendor/*"]
+lupus = ["migrations/*.sql", "viewer/*", "viewer/vendor/*", "vendor/*", "vendor/*/*"]

@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import termios
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -146,8 +147,8 @@ def execute(
 
 def _wait_showing_progress(proc: subprocess.Popen, timeout_s: float, label: str) -> None:
     """Wait for the worker; at a terminal, show that something is happening and for how long."""
-    if not sys.stderr.isatty():
-        proc.wait(timeout=timeout_s)
+    if not sys.stderr.isatty() or threading.current_thread() is not threading.main_thread():
+        proc.wait(timeout=timeout_s)      # (several workers at once would overwrite each other's line)
         return
     started = time.monotonic()
     try:
