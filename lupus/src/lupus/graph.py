@@ -34,7 +34,7 @@ def export(k: Kernel) -> dict:
                           "title": project["name"], "page": f"projects/{pid}/map.md"})
             for goal in k.q("SELECT goal_id, objective, status FROM goal WHERE project_id = ? ORDER BY created_at", pid):
                 nodes.append({"id": goal["goal_id"], "kind": "goal", "scope": scope, "label": goal["objective"][:24],
-                              "title": goal["objective"], "body": f"상태: {goal['status']}",
+                              "title": goal["objective"], "state": goal["status"],
                               "page": vault.goal_page(pid, goal["goal_id"])})
                 edges.append({"from": pid, "to": goal["goal_id"], "type": "has_goal"})
         for node in memory.nodes(k, pid):
@@ -62,6 +62,9 @@ def write(k: Kernel, out_dir: str | Path | None = None, vault_root: str | Path |
     out.mkdir(mode=0o700, parents=True, exist_ok=True)
     assets = resources.files("lupus").joinpath("viewer")
     data = export(k)
+    # The pages of the vault as they would be written now, so a note can be read beside the graph
+    # without the page ever fetching a file.
+    data["pages"] = vault.render(k)
     data["vault_rel"] = os.path.relpath(os.path.realpath(vault_root or vault.default_root(k)), os.path.realpath(out))
     # Embedded as inert JSON. '<', '>' and '&' are escaped so node text can never close the
     # script element or be parsed as markup.

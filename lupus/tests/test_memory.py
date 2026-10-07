@@ -276,6 +276,12 @@ class ProjectionTests(MemoryBase):
         self.assertEqual(types[(a["node_id"], b["node_id"])], "relates")
         self.assertEqual(types[(a["node_id"], goal["goal_id"])], "recalled_in")
         self.assertEqual(data["vault_rel"], "../vault")
+        # the reading pane gets the vault's pages as data, and goals carry their state unworded
+        self.assertIn("## 내용", data["pages"][vault.node_page(a)])
+        self.assertEqual({n["id"]: n.get("state") for n in data["nodes"]}[goal["goal_id"]], goal["status"])
+        script = (page.parent / "viewer.js").read_text()
+        for unsafe in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("):
+            self.assertNotIn(unsafe, script)                            # page text is only ever set as text
 
     def test_viewer_files_never_write_through_a_symlink(self):
         victim = self.tmp / "users-own-script.js"
