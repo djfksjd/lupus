@@ -24,7 +24,7 @@ import shutil
 import stat
 from pathlib import Path
 
-from . import gitx, goals, protect, review, runners, runs, verify
+from . import contract, gitx, goals, protect, review, runners, runs, verify
 from .kernel import Kernel
 from .util import LupusError, atomic_write, find_secret, sha256_bytes
 
@@ -217,6 +217,7 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
     verifier = {"kind": "red_test", "argv": runners.one_file_argv(found, test_path), "path": test_path,
                 "paths": [test_path], "protect_except": [test_path], "timeout_s": 300, **common,
                 **({"proposal": True} if stage else {}),
+                "contract_for": request,      # the worker also says what its test asserts and what it chose (contract.py)
                 **({"baseline_pass": pinned} if pinned else {}),
                 **({"baseline_failing": already_failing} if already_failing else {})}
     with k.tx():
@@ -247,10 +248,15 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
 
 
 def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, test_sha256: str, actor: str,
-                  caps: dict | None = None, keep_base: bool = False) -> dict:
+                  caps: dict | None = None, keep_base: bool = False, contract_sha256: str | None = None) -> dict:
     """Step 2: the user has read the drafted test and approves THIS exact version. Creates the
     implementation goal: the approved test and every existing test are frozen, and the goal is
-    done only when the supervisor sees the approved test and the existing tests pass."""
+    done only when the supervisor sees the approved test and the existing tests pass.
+
+    `contract_sha256`: the hash of the worker's description of the test as it was shown to the
+    user ("" when none was shown). Given, it must be the description that belongs to this test
+    now: what was read and what is approved are one thing. A caller that shows no description
+    (the API, the pilot) leaves it out."""
     if actor != "user":
         raise LupusError("USER_AUTHORITY_REQUIRED", "only the user approves a check")
     draft = goals.get(k, draft_goal_id)
@@ -261,6 +267,9 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
         raise LupusError("CHECK_NOT_READY", "not a drafted check")
     if _approved(k, draft_goal_id):
         raise LupusError("CHECK_ALREADY_APPROVED", draft_goal_id)       # one approval, one implementation goal
+    described = contract.digest(contract.latest(k, draft_goal_id, test_sha256))
+    if contract_sha256 is not None and contract_sha256 != described:
+        raise LupusError("CHECK_CHANGED", "the description of the test that was shown is not the current one")
     root = Path(project["canonical_root"])
     test_path = red["path"]
     target = root / test_path
@@ -322,7 +331,7 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
         if frozen is None or frozen["sha256"] != test_sha256:
             raise LupusError("CHECK_CHANGED", test_path)
         k.emit("user", "check.approved", "goal", goal["goal_id"], draft_goal=draft_goal_id, test=test_path,
-               sha256=test_sha256)
+               sha256=test_sha256, described=described, description_shown=contract_sha256 is not None)
     # The test is approved and frozen. Only now does the implementation proposed alongside it enter
     # the project; whether it is any good is decided by the frozen tests, before any further call.
     # …and only if THIS draft was asked for one.
@@ -340,9 +349,25 @@ def proposal(k: Kernel, draft_goal_id: str) -> tuple[Path, list[str]] | None:
     """Where the implementation written alongside a drafted check is kept, and which files it has:
     the versions the supervisor displaced when it put the project back after the draft's LAST
     successful call. An earlier, rejected call's edits are not part of it."""
-    last = k.one("SELECT run_id FROM attempt WHERE goal_id = ? AND outcome = 'PROGRESS' ORDER BY rowid DESC LIMIT 1",
-                 draft_goal_id)
+    last = k.one("SELECT run_id, outcome FROM attempt WHERE goal_id = ? ORDER BY rowid DESC LIMIT 1", draft_goal_id)
     if last is None:
+        return None
+    if last["outcome"] == "ABANDONED":
+        # The supervisor died after the worker had finished and before anything was checked. The next
+        # start put the project back (keeping the worker's versions under …/interrupted) and found
+        # the test already valid, without another call. Those kept versions are the proposal: found
+        # live (evaluations/ops.py), where without this the implementation was written a second time.
+        # Only the restore made by the very run that then found the test valid: an earlier interrupted
+        # worker's edits (whose test was rejected) are not this draft's proposal, and a restore that
+        # had nothing to put back leaves no record at all.
+        finisher = k.one("SELECT run_id FROM run WHERE goal_id = ? ORDER BY fencing_token DESC LIMIT 1", draft_goal_id)
+        kept_in = k.runtime / "displaced" / finisher["run_id"] / "interrupted"
+        row = k.one("SELECT payload FROM event WHERE type = 'protect.restored' AND aggregate_id = ? "
+                    "AND json_extract(payload, '$.displaced_kept_in') = ? ORDER BY seq DESC LIMIT 1", draft_goal_id, str(kept_in))
+        if row is None:
+            return None
+        return kept_in, sorted(json.loads(row["payload"]).get("kept", []))
+    if last["outcome"] != "PROGRESS":
         return None
     kept_in = k.runtime / "displaced" / last["run_id"]
     row = k.one("SELECT payload FROM event WHERE type = 'protect.restored' AND aggregate_id = ? "

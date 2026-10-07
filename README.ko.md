@@ -37,6 +37,8 @@ Lupus는 이미 설치해 쓰고 있는 `claude`·`codex` CLI를(기존 구독 �
 | **예산과 반복 통제** | 호출·시도·시간·토큰을 시작 전에 예약합니다. 같은 실패의 반복은 모델을 부르기 전에 거부합니다. |
 | **중단에 안전한 checkpoint** | 복구 자료를 DB commit보다 먼저 내구 저장합니다. 모든 경계에서 프로세스를 죽여 시험했습니다. |
 | **작업 폴더는 그대로** | `--isolated`는 커밋된 HEAD의 별도 체크아웃에서 작업합니다. `lupus diff`로 결과를 보고, `lupus accept`로 커밋 하나로 가져오고(빨리 감기만, 그 커밋 자체를 다시 검사. 그사이 브랜치가 움직였으면 합친 결과를 다시 검사한 뒤에만 반영), `lupus discard`로 버립니다. |
+| **테스트가 무엇을 가정했는지 보입니다** | 초안 테스트를 승인하기 전에, worker가 밝힌 "이 테스트가 단언하는 것"과 따로 모은 "요청에 없어서 worker가 정한 것"(한도, 문구, 경계)을 보여 줍니다. 요청의 인용은 요청문과 대조하고, 설명은 그 테스트의 정확한 판본에 묶입니다. |
+| **요청이 기존 테스트가 정해 둔 동작을 바꿀 때** | `lupus release <goal> <파일>`로 고정된 테스트·fixture 파일의 변경을 허용합니다. worker의 수정은 제안으로 보관되고, 정확한 diff를 승인해야만 새 기준이 됩니다. 전체 테스트는 여전히 통과해야 합니다. |
 | **OS 수준의 가두기** | Claude worker와 모든 검증기는 Lupus가 적용한 macOS 샌드박스 안에서 실행됩니다. 검증기는 Docker 컨테이너에서 돌릴 수도 있습니다. |
 | **자리를 증명해야 하는 기억** | 프로젝트 지식을 유형과 연결이 있는 노드로 둡니다. `lupus learn`은 기록된 실패에서 절차를 제안하고, 이후의 검증 결과가 승격하거나 은퇴시킬 때까지 후보로 남습니다. |
 
@@ -112,6 +114,7 @@ lupus do "export 명령에 --json 옵션 추가" --driver claude
 lupus do "…" --driver claude --review     # 검사 통과 뒤 다른 AI가 요청과 변경을 대조 (선택 사항. 위 파일럿 참고)
 lupus do "…" --driver claude --isolated   # 같은 일을 별도 체크아웃에서. 이후: lupus diff | accept | discard <goal>
 lupus do "…" --driver claude --lean       # worker에게 재사용 우선·최소 변경 지침 추가 (선택 사항. 측정된 이득 없음, 계약 문서 참고)
+lupus release <goal> tests/test_x.py        # 요청이 이 고정된 테스트가 정해 둔 동작을 바꿀 때: 변경을 허용하고, `lupus release-approve <goal>`로 정확한 diff를 승인
 lupus session --driver claude        # 평소의 대화형 Claude Code, 테스트 고정, 종료 시 검증
 lupus write "결제 테이블 이전 계획" --out docs/plan.md --driver claude
                                      # 기준 승인 -> 작성 -> 다른 AI가 평가 -> 최종 승인
@@ -161,8 +164,8 @@ lupus learn --undo                                             # 가장 최근 �
 - **프로젝트당 writer 하나.** `alpha-run --parallel`은 목표를 최대 4개까지 동시에 진행하지만, 같은 폴더에서 둘을 동시에 돌리지는 않습니다. 한 저장소의 목표들은 각각 격리된 체크아웃일 때만 함께 실행되고, 결과는 차례로 반영합니다. 요청을 여러 작업으로 자동 분해하지 않으며, 한 목표 안의 작업들은 여전히 차례로 실행됩니다.
 - 학습은 후보를 제안하고 이후의 검증 결과에 판단을 맡깁니다. 고정 평가셋은 없습니다.
 - jest와 vitest는 실제 설치본으로, Go와 Rust는 확인을 위해 임시로 설치한 도구로 검증했습니다. Linux와 Windows에서는 OS 샌드박스를 지원하지 않습니다.
-- 대기 상태에는 항상 빠져나올 명령이 있습니다. `lupus status <goal>`이 이유를 알려 주고 `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise`로 이어갑니다. `lupus prune`은 오래된 잔여 파일을 지웁니다.
-- 코드가 젊습니다. 외부 리뷰 23회에서 결함 130건을 찾아 모두, 사용성 점검에서 16건을 더 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
+- 대기 상태에는 항상 빠져나올 명령이 있습니다. `lupus status <goal>`이 이유를 알려 주고 `resolve`, `release`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise`로 이어갑니다. `lupus prune`은 오래된 잔여 파일을 지웁니다.
+- 코드가 젊습니다. 외부 리뷰 28회에서 결함 140건을 찾아 모두, 사용성 점검에서 16건을 더 찾아 고쳤고, 더 남아 있다고 보는 것이 맞습니다.
 
 ## 다른 프로젝트에서 가져와 바꾼 것
 

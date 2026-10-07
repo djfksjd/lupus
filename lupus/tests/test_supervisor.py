@@ -184,6 +184,25 @@ class CrashAndHandoffTests(Env):
         drivers = [r[0] for r in self.k.q("SELECT execution_driver FROM run ORDER BY fencing_token")]
         self.assertEqual(drivers, ["fake", "fake", "fake_alt", "fake_alt"])
 
+    def test_a_verifier_left_alive_by_a_dead_supervisor_is_reported_by_recover_not_raised(self):
+        # Found live (evaluations/ops.py): the supervisor was killed while the checks ran; the run had no
+        # worker of its own, and `lupus recover` ended in an error while the verifier's group was still there.
+        import subprocess, sys
+        g = self.goal()
+        run = runs.claim(self.k, self.task_ids(g["goal_id"])[0], "fake", "none")
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+        self.addCleanup(lambda: (sleeper.kill(), sleeper.wait()))
+        # recorded with another start time: recover cannot prove it is ours, so it does not signal it
+        self.k.run("INSERT INTO aux_process(pid, proc_start, project_id, purpose, created_at) VALUES (?,?,?,?,?)",
+                   sleeper.pid, "not this process", self.project["project_id"], "verifier", self.k.now())
+        report = supervisor.recover(self.k, stop_stale_writer=True)
+        self.assertIn(run["run_id"], [w.get("run_id") for w in report["writers_alive"]])
+        self.assertEqual(runs.get(self.k, run["run_id"])["status"], "ACTIVE")
+        sleeper.kill()
+        sleeper.wait()
+        again = supervisor.recover(self.k, stop_stale_writer=True)
+        self.assertEqual((again["writers_alive"], runs.get(self.k, run["run_id"])["status"]), ([], "STOPPED"))
+
     def test_orphaned_live_worker_blocks_until_explicitly_stopped(self):
         g = self.goal()
         hang = ("import os, signal, time\nopen('worker.pid','w').write(str(os.getpid()))\n"

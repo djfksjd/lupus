@@ -37,6 +37,8 @@ Lupus runs the `claude` and `codex` CLIs you already have (with your existing su
 | **Budgets and loop control** | Calls, attempts, time and tokens are reserved before work starts. Repeating the same failed attempt is refused before any model is called. |
 | **Crash-safe checkpoints** | Recovery objects are written durably before the database commit; tested by killing the process at every boundary. |
 | **Your working tree stays yours** | `--isolated` does the work in a separate checkout of your committed HEAD. `lupus diff` shows the result, `lupus accept` brings it over as one commit (fast-forward only, re-checked as that exact commit; if your branch has moved, the result is combined with it and the combination is checked before anything is accepted), `lupus discard` drops it. |
+| **You see what the test assumes** | Before you approve a drafted test, Lupus shows what the worker says it asserts and, set apart, what the worker decided on its own because the request did not say (a limit, a wording, a boundary). Quotes from the request are checked against it; the description is bound to that exact test. |
+| **When a request changes what old tests pin** | `lupus release <goal> <files>` lets named frozen test or fixture files change. The worker's edits to them are held as a proposal; you approve the exact diff, and only then do they become the new frozen state. The whole suite still has to pass. |
 | **OS-level confinement** | The Claude worker and every verifier run inside a macOS sandbox applied by Lupus; verifiers can run in a Docker container instead. |
 | **Memory that has to earn its place** | Project knowledge as typed, linked nodes. `lupus learn` proposes procedures from recorded failures; they stay candidates until later verified outcomes promote or retire them. |
 
@@ -112,6 +114,7 @@ lupus do "add a --json flag to the export command" --driver claude
 lupus do "…" --driver claude --review     # after the checks pass, the other AI compares the change with the request (opt-in; see the pilot)
 lupus do "…" --driver claude --isolated   # same, in a separate checkout; then: lupus diff | accept | discard <goal>
 lupus do "…" --driver claude --lean       # add reuse-first, smallest-change guidance for the worker (opt-in; no gain measured, see the contract)
+lupus release <goal> tests/test_x.py        # the request changes what this frozen test pins: let it change, then `lupus release-approve <goal>` to approve the exact diff
 lupus session --driver claude        # your usual interactive Claude Code, tests frozen, verified on exit
 lupus write "migration plan for the billing tables" --out docs/plan.md --driver claude
                                      # rubric you approve -> written -> judged by the other AI -> your sign-off
@@ -161,8 +164,8 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 - **One writer per project.** `alpha-run --parallel` runs up to 4 goals at once, but never two in the same folder: goals of one repository run together only as isolated checkouts, and their results are accepted one after the other. A request is not split into parallel subtasks, and the tasks of one goal still run in turn.
 - Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set.
 - jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
-- A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
-- Young code. Twenty-three external review rounds found 130 defects, all of them fixed, and a usability audit another 16; assume more remain.
+- A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `release`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
+- Young code. Twenty-eight external review rounds found 140 defects, all of them fixed, and a usability audit another 16; assume more remain.
 
 ## Adapted from other projects
 

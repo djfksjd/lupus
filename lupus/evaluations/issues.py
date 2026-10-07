@@ -12,7 +12,11 @@
 Usage:
   PYTHONPATH=src python3 evaluations/issues.py mine <workdir> instances.json [per_repo]
   PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit] [reviewer] [arms]
-  (arms: "plain,do" by default; "do" alone repeats only the Lupus arm; "lean" is `lupus do --lean`)
+  PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit] [reviewer] [arms] [commits]
+  PYTHONPATH=src python3 evaluations/issues.py validate <workdir> instances.json     (the scorer on known answers)
+  (arms: "plain,do" by default; "do" alone repeats only the Lupus arm; "lean" is `lupus do --lean`; "release" is
+   `lupus do` followed, when it stops on existing tests, by a scripted user who releases the test assets the
+   upstream commit changed and approves the worker's diff. commits: comma list of commit prefixes to run)
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from lupus import adapters, probe, projects, quick, review, supervisor, verify
+from lupus import adapters, contract, goals, probe, projects, quick, release, review, supervisor, verify
 from lupus.kernel import Kernel
 from lupus.util import LupusError, sha256_bytes
 
@@ -122,10 +126,38 @@ def score(clone: Path, inst: dict, root: Path) -> tuple[bool, str]:
         shutil.copytree(root, copy, ignore=shutil.ignore_patterns("__pycache__", ".lupus-staged"))
         for path in copy.rglob("test_lupus_*.py"):      # the check Lupus drafted is not part of the score
             path.unlink()
-        for f in inst["tests"]:
-            (copy / f).parent.mkdir(parents=True, exist_ok=True)
-            (copy / f).write_text(git(clone, "show", f"{inst['commit']}:{f}"))
+        install_tests(clone, inst, copy)
         return run_tests(copy, inst["tests"])
+
+
+def install_tests(clone: Path, inst: dict, copy: Path) -> None:
+    """The upstream commit's WHOLE test directory in place of whatever is there: test files,
+    fixtures and data, additions and deletions alike. (Until 2026-10-07 only the changed test
+    *.py files were copied, so an instance whose upstream change also touched fixtures was scored
+    against a mixture of the worker's fixtures and upstream's tests.) Product code is not touched."""
+    tests_dir = REPOS[inst["repo"]][2]
+    shutil.rmtree(copy / tests_dir, ignore_errors=True)
+    archive = subprocess.run(["git", "-C", str(clone), "archive", "--format=tar", inst["commit"], tests_dir], capture_output=True, check=True)
+    subprocess.run(["tar", "-x", "-C", str(copy)], input=archive.stdout, check=True)
+
+
+def validate(work: Path, instances_path: str) -> None:
+    """The scorer itself, checked on known answers: the parent commit must fail, the upstream
+    commit must pass. An instance where that does not hold cannot be scored and is reported."""
+    bad = []
+    for inst in json.loads(Path(instances_path).read_text()):
+        clone = work / "clones" / inst["repo"]
+        seen = {}
+        for label, rev in (("parent", inst["commit"] + "~1"), ("upstream", inst["commit"])):
+            with tempfile.TemporaryDirectory(prefix="lupus-validate-") as tmp:
+                root = Path(tmp).resolve() / "r"
+                checkout(clone, rev, root)
+                seen[label] = score(clone, inst, root)[0]
+        ok = seen == {"parent": False, "upstream": True}
+        print(inst["repo"], inst["commit"][:8], seen, "" if ok else "<-- scorer does not separate them", flush=True)
+        if not ok:
+            bad.append(inst["commit"][:8])
+    print("unscorable:", bad or "none")
 
 
 def usage_of(log: list) -> dict:
@@ -146,9 +178,48 @@ def recording(adapter, log):
     return adapter
 
 
+def scripted_release(k: Kernel, clone: Path, inst: dict, goal_id: str, adapter) -> dict:
+    """A simulated user for a goal stuck on existing tests. It releases the test assets the UPSTREAM
+    commit changed (that is reference information about scope, and is reported as such) and approves
+    whatever diff the worker proposes inside them: an upstream-scoped, permissive-approval run. It
+    shows whether the flow can recover such a goal, not whether a person would have approved."""
+    tests_dir = REPOS[inst["repo"]][2]
+    changed = [line.split("\t")[-1] for line in git(clone, "show", "--name-status", "--format=", inst["commit"], "--", tests_dir).splitlines() if line.strip()]
+    out = {"asked": changed, "released": [], "refused": [], "rounds": []}
+    wanted: list[str] = []
+    for path in changed:
+        candidate = path
+        while candidate and candidate != ".":
+            try:
+                release.grant(k, goal_id, [candidate], "user")      # (asked one by one only to find what is releasable)
+                wanted.append(candidate)
+                break
+            except LupusError as exc:
+                if exc.code != "RELEASE_REFUSED":
+                    out["refused"].append(f"{path}: {exc.code}")
+                    break
+                candidate = str(Path(candidate).parent)      # a file upstream added: the frozen folder it goes into
+        else:
+            out["refused"].append(path)
+    out["released"] = release.granted(k, goal_id)
+    report = None
+    for _ in range(3):
+        report = supervisor.run_goal(k, goal_id, adapter, timeout_s=420, max_steps=2)
+        found = release.proposal(k, goal_id)
+        seen = k.one("SELECT payload FROM event WHERE type = 'release.provisional' AND aggregate_id = ? ORDER BY seq DESC LIMIT 1", goal_id)
+        out["rounds"].append({"steps": [s.get("outcome") or s.get("status") for s in report["steps"]], "done": report["done"],
+                              "proposed": [[e["path"], e["change"]] for e in found["entries"]] if found else [],
+                              "trial": json.loads(seen["payload"])["verdicts"] if seen and found else None})
+        if report["done"] or found is None:
+            break
+        release.approve(k, goal_id, found["digest"], "user")
+    out["done"] = bool(report and report["done"])
+    return out
+
+
 def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int, reviewer: str | None = None,
-        arms: tuple[str, ...] = ("plain", "do")) -> None:
-    instances = json.loads(Path(instances_path).read_text())[:limit]
+        arms: tuple[str, ...] = ("plain", "do"), only: tuple[str, ...] = ()) -> None:
+    instances = [i for i in json.loads(Path(instances_path).read_text()) if not only or i["commit"].startswith(only)][:limit]
     base = Path(tempfile.mkdtemp(prefix="lupus-issues-")).resolve()
     k = Kernel.init(base / "home")
     probe.run(k, live=True)
@@ -176,11 +247,19 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
                     row["check_drafted"] = first["done"]
                     if first["done"]:
                         test = root / draft["test_path"]
+                        # what a user would have been shown at approval, kept for later reading
+                        row["approval"] = {"test": test.read_text(errors="replace")[:6000],
+                                           "described": contract.latest(k, draft["goal_id"], sha256_bytes(test.read_bytes())),
+                                           "red": ((goals.latest_evidence(k, draft["goal_id"]).get("c0") or {}).get("detail") or "")[-400:]}
                         build = quick.approve_check(k, project, draft["goal_id"], draft["request"],
                                                     sha256_bytes(test.read_bytes()), "user", keep_base=bool(reviewer))
                         second = supervisor.run_goal(k, build["goal_id"], adapter, timeout_s=420, max_steps=3)
                         row.update(lupus_done=second["done"], staged=bool(build["staged_applied"]),
                                    build_steps=[s.get("outcome") or s.get("status") for s in second["steps"]])
+                        if arm == "release" and not second["done"]:
+                            row["stuck_on_existing_tests"] = bool(release.hint(k, build["goal_id"]))
+                            row["release"] = scripted_release(k, clone, inst, build["goal_id"], adapter)
+                            row["lupus_done"] = row["release"]["done"]
                         if reviewer and second["done"] and "review_base" in build:
                             row["hidden_before_review"] = score(clone, inst, root)[0]
                             row["seconds_before_review"] = round(time.monotonic() - started, 1)
@@ -244,7 +323,10 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
 if __name__ == "__main__":
     if sys.argv[1] == "mine":
         mine(Path(sys.argv[2]).resolve(), sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 3)
+    elif sys.argv[1] == "validate":
+        validate(Path(sys.argv[2]).resolve(), sys.argv[3])
     else:
         run(Path(sys.argv[2]).resolve(), sys.argv[3], sys.argv[4], sys.argv[5], int(sys.argv[6]) if len(sys.argv) > 6 else 99,
             (sys.argv[7] if len(sys.argv) > 7 else None) or None,
-            tuple(sys.argv[8].split(",")) if len(sys.argv) > 8 else ("plain", "do"))
+            tuple(sys.argv[8].split(",")) if len(sys.argv) > 8 else ("plain", "do"),
+            tuple(sys.argv[9].split(",")) if len(sys.argv) > 9 else ())

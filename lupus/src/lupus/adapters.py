@@ -32,6 +32,7 @@ from .util import (
 )
 
 MAX_OUTPUT_BYTES = 20 * 1024 * 1024    # a runaway worker must not exhaust the supervisor's memory
+MAX_REPLY = 32_000      # characters of a worker's final message that are kept (lessons, the description of a drafted test)
 
 
 def worker_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -320,7 +321,7 @@ class ClaudeAdapter(Adapter):
         failed = exit_code != 0 or bool(data.get("is_error"))
         text = str(data.get("result", ""))
         return AdapterResult(
-            exit_code=exit_code, text=text[-8000:], usage=usage, session_id=str(data.get("session_id", "")),
+            exit_code=exit_code, text=text[-MAX_REPLY:], usage=usage, session_id=str(data.get("session_id", "")),
             error_class=(classify_error(text + stderr) or "crash") if failed else None,
             # total_cost_usd is the host's list-price estimate, not a charge on a subscription.
             raw={"estimated_list_cost_usd": data.get("total_cost_usd"),
@@ -416,7 +417,7 @@ class CodexAdapter(Adapter):
                 errors.append(json.dumps(event, ensure_ascii=False)[:500])
         failed = exit_code != 0 or bool(errors)
         return AdapterResult(
-            exit_code=exit_code, text=text[-8000:], usage=usage, session_id=session_id,
+            exit_code=exit_code, text=text[-MAX_REPLY:], usage=usage, session_id=session_id,
             error_class=(classify_error(" ".join(errors) + stderr) or "crash") if failed else None,
             raw={"errors": len(errors)},
         )
@@ -440,7 +441,7 @@ class FakeAdapter(Adapter):
     def parse(self, exit_code: int | None, stdout: str, stderr: str) -> AdapterResult:
         failed = exit_code != 0
         return AdapterResult(
-            exit_code=exit_code, text=stdout[-8000:], usage=self.usage, session_id="fake-session",
+            exit_code=exit_code, text=stdout[-MAX_REPLY:], usage=self.usage, session_id="fake-session",
             error_class=(self.error_class or classify_error(stdout + stderr) or "crash") if failed else None,
         )
 

@@ -21,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import adapters, alpha, author, budget, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, review, session, supervisor, vault
+from . import adapters, alpha, author, budget, contract, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, release, review, session, supervisor, vault
 from .kernel import Kernel
 from .util import LupusError
 
@@ -48,6 +48,8 @@ def _summary(report: dict) -> str:
     for key, label in (("result", ""), ("check", "승인한 검사"), ("implementation", "구현"), ("review", "리뷰"), ("out", "결과물"), ("tests", "테스트")):
         if report.get(key):
             lines.append(f"  {label + ': ' if label else ''}{report[key]}")
+    if report.get("next") and not done:
+        lines.append("  다음: " + report["next"].replace("\n", "\n        "))
     for check in report.get("checks") or []:
         mark = {"PASS": "✔", "FAIL": "✘"}.get(check["result"], "·")
         lines.append(f"  {mark} {check['text'][:110]}")
@@ -336,6 +338,15 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("recover", help="close runs left by a crash and reconcile recovery objects")
     p.add_argument("--stop-stale-writer", action="store_true")
 
+    p = sub.add_parser("release", help="let named frozen test or fixture files change for a goal whose request changes what they pin; "
+                                       "the worker's edits to them need your approval of the exact diff")
+    p.add_argument("goal_id")
+    p.add_argument("paths", nargs="+", help="frozen files or folders, relative to the project")
+    p = sub.add_parser("release-approve", help="look at the proposed change to released files and approve exactly that diff")
+    p.add_argument("goal_id")
+    p = sub.add_parser("release-reject", help="refuse the proposed change to released files; the frozen versions stand")
+    p.add_argument("goal_id")
+    p.add_argument("--note", default="")
     p = sub.add_parser("resolve", help="return a waiting task to PENDING with new input")
     p.add_argument("task_id")
     p.add_argument("--note", required=True)
@@ -727,6 +738,21 @@ def _dispatch(args: argparse.Namespace) -> int:
         elif args.cmd == "goal-resume":
             _confirm_user(f"목표 재개 허용: {args.goal_id}")
             _out({"status": goals.resume_paused(k, args.goal_id, "user")})
+        elif args.cmd == "release":
+            _confirm_user(f"목표 {args.goal_id}에서 다음 보호 파일의 변경을 허용합니다(변경 내용은 diff를 따로 승인해야 반영됩니다): "
+                          + ", ".join(args.paths))
+            _out(release.grant(k, args.goal_id, args.paths, "user"))
+        elif args.cmd == "release-approve":
+            shown = release.proposal(k, args.goal_id)
+            print(release.show(k, args.goal_id))
+            _confirm_user("위 변경이 이 목표의 새 기준이 됩니다. 이후 모든 검사는 이 판본으로 다시 실행됩니다")
+            if _ask("이 diff 그대로 승인하겠습니까?", ("yes", "no")) != "yes":
+                _out({"approved": [], "note": f"승인하지 않았습니다. 거절하려면 lupus release-reject {args.goal_id} --note \"…\""})
+                return 1
+            _out(release.approve(k, args.goal_id, shown["digest"], "user"))
+        elif args.cmd == "release-reject":
+            _confirm_user(f"목표 {args.goal_id}의 보호 파일 변경 제안을 거절합니다(고정된 판본이 유지됩니다)")
+            _out(release.reject(k, args.goal_id, "user", args.note))
         elif args.cmd == "refreeze":
             _confirm_user(f"보호된 검증 파일의 현재 상태를 기준으로 확정: {args.goal_id}")
             files = protect.refreeze(k, args.goal_id, goals.project_root(k, args.goal_id), "user")
@@ -807,6 +833,12 @@ def _dispatch(args: argparse.Namespace) -> int:
             test_file = Path(project["canonical_root"]) / draft["test_path"]
             while True:
                 content = test_file.read_bytes()
+                # First what the worker says the test asserts and what it decided on its own (bound to
+                # this exact version of the test), then how it failed on the code as it is, then the test.
+                described = contract.latest(k, draft["goal_id"], hashlib.sha256(content).hexdigest())
+                red = goals.latest_evidence(k, draft["goal_id"]).get("c0") or {}
+                print(f"\n요청: {draft['request']}\n\n{contract.render(described)}\n\n"
+                      f"원래 코드에서 실패한 모습: {' '.join((red.get('detail') or '').split())[-400:] or '(기록 없음)'}")
                 print(f"\n----- {draft['test_path']} (현재 코드에서 실패함을 확인했습니다) -----\n"
                       f"{content.decode('utf-8', errors='replace')}\n-----")
                 answer = _ask("이 테스트가 통과하면 요청이 완료된 것으로 보겠습니까?", ("yes", "edit", "no"))
@@ -823,7 +855,8 @@ def _dispatch(args: argparse.Namespace) -> int:
                 return 1
             try:
                 build = quick.approve_check(k, project, draft["goal_id"], draft["request"],
-                                            hashlib.sha256(content).hexdigest(), "user", keep_base=bool(args.review))
+                                            hashlib.sha256(content).hexdigest(), "user", keep_base=bool(args.review),
+                                            contract_sha256=contract.digest(described))
             except LupusError:
                 quick.discard_draft(k, project, draft["goal_id"], "user")      # nothing half-approved stays behind
                 raise
@@ -842,6 +875,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             if build.get("review_base"):      # the copy of the project kept for the reviewer
                 shutil.rmtree(build["review_base"], ignore_errors=True)
             _after_isolated(k, report)
+            report["next"] = release.hint(k, build["goal_id"])
             report["vault"] = vault.sync(k)
             _out(report)
         elif args.cmd == "run" and args.background:
@@ -886,6 +920,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             return _learn(k, args)
         elif args.cmd == "run":
             report = _run(k, args)
+            report["next"] = release.hint(k, args.goal_id)
             try:
                 report["vault"] = vault.sync(k)
             except LupusError as exc:        # a projection problem never fails the work itself

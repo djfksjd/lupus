@@ -266,6 +266,47 @@ class OneCallTests(Env):
         build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
         self.assertIs(goals.tasks(self.k, build["goal_id"])[0]["spec"]["lean"], True)      # the implementation step inherits it
 
+    def test_a_crash_after_the_worker_finished_does_not_cost_the_implementation_a_second_call(self):
+        from .helpers import run_script
+        from .test_supervisor import FAKE, USAGE
+        d = quick.draft_check(self.k, self.project, "calc 에 sub(a, b) 빼기 함수 추가", "user")
+        script = WRITE + (STAGED % (GOOD_TEST, IMPL)).replace("{T}", d["test_path"])
+        body = (f"a = {FAKE.format(script=script, usage=USAGE)}\n"
+                f"print(json.dumps(supervisor.run_goal(k, {d['goal_id']!r}, a), default=str))\n")
+        proc = run_script(self.home, body, crash_at="supervisor.after_worker")      # died before anything was checked
+        self.assertEqual(proc.returncode, -9, proc.stderr)
+        self.reopen()
+        supervisor.recover(self.k)
+        never = fake("raise SystemExit('the work is on disk: no second call')")
+        self.assertTrue(supervisor.run_goal(self.k, d["goal_id"], never)["done"])
+        self.assertEqual((self.root / "calc.py").read_text(), CALC)        # judged on the code as it was
+        sha = __import__("hashlib").sha256((self.root / d["test_path"]).read_bytes()).hexdigest()
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
+        self.assertIn("calc.py", build["staged_applied"])                  # the implementation survived the crash too
+        self.assertTrue(supervisor.run_goal(self.k, build["goal_id"], never)["done"])
+        self.assertEqual(self.attempts(), 1)                               # one model call in all
+
+    def test_an_earlier_interrupted_workers_rejected_edits_are_not_taken_for_the_proposal(self):
+        from .helpers import run_script
+        from .test_supervisor import FAKE, USAGE
+        d = quick.draft_check(self.k, self.project, "calc 에 sub(a, b) 빼기 함수 추가", "user")
+        body = lambda script: (f"a = {FAKE.format(script=script, usage=USAGE)}\n"      # noqa: E731
+                               f"print(json.dumps(supervisor.run_goal(k, {d['goal_id']!r}, a), default=str))\n")
+        # first worker: edits the source, leaves a test that is not red (rejected); killed after it finished
+        bad = WRITE + f"pathlib.Path({d['test_path']!r}).write_text('import unittest\\nclass T(unittest.TestCase):\\n    def test_ok(self): pass\\n')\n" \
+            + "pathlib.Path('calc.py').write_text('def add(a, b):\\n    return 0  # the rejected attempt\\n')\n"
+        self.assertEqual(run_script(self.home, body(bad), crash_at="supervisor.after_worker").returncode, -9)
+        # second worker: writes only a valid test; killed after it finished
+        good = WRITE + f"pathlib.Path({d['test_path']!r}).write_text({GOOD_TEST!r})\n"
+        self.assertEqual(run_script(self.home, "supervisor.recover(k)\n" + body(good), crash_at="supervisor.after_worker").returncode, -9)
+        self.reopen()
+        supervisor.recover(self.k)
+        self.assertTrue(supervisor.run_goal(self.k, d["goal_id"], fake("raise SystemExit('no call')"))["done"])
+        sha = __import__("hashlib").sha256((self.root / d["test_path"]).read_bytes()).hexdigest()
+        build = quick.approve_check(self.k, self.project, d["goal_id"], d["request"], sha, "user")
+        self.assertNotIn("calc.py", build["staged_applied"])               # nothing of the first worker comes back
+        self.assertEqual((self.root / "calc.py").read_text(), CALC)
+
     def test_a_file_the_user_edited_while_reading_the_test_is_not_overwritten(self):
         d, _, sha = self.draft(STAGED % (GOOD_TEST, IMPL))
         mine = CALC + "# my own note\n"
