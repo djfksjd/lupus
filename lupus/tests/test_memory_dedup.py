@@ -80,7 +80,10 @@ class Dedup(MemoryBase):
         self.assertEqual(learn.parse(hidden, case), ([], 1))
 
     def test_in_a_small_store_where_every_note_shares_the_words_the_order_is_still_by_how_much_matches(self):
-        # BM25 alone gives near-zero weights here (each term is in most of the notes).
+        # BM25 alone gives near-zero weights here (each term is in most of the notes). The floor is off by
+        # default (it was measured to hurt elsewhere); this pins what it does when switched on.
+        memory.COVERAGE_FLOOR = True
+        self.addCleanup(setattr, memory, "COVERAGE_FLOOR", False)
         self.add("합계 계산은 빈 입력의 경계 사례를 확인한다", origin="user", title="전부")
         self.add("합계 계산 결과를 빈 줄 없이 출력한다", origin="user", title="일부")
         self.add("합계 계산 입력은 파일에서 읽는다", origin="user", title="조금")

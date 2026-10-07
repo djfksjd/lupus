@@ -28,6 +28,23 @@ class SupervisorStopping(BaseException):
     """Raised in a worker thread whose supervisor is shutting down. Deliberately not a LupusError:
     no handler may turn it into a recorded outcome."""
 
+
+class Stop:
+    """The scheduler's "stop" for its worker threads. A thread commits only while holding `gate`
+    and only if the stop has not been set; the scheduler sets it while holding `gate`. So when
+    `set()` returns, every commit that was under way has finished and no other can begin."""
+
+    def __init__(self) -> None:
+        self.gate = threading.Lock()
+        self._event = threading.Event()
+
+    def set(self) -> None:
+        with self.gate:
+            self._event.set()
+
+    def is_set(self) -> bool:
+        return self._event.is_set()
+
 DEFAULT_POLICY = {
     "max_attempts_per_hypothesis": 2,   # §6.3 initial policy draft
     "no_progress_limit": 2,
@@ -71,7 +88,7 @@ class Kernel:
         self._now: int | None = None
         self._lock_fd: int | None = None
         self._owner: Kernel | None = None       # set on a fork: the kernel whose supervisor lock this one works under
-        self._stop: threading.Event | None = None
+        self._stop: Stop | None = None
         PROTECTED_STATE.add(os.path.realpath(self.home))    # no verifier may touch this, see util.sandbox_profile
         if sqlite3.sqlite_version_info < MIN_SQLITE:
             raise LupusError(
@@ -166,7 +183,7 @@ class Kernel:
     def close(self) -> None:
         self.conn.close()
 
-    def fork(self, stop: threading.Event) -> "Kernel":
+    def fork(self, stop: Stop) -> "Kernel":
         """A second connection for one worker thread of THIS supervisor (parallel goals). It is
         not a second supervisor: it exists only while this kernel holds the supervisor lock, and
         works under that lock. Once `stop` is set it refuses to begin any transaction, so a
@@ -203,8 +220,12 @@ class Kernel:
             self._now = self._advance_clock()
             yield
             crash_point("db.before_commit")
-            self._refuse_if_stopping()      # nor is anything committed that was still being written when it began
-            self.conn.execute("COMMIT")
+            if self._stop is None:
+                self.conn.execute("COMMIT")
+            else:
+                with self._stop.gate:      # nothing is committed that was still being written when the stop began
+                    self._refuse_if_stopping()
+                    self.conn.execute("COMMIT")
         except BaseException:
             self.conn.execute("ROLLBACK")
             raise

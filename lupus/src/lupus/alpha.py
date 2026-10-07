@@ -25,7 +25,7 @@ from typing import Any, Callable
 
 from . import budget, goals, projects, runs, supervisor
 from .adapters import Adapter
-from .kernel import Kernel
+from .kernel import Kernel, Stop
 from .util import LupusError, container_stop, new_id, proc_start, stop_group
 
 DRIVERS = ("native_claude", "native_codex")
@@ -239,7 +239,7 @@ def _run_parallel(k: Kernel, drivers: list[str], make_adapter: Callable[[str], A
     If this function is left by an exception (Ctrl-C, `lupus stop`, a failure in one thread),
     the threads are stopped the way a crash would stop them: their process groups are ended and
     they can record nothing further, so the next start's recovery closes what they left."""
-    stop = threading.Event()
+    stop = Stop()
     results: queue.Queue = queue.Queue()
     flying: dict[str, tuple[str, threading.Thread]] = {}      # goal -> (project, thread)
     turns: dict[str, int] = {}                                # turns given in this run: the fewest goes first

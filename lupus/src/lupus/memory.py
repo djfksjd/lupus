@@ -60,7 +60,11 @@ _ACTIONABLE = re.compile(
 _HIDDEN = re.compile("[\u202a-\u202e\u2066-\u2069\u200b-\u200d\ufeff]")
 MAX_WORKER_LESSONS = 2
 NEAR_DUPLICATE = 0.8      # token overlap (Jaccard) at which a program-written note repeats one already stored
-MMR_RELEVANCE = 0.7       # recall: weight of relevance against likeness to notes already picked
+MMR_RELEVANCE = 0.7       # recall: weight of relevance against likeness to notes already picked (1.0 = relevance only)
+# search: a note's share of the query as the least its relevance can be. OFF: measured 2026-10-07
+# (evaluations/recall.py), it lifted notes that merely repeat the task's words above a tersely
+# written note that held the needed rule (rank 1 -> 3 and 5). Kept only to reproduce that.
+COVERAGE_FLOOR = False
 
 _WORD = re.compile("[a-z0-9_]{2,}|[\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff]+")
 # Bigrams that are almost always particles/endings. They carry no topic, and counting them
@@ -341,7 +345,7 @@ def search(k: Kernel, project_id: str | None, query: str, limit: int = 30) -> li
         # order becomes noise. The share of the query a note covers is used as a floor. (The same
         # floor, for the same reason, as `bridgeSearchEntries` in Ruflo's memory bridge, MIT,
         # (c) 2024-2026 ruvnet: `lexicalScore = max(bm25, coverage)`.)
-        relevance = max(-node.pop("rank"), overlap / len(wanted))
+        relevance = max(-node.pop("rank"), overlap / len(wanted) if COVERAGE_FLOOR else 0.0)
         node["score"] = relevance * STATUS_WEIGHT[node["status"]] * utility * overlap
         out.append(node)
     return sorted(out, key=lambda n: -n["score"])
