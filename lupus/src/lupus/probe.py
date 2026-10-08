@@ -51,7 +51,8 @@ def _version(binary: str, env: dict[str, str]) -> str:
     return out.strip().splitlines()[0] if code == 0 and out.strip() else "not found"
 
 
-def run(k: Kernel | None = None, live: bool = False) -> dict[str, Any]:
+def run(k: Kernel | None = None, live: bool = False,
+        drivers: tuple[str, ...] = ("native_claude", "native_codex")) -> dict[str, Any]:
     env = adapters.worker_env()
     inherited = sorted(name for name in os.environ if name.startswith(PROVIDER_ENV_PREFIXES))
     report: dict[str, Any] = {
@@ -72,7 +73,7 @@ def run(k: Kernel | None = None, live: bool = False) -> dict[str, Any]:
         tmp_path = Path(tmp)
 
         # ---------------------------------------------------------------- Claude
-        if shutil.which("claude"):
+        if "native_claude" in drivers and shutil.which("claude"):
             v = _version("claude", env)
             code, out, _ = _run(["claude", "auth", "status"], env)
             try:
@@ -96,11 +97,11 @@ def run(k: Kernel | None = None, live: bool = False) -> dict[str, Any]:
                 _live(cap, adapters.ClaudeAdapter(), "native_claude", v, tmp_path / "claude-work")
             else:
                 cap("native_claude", "headless_exec", "default_auth_stripped", None, v, "not measured (run with --live)")
-        else:
+        elif "native_claude" in drivers:
             report["adapters"]["native_claude"] = {"version": "not found", "capabilities": []}
 
         # ---------------------------------------------------------------- Codex
-        if shutil.which("codex"):
+        if "native_codex" in drivers and shutil.which("codex"):
             v = _version("codex", env)
             code, out, err = _run(["codex", "login", "status"], env)
             text = (out + err).strip()
@@ -116,7 +117,7 @@ def run(k: Kernel | None = None, live: bool = False) -> dict[str, Any]:
                 _live(cap, adapters.CodexAdapter(), "native_codex", v, tmp_path / "codex-work")
             else:
                 cap("native_codex", "headless_exec", "default_auth_stripped", None, v, "not measured (run with --live)")
-        else:
+        elif "native_codex" in drivers:
             report["adapters"]["native_codex"] = {"version": "not found", "capabilities": []}
 
     if k is not None:

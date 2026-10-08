@@ -153,7 +153,7 @@ def prune(k: Kernel, days: float, kept: bool = False) -> dict:
                           ("released", "snapshots")):      # (a proposal for released files of a goal that has since ended)
             base = k.runtime / name
             for entry in (sorted(base.iterdir()) if base.is_dir() and (idle or name == "sessions") else []):
-                owner = entry.name.removesuffix(".json").removesuffix("-verified")
+                owner = entry.name.removesuffix(".json").removesuffix("-verified").removesuffix("-crosscheck").removesuffix("-probe")
                 for_the_user = name == "base" and entry.name.endswith("-verified") and not entry.is_symlink()
                 if entry.is_symlink() or owner in live or any(owner == r["run_id"] for r in k.q(
                         "SELECT run_id FROM run WHERE status <> 'STOPPED'")) or (

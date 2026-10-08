@@ -29,7 +29,7 @@ from typing import Callable
 from . import timing
 from .util import (
     GATE, GATE_EXEC_FAILED, SANDBOX_EXEC, LupusError, crash_point, group_alive, safe_path, sandbox_available,
-    sandbox_profile_worker, scrubbed_env, stop_group,
+    sandbox_profile_worker, scrubbed_env, stop_group, diagnostic_tail,
 )
 
 MAX_OUTPUT_BYTES = 20 * 1024 * 1024    # a runaway worker must not exhaust the supervisor's memory
@@ -64,6 +64,7 @@ class AdapterResult:
     duration_ms: int = 0
     leftover_processes: bool = False        # children that outlived the worker and were killed
     raw: dict = field(default_factory=dict)
+    stderr_tail: str = ""                   # bounded, inert, credential-screened process diagnostic
 
 
 class Adapter:
@@ -72,6 +73,10 @@ class Adapter:
     variant = "default"     # model / effort tier; part of an attempt's identity
     batch = False           # True when one call has a large fixed input, so fewer calls is cheaper
     interactive = False     # True: the user works in the CLI's own screen (see execute_interactive)
+    shared_tmp = True
+    require_os_sandbox = False
+    private_tmp: Path | None = None
+    read_exclude: tuple[str, ...] = ()
     os_sandbox: str | None = None   # name of an OS sandbox profile to run the CLI under (util.sandbox_profile_worker)
 
     def argv(self, prompt: str, cwd: Path) -> list[str]:
@@ -103,14 +108,21 @@ def execute(
     started = time.monotonic()
     argv = adapter.argv(prompt, cwd)
     confined = bool(adapter.os_sandbox) and sandbox_available()
+    if adapter.require_os_sandbox and not confined:
+        raise LupusError("CROSSCHECK_SANDBOX_UNAVAILABLE", "author OS sandbox is unavailable")
     if confined:
         # Enforced by the OS, whatever the CLI's own permission system decides.
-        argv = [SANDBOX_EXEC, "-p", sandbox_profile_worker(cwd, adapter.os_sandbox), *argv]
+        argv = [SANDBOX_EXEC, "-p", sandbox_profile_worker(cwd, adapter.os_sandbox, adapter.read_exclude, adapter.shared_tmp), *argv]
+    env = adapter.env()
+    if adapter.private_tmp is not None:
+        env["TMPDIR"] = str(adapter.private_tmp)
+        env["TMP"] = str(adapter.private_tmp)
+        env["TEMP"] = str(adapter.private_tmp)
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         proc = subprocess.Popen(
             [sys.executable, GATE, *argv],
             cwd=cwd, stdin=subprocess.PIPE, stdout=out, stderr=err,
-            start_new_session=True, env=adapter.env(),
+            start_new_session=True, env=env,
         )
         timed_out = False
         try:
@@ -132,7 +144,8 @@ def execute(
         stop_group(proc.pid)
         proc.wait()
         out.seek(0)
-        err.seek(0)
+        err.seek(0, os.SEEK_END)
+        err.seek(max(0, err.tell() - MAX_OUTPUT_BYTES))
         stdout = out.read(MAX_OUTPUT_BYTES).decode("utf-8", errors="replace")
         stderr = err.read(MAX_OUTPUT_BYTES).decode("utf-8", errors="replace")
     result = adapter.parse(None if timed_out else proc.returncode, stdout, stderr)
@@ -140,6 +153,7 @@ def execute(
         result.error_class = "timeout"
     elif proc.returncode == GATE_EXEC_FAILED:
         result.error_class = "unavailable"   # the CLI binary is missing or not executable
+    result.stderr_tail = diagnostic_tail(stderr)
     result.duration_ms = int((time.monotonic() - started) * 1000)
     result.leftover_processes = leftover
     result.raw["os_sandbox"] = confined
@@ -338,26 +352,38 @@ def _toml(value) -> str:
     return json.dumps(value)
 
 
-def codex_filesystem_profile(readonly: bool = False) -> dict:
+def codex_filesystem_profile(readonly: bool = False, shared_tmp: bool = True,
+                             read_exclude: tuple[str, ...] = ()) -> dict:
     """What a Codex worker may touch: read the system minimum, the Codex program itself and the
     language toolchains; write only the project and the temp directory. The user's home is NOT
     readable, so keys, tokens and other projects stay out of reach. Measured with a canary by
     `lupus probe --live` (codex-cli 0.160.0: default sandbox read it, this profile did not)."""
-    # `readonly` is for calls that only think (a judge): no write access anywhere, and no access to the
-    # shared temp directory, where other projects may live.
+    # `readonly` is for calls that only think (a judge): no explicit writable roots.
+    # The CLI may add runtime temp reads; author exclusions need explicit denies.
     # `.git` stays read-only inside the writable project: a hook or config entry planted there would
     # run, unsandboxed, at the user's next git command (measured: without this entry it can be written).
     profile: dict = ({":minimal": "read", ":project_roots": {".": "read"}} if readonly
                      else {":minimal": "read", ":project_roots": {".": "write", ".git": "read"}, ":tmpdir": "write"})
+    if not shared_tmp:
+        profile.pop(":tmpdir", None)      # no explicit shared temp grant for authors
     cli = shutil.which("codex", path=safe_path())
     if cli:
         real = os.path.realpath(cli)
         packages = real.split("/packages/")[0] + "/packages" if "/packages/" in real else os.path.dirname(real)
+        # The sandbox helper re-execs the lexical CLI path; its symlink parent must
+        # be readable as well as the package collection used by the normal worker.
+        # Keep these grants for authors, but never restore the shared :tmpdir grant.
         for path in (os.path.dirname(cli), packages):
             profile[path] = "read"
     for toolchain in () if readonly else ("/opt/homebrew", "/usr/local"):     # interpreters a worker may run when self-checking
         if os.path.isdir(toolchain):
             profile[toolchain] = "read"
+    # Codex accepts explicit `deny` entries (FileSystemAccessMode). Omitting :tmpdir
+    # alone does not revoke the CLI-added /tmp, /private/tmp and /private/var/tmp
+    # readable roots (observed in the installed policy builder). Deny protected
+    # trees explicitly, including when nested inside an installation/runtime grant.
+    for path in read_exclude:
+        profile[os.path.realpath(path)] = "deny"
     return profile
 
 
@@ -371,10 +397,11 @@ class CodexAdapter(Adapter):
     batch = True            # measured: ~30k tokens of fixed input per call
     shell = True            # Codex always has its own sandboxed shell
 
-    def __init__(self, model: str | None = None, effort: str | None = None, readonly: bool = False):
+    def __init__(self, model: str | None = None, effort: str | None = None, readonly: bool = False, shared_tmp: bool = True):
         self.model = model
         self.effort = effort
         self.readonly = readonly
+        self.shared_tmp = shared_tmp
         self.variant = f"{model or 'default'}/{effort or 'default'}"
 
     def argv(self, prompt: str, cwd: Path) -> list[str]:
@@ -385,7 +412,7 @@ class CodexAdapter(Adapter):
             # A named permission profile instead of `--sandbox workspace-write`: that mode lets
             # commands read every file the user can.
             "-c", 'default_permissions="lupus"',
-            "-c", f"permissions.lupus.filesystem={_toml(codex_filesystem_profile(self.readonly))}",
+            "-c", f"permissions.lupus.filesystem={_toml(codex_filesystem_profile(self.readonly, self.shared_tmp, self.read_exclude))}",
             "-C", str(cwd),
         ]
         if self.model:
