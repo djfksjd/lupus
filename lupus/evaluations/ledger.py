@@ -5,11 +5,36 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import re
 import subprocess
 from pathlib import Path
 
 LABELS = {"undisclosed_intent", "missed_explicit_requirement", "regression", "frozen_test_conflict", "unknown"}
 DOCS = Path(__file__).resolve().parents[1] / "docs"
+EMAIL = re.compile(r"[A-Za-z0-9_][A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+TRAILER = re.compile(r"^[ \t]*[A-Za-z][A-Za-z0-9-]*:[ \t]+[^<>\r\n]+<[^<>\r\n]*@[^<>\r\n]*>[ \t]*(?:\r?\n|$)", re.MULTILINE)
+
+
+def clean(value):
+    if isinstance(value, str):
+        return EMAIL.sub("<address removed>", TRAILER.sub("", value))
+    if isinstance(value, dict):
+        return {clean(k): clean(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [clean(v) for v in value]
+    return value
+
+
+def strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from strings(v)
 
 
 def collect(work: Path, docs: Path = DOCS) -> dict:
@@ -44,7 +69,7 @@ def collect(work: Path, docs: Path = DOCS) -> dict:
             groups[key]["observations"].append({"file": path.name, "row": index, "driver": data["driver"],
                                                "arm": row["arm"], "hidden_detail": row.get("hidden_detail"),
                                                "approval": row.get("approval"), "plain_pass": plain})
-    return {"date": "2026-10-08", "groups": list(groups.values())}
+    return clean({"date": "2026-10-08", "groups": list(groups.values())})
 
 
 def material(group: dict) -> dict[str, str]:
@@ -59,6 +84,8 @@ def material(group: dict) -> dict[str, str]:
 
 
 def check(data: dict) -> dict:
+    if any(EMAIL.search(text) for text in strings(data)):
+        raise ValueError("email address in ledger")
     commits = collections.Counter(dict.fromkeys(sorted(LABELS), 0))
     observations = collections.Counter(dict.fromkeys(sorted(LABELS), 0))
     seen = set()
