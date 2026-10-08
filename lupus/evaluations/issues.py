@@ -12,7 +12,7 @@
 Usage:
   PYTHONPATH=src python3 evaluations/issues.py mine <workdir> instances.json [per_repo]
   PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit] [reviewer] [arms]
-  PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit] [reviewer] [arms] [commits]
+  PYTHONPATH=src python3 evaluations/issues.py run <workdir> instances.json out.json <driver> [limit] [reviewer] [arms] [commits] [prober] [--allow-same-vendor]
   PYTHONPATH=src python3 evaluations/issues.py validate <workdir> instances.json     (the scorer on known answers)
   (arms: "plain,do" by default; "do" alone repeats only the Lupus arm; "lean" is `lupus do --lean`; "release" is
    `lupus do` followed, when it stops on existing tests, by a scripted user who releases the test assets the
@@ -21,6 +21,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from lupus import adapters, contract, goals, probe, projects, quick, release, review, supervisor, verify
+from lupus import adapters, contract, crosscheck, goals, probe, projects, quick, release, review, supervisor, verify
 from lupus.kernel import Kernel
 from lupus.util import LupusError, sha256_bytes
 
@@ -233,13 +234,49 @@ def profile_means(rows: list[dict]) -> dict:
             "unattributed_share_mean": sum(p["unattributed_share"] for p in measured) / len(measured)}
 
 
+def probe_summary(rows: list[dict]) -> dict:
+    result = _probe_counts(rows)
+    result["by_author_confinement"] = {}
+    for flag in ("verified by canary", "unverified"):
+        selected = [r for r in rows if r.get("crosscheck", {}).get("author_confinement", "unverified") == flag]
+        result["by_author_confinement"][flag] = {"n": len(selected), **_probe_counts(selected)}
+    result["by_same_vendor"] = {}
+    for flag in (True, False, None):
+        selected = [r for r in rows if r.get("same_vendor", r.get("crosscheck", {}).get("same_vendor")) is flag]
+        key = "unknown" if flag is None else str(flag).lower()
+        result["by_same_vendor"][key] = {"n": len(selected), **_probe_counts(selected)}
+    return result
+
+
+def _probe_counts(rows: list[dict]) -> dict:
+    done_fail = [r for r in rows if r.get("lupus_done") and not r["hidden_tests_pass"]]
+    done_pass = [r for r in rows if r.get("lupus_done") and r["hidden_tests_pass"]]
+    return {"counts": {name: sum(r.get("probe_counts", {}).get(name, 0) for r in rows)
+                       for name in crosscheck.CLASSIFICATIONS},
+            "done_hidden_fail": len(done_fail),
+            "done_hidden_fail_with_dispute": sum(bool(r.get("disputes")) for r in done_fail),
+            "done_hidden_pass": len(done_pass),
+            "done_hidden_pass_with_dispute": sum(bool(r.get("disputes")) for r in done_pass),
+            "regressions": sum(r.get("crosscheck", {}).get("regressions", 0) for r in rows),
+            "fails_both": sum(r.get("crosscheck", {}).get("fails_both", 0) for r in rows),
+            "invalid_probes": sum(r.get("probe_counts", {}).get("INVALID", 0) for r in rows),
+            "probe_failures": sum(bool(r.get("probe_error")) for r in rows),
+            "probe_tokens_mean": sum(r.get("probe_tokens", 0) for r in rows) / len(rows) if rows else 0,
+            "probe_seconds_mean": sum(r.get("probe_seconds", 0) for r in rows) / len(rows) if rows else 0}
+
+
 def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int, reviewer: str | None = None,
-        arms: tuple[str, ...] = ("plain", "do"), only: tuple[str, ...] = ()) -> None:
+        arms: tuple[str, ...] = ("plain", "do"), only: tuple[str, ...] = (), prober: str | None = None, allow_same_vendor: bool = False) -> None:
+    if "probe" in arms:
+        if prober not in ("native_claude", "native_codex"):
+            raise ValueError("probe arm requires a prober driver (native_claude or native_codex)")
+        if prober == driver and not allow_same_vendor:
+            raise ValueError("probe arm requires a different-vendor prober driver; use --allow-same-vendor to opt in")
     instances = [i for i in json.loads(Path(instances_path).read_text()) if not only or i["commit"].startswith(only)][:limit]
     base = Path(tempfile.mkdtemp(prefix="lupus-issues-")).resolve()
     k = Kernel.init(base / "home")
-    probe.run(k, live=True)
-    out = {"driver": driver, "reviewer": reviewer, "arms": list(arms), "date": time.strftime("%Y-%m-%d"), "rows": []}
+    probe.run(k, live=True, drivers=tuple(dict.fromkeys(d for d in (driver, reviewer, prober) if d)))
+    out = {"driver": driver, "reviewer": reviewer, "prober": prober, "arms": list(arms), "date": time.strftime("%Y-%m-%d"), "rows": []}
     for i, inst in enumerate(instances):
         clone = work / "clones" / inst["repo"]
         pristine = base / f"{i}-pristine"
@@ -252,13 +289,16 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
             timing_seq = k.one("SELECT COALESCE(MAX(seq), 0) FROM event")[0]
             started = time.monotonic()
             row = {"repo": inst["repo"], "commit": inst["commit"][:8], "arm": arm}
+            if arm == "probe":
+                row.update(same_vendor=prober == driver, lupus_done=False, probe_counts=dict.fromkeys(crosscheck.CLASSIFICATIONS, 0),
+                           disputes=[], probe_tokens=0, probe_seconds=0.0)
             try:
                 if arm == "plain":
                     adapters.execute(adapter, inst["request"] + "\n\n위 변경을 이 저장소에 구현하라. 현재 디렉터리 안의 파일만 읽고 수정하라.",
                                      root, lambda pid: None, timeout_s=420)
                 else:
                     project = projects.register(k, root, root.name, ["anthropic", "openai"])
-                    draft = quick.draft_check(k, project, inst["request"], "user", allow_failing=True, lean=arm == "lean")
+                    draft = quick.draft_check(k, project, inst["request"], "user", allow_failing=True, lean=arm == "lean", cross_check=arm == "probe")
                     row["already_failing"] = len(draft["already_failing"])
                     first = supervisor.run_goal(k, draft["goal_id"], adapter, timeout_s=420, max_steps=3)
                     row["check_drafted"] = first["done"]
@@ -277,7 +317,12 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
                             row["stuck_on_existing_tests"] = bool(release.hint(k, build["goal_id"]))
                             row["release"] = scripted_release(k, clone, inst, build["goal_id"], adapter)
                             row["lupus_done"] = row["release"]["done"]
-                        if reviewer and second["done"] and "review_base" in build:
+                        if arm == "probe" and second["done"]:
+                            measured = crosscheck.shadow(k, build["goal_id"], prober)
+                            row.update(probe_counts=measured["counts"], disputes=measured["disputes"],
+                                       probe_tokens=measured["tokens"], probe_seconds=measured["seconds"],
+                                       probe_error=measured.get("error"), crosscheck=measured)
+                        if arm != "probe" and reviewer and second["done"] and "review_base" in build:
                             row["hidden_before_review"] = score(clone, inst, root)[0]
                             row["seconds_before_review"] = round(time.monotonic() - started, 1)
                             row["tokens_before_review"] = usage_of(log)["tokens"]
@@ -323,6 +368,8 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
                         said_done = [r for r in sel if r.get("lupus_done")]
                         summary[a].update(lupus_said_done=len(said_done),
                                           said_done_but_hidden_fail=sum(not r["hidden_tests_pass"] for r in said_done))
+                        if a == "probe":
+                            summary[a].update(probe_summary(sel))
                         seen_by_reviewer = [r for r in sel if "review" in r and not r["review"]["skipped"]]
                         if seen_by_reviewer:
                             clean = [r for r in seen_by_reviewer if not r["review"]["objections"]
@@ -343,13 +390,30 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
     k.close()
 
 
-if __name__ == "__main__":
-    if sys.argv[1] == "mine":
-        mine(Path(sys.argv[2]).resolve(), sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 3)
-    elif sys.argv[1] == "validate":
-        validate(Path(sys.argv[2]).resolve(), sys.argv[3])
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[0] == "mine":
+        mine(Path(argv[1]).resolve(), argv[2], int(argv[3]) if len(argv) > 3 else 3)
+    elif argv[0] == "validate":
+        validate(Path(argv[1]).resolve(), argv[2])
     else:
-        run(Path(sys.argv[2]).resolve(), sys.argv[3], sys.argv[4], sys.argv[5], int(sys.argv[6]) if len(sys.argv) > 6 else 99,
-            (sys.argv[7] if len(sys.argv) > 7 else None) or None,
-            tuple(sys.argv[8].split(",")) if len(sys.argv) > 8 else ("plain", "do"),
-            tuple(sys.argv[9].split(",")) if len(sys.argv) > 9 else ())
+        parser = argparse.ArgumentParser()
+        parser.add_argument("command", choices=("run",))
+        parser.add_argument("workdir", type=Path)
+        parser.add_argument("instances")
+        parser.add_argument("output")
+        parser.add_argument("driver")
+        parser.add_argument("limit", type=int, nargs="?", default=99)
+        parser.add_argument("reviewer", nargs="?", default="")
+        parser.add_argument("arms", nargs="?", default="plain,do")
+        parser.add_argument("commits", nargs="?", default="")
+        parser.add_argument("prober", nargs="?", default="")
+        parser.add_argument("--allow-same-vendor", action="store_true")
+        args = parser.parse_args(argv)
+        run(args.workdir.resolve(), args.instances, args.output, args.driver, args.limit,
+            args.reviewer or None, tuple(args.arms.split(",")),
+            tuple(args.commits.split(",")), args.prober or None, allow_same_vendor=args.allow_same_vendor)
+
+
+if __name__ == "__main__":
+    main()

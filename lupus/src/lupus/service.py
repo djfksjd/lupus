@@ -1,7 +1,7 @@
 """Model calls that are not project writers (a judge, a learning pass).
 
-They run in an empty directory with no access to the project, are recorded before they start,
-and what they report is charged to the budget like any other spend. The caller holds the
+Readers run in an empty directory; cross-check authors get a disposable pristine copy. Calls are
+recorded before they start, and what they report is charged to the budget like any other spend. The caller holds the
 reservation for the call; this module records the call and charges the tokens it reports.
 """
 
@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 
 from . import adapters, budget, projects, runs
 from .adapters import Adapter, AdapterResult
 from .kernel import Kernel
-from .util import LupusError, new_id
+from .util import PROTECTED_STATE, LupusError, new_id, sandbox_available
 
 # Tests and fault injection can stand in for a native CLI here.
 OVERRIDE: dict[str, Adapter] = {}
@@ -33,15 +34,43 @@ def adapter_for(driver: str) -> Adapter:
     raise LupusError("DRIVER_UNKNOWN", driver)
 
 
+def author_adapter(driver: str, workspace: Path, exclude: tuple[str, ...] = ()) -> Adapter:
+    """The exact author adapter used by cross-checking and the live canary harness."""
+    if driver in OVERRIDE:
+        return OVERRIDE[driver]
+    if driver == "native_claude":
+        if not sandbox_available():
+            raise LupusError("CROSSCHECK_SANDBOX_UNAVAILABLE", "authoring requires the OS sandbox")
+        adapter = adapters.ClaudeAdapter()
+        adapter.shared_tmp = False
+        adapter.require_os_sandbox = True
+        adapter.read_exclude = exclude
+    elif driver == "native_codex":
+        adapter = adapters.CodexAdapter(shared_tmp=False)
+        adapter.read_exclude = tuple(sorted(set(exclude) | PROTECTED_STATE))
+    else:
+        raise LupusError("DRIVER_UNKNOWN", driver)
+    # Redirect cooperative temporary files into the workspace. Claude also needs its
+    # fixed per-user scratch directory, independently of TMPDIR (see the OS profile).
+    tmp = workspace / ".lupus-author-tmp"
+    tmp.mkdir(mode=0o700, exist_ok=True)
+    adapter.private_tmp = tmp.resolve()
+    return adapter
+
+
 def call(k: Kernel, *, project_id: str, goal_id: str | None, budget_id: str, purpose: str, driver: str, prompt: str,
-         timeout_s: float = 300) -> AdapterResult:
+         timeout_s: float = 300, workspace: Path | None = None, author_exclude: tuple[str, ...] = ()) -> AdapterResult:
     project = projects.check_root(k, project_id)
     if not projects.provider_allowed(project, driver):
         raise LupusError("PROVIDER_NOT_APPROVED", driver)
     unverified = projects.capability_blockers(k, driver)
     if unverified:
         raise LupusError("CAPABILITY_UNVERIFIED", ";".join(unverified))
-    adapter = adapter_for(driver)
+    if workspace is not None:
+        work, root = workspace.resolve(), Path(project["canonical_root"]).resolve()
+        if work.is_relative_to(root) or root.is_relative_to(work):
+            raise LupusError("CROSSCHECK_WORKSPACE_INVALID", "authoring requires a copy outside the project")
+    adapter = adapter_for(driver) if workspace is None else author_adapter(driver, workspace, (project["canonical_root"], *author_exclude))
     call_id = new_id("svc")
     with k.tx():
         k.run("INSERT INTO service_call(call_id, project_id, goal_id, budget_id, purpose, driver, status, started_at) "
@@ -52,9 +81,14 @@ def call(k: Kernel, *, project_id: str, goal_id: str | None, budget_id: str, pur
         runs.register_aux(k, project_id, pid, purpose)
         pids.append(pid)
 
-    with tempfile.TemporaryDirectory(prefix="lupus-svc-") as tmp:
+    with (tempfile.TemporaryDirectory(prefix="lupus-svc-") if workspace is None else nullcontext(str(workspace))) as tmp:
         try:
             result = adapters.execute(adapter, prompt, Path(os.path.realpath(tmp)), spawned, timeout_s)
+        except Exception:
+            with k.tx():
+                k.run("UPDATE service_call SET status = 'FAILED', error_class = 'exception', ended_at = ? WHERE call_id = ?",
+                      k.now(), call_id)
+            raise
         finally:
             for pid in pids:
                 runs.clear_aux(k, pid)

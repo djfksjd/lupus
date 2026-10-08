@@ -24,7 +24,7 @@ import shutil
 import stat
 from pathlib import Path
 
-from . import contract, gitx, goals, protect, review, runners, runs, timing, verify
+from . import contract, crosscheck, gitx, goals, protect, review, runners, runs, timing, verify
 from .kernel import Kernel
 from .util import LupusError, atomic_write, find_secret, sha256_bytes
 
@@ -166,7 +166,7 @@ MAX_ALLOWED_FAILURES = 300
 
 @timing.operation("supervisor_bookkeeping", result_goal=True)
 def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict | None = None, stage: bool = True,
-                allow_failing: bool = False, lean: bool = False) -> dict:
+                allow_failing: bool = False, lean: bool = False, cross_check: bool = False) -> dict:
     """Step 1 of `lupus do`: a goal whose only job is to WRITE the acceptance test for a request.
 
     Nothing else in the project may change during this step (everything but the one new test
@@ -247,6 +247,8 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
                if stage else "")
             + "프로젝트의 소스 파일: " + (", ".join(sources) or "(없음)"), ["c0"],
             inputs=sources[:8], lean=lean)      # small ones are handed over in the prompt, so they need not be read one by one
+    if cross_check:
+        crosscheck.capture_base(k, goal["goal_id"], root)
     return {"goal_id": goal["goal_id"], "test_path": test_path, "runner": found["runner"], "request": request,
             "already_failing": already_failing}
 

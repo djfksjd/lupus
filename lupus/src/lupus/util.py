@@ -292,26 +292,43 @@ _WORKER_HOME = {
 }
 
 
-def sandbox_profile_worker(project: Path, cli: str) -> str:
+def sandbox_profile_worker(project: Path, cli: str, read_exclude: tuple[str, ...] = (), shared_tmp: bool = True) -> str:
     """Seatbelt profile for a headless worker CLI. The network stays open (the CLI talks to its
     provider), everything else follows the verifier profile: writes only in the project, the
     temp directories and the CLI's own state; of the home directory only the project, the CLI's
     own files and its login are readable; Lupus's state is out of reach. This holds whatever the
-    CLI's own permission system decides, including for commands the model runs through it."""
+    CLI's own permission system decides, including for commands the model runs through it.
+    Authors set shared_tmp=False: shared temp trees are denied except the workspace and
+    Claude's fixed per-user scratch directory (which may contain other sessions)."""
     home = os.path.realpath(Path.home())
     root = os.path.realpath(project)
     tmp = os.path.realpath(os.environ.get("TMPDIR", "/tmp"))
     own = _WORKER_HOME[cli]
     literal = lambda rel: os.path.join(home, rel)
     writable = [root, tmp, "/private/tmp", "/private/var/folders", "/dev"] + [literal(r) for r in own["write"]]
+    if not shared_tmp:
+        writable = [root, "/dev"] + [literal(r) for r in own["write"]]
+        if cli == "claude":
+            writable += [f"/tmp/claude-{os.getuid()}", f"/private/tmp/claude-{os.getuid()}"]
     readable = [root] + [literal(r) for r in own["read"]] + [literal(t) for t in _HOME_TOOLCHAINS if os.path.isdir(literal(t))]
-    state = sorted(os.path.realpath(p) for p in PROTECTED_STATE)
+    if not shared_tmp and cli == "claude":
+        readable += [f"/tmp/claude-{os.getuid()}", f"/private/tmp/claude-{os.getuid()}"]
+    state = sorted(os.path.realpath(p) for p in PROTECTED_STATE | set(read_exclude))
     rule = lambda paths: " ".join(f"(subpath {_sb(p)})" for p in paths)
+    temp_rules = [] if shared_tmp else ["(deny file-read* " + rule([tmp, "/tmp", "/private/tmp", "/private/var/folders"]) + ")"]
+    if not shared_tmp:
+        # Measured under the real sandbox: recursive mkdir needs to stat these roots.
+        # Metadata alone permits mkdir/write while listing stays denied; root data access
+        # would permit listing /private/tmp, so it is not granted.
+        temp_rules.append('(allow file-read-metadata (literal "/tmp") (literal "/private/tmp") (literal "/private"))')
     return "\n".join([
         "(version 1)", "(allow default)",
-        "(deny file-write*)", f"(allow file-write* {rule(writable)})",
+        "(deny file-write*)",
         f"(deny file-read* (subpath {_sb(home)}))",
         f"(allow file-read-metadata (subpath {_sb(home)}))",
+        *temp_rules,
+        # Exceptions follow the temp deny, including workspaces inside the system temp tree.
+        f"(allow file-write* {rule(writable)})",
         f"(allow file-read* (literal {_sb(home)}) {rule(readable)})",
         f"(deny file-write* {rule([literal(r) for r in own['never_write']] + [os.path.join(root, '.git')])})",
         *[f"(deny file-read* file-write* (subpath {_sb(p)}))" for p in state],
@@ -364,3 +381,22 @@ def find_secret(text: str) -> str | None:
 
 def find_secret_bytes(data: bytes) -> str | None:
     return find_secret(data.decode("utf-8", errors="ignore"))
+
+
+MAX_DIAGNOSTIC_TAIL = 2000
+_DIAGNOSTIC_CONTROLS = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069\u200b-\u200d\ufeff]")
+_DIAGNOSTIC_SECRET = re.compile(
+    r"(?i)(?:authorization\s*[:=]\s*\S+|bearer\s+\S+|"
+    r"(?:password|secret|token|api[_-]?key)\s*[\"']?\s*[:=]\s*\S+)")
+
+
+def diagnostic_tail(text: str) -> str:
+    """Bounded inert stderr for durable records; credential screening is heuristic.
+
+    Screen before truncating so a recognised credential cannot be cut into an unrecognised
+    suffix. Withhold the whole diagnostic if a known credential shape or assignment occurs.
+    """
+    if find_secret(text) or _DIAGNOSTIC_SECRET.search(text):
+        return "[failure text withheld: credential pattern]"
+    safe = _DIAGNOSTIC_CONTROLS.sub(lambda m: f"<U+{ord(m.group()):04X}>", text)
+    return safe.replace("\n", " ").replace("\t", " ")[-MAX_DIAGNOSTIC_TAIL:]

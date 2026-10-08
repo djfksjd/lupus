@@ -9,7 +9,7 @@ from functools import wraps
 
 from .kernel import SupervisorStopping
 
-STAGES = ("model_execution", "workspace", "baseline_red", "verification", "trial", "acceptance", "supervisor_bookkeeping")
+STAGES = ("model_execution", "workspace", "crosscheck_snapshot", "baseline_red", "verification", "trial", "acceptance", "supervisor_bookkeeping")
 _current = ContextVar("lupus_timing", default=None)
 
 

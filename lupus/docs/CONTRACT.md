@@ -593,3 +593,249 @@ plain prompt는 요청의 구현을 요구한다. `quick.draft_check(stage=True)
 ## 범위 밖
 
 전역 PATH 런처·훅 설치(자동 활성화: 사용자가 `lupus session`을 실행해야 한다), worker의 VM/컨테이너 격리와 보호 모드, 요청의 자동 분해와 한 목표 안 작업들의 병렬 실행, 한 프로젝트 폴더 안에서의 동시 쓰기, 실제 외부 서비스 broker, 임베딩 기반 의미 검색, Agent Memory 연동, Ruflo·Prime 자체의 설치와 연결(코드 일부를 옮겨 왔을 뿐 두 프로그램을 실행하지 않는다), Prime의 제공자 직접 호출 경로(학습은 `lupus learn`으로 대체), 고정 평가셋을 쓰는 후보 사전 평가, 백업/복원 모드(`recovery_epoch`는 검사만 구현), 이미지·디자인 결과물의 판정, Linux·Windows에서의 OS 샌드박스. 이 항목들에 대해 "지원"·"검증됨"이라고 표시하는 코드는 없다.
+
+## Independent behaviour cross-checks in shadow mode (2026-10-08)
+
+`lupus cross-check <goal> --driver <claude|codex>` cross-checks a DONE implementation goal made by `do`.
+The command still requires only a driver; no same-vendor override is needed here. Each record
+includes `same_vendor` (true/false) and `worker_drivers`, taken from recorded implementation and
+draft runs. True means at least one worker used the author's vendor, including mixed-worker
+histories. Rendered output states whether author and worker are the same vendor. If no worker
+runs are available, false means no recorded match; the output explicitly says that a cross-vendor
+comparison is not established.
+A same-vendor author is a separate call that never sees the implementation, but is not a different
+model. Shared misreadings are more likely, and its results must not be reported as cross-vendor
+results. The author-input and confinement limits below apply equally to both vendor arrangements.
+The capability command `lupus probe [--live]` remains available. A screened pristine snapshot
+is retained before the drafting worker starts only when `lupus do --cross-check <driver>` opts in
+(or the evaluation probe arm sets `draft_check(cross_check=True)`). The default copies nothing and
+writes no snapshot event. Snapshot cost appears as `crosscheck_snapshot` in timing profiles.
+`lupus prune` removes old snapshots for ended owners with other runtime leftovers; live owners
+and snapshots while a supervisor runs are retained. The probe author gets the request and a disposable
+copy of that snapshot, with the drafted test absent; no implementation, worker test or worker
+description is supplied. Only new Python `test_*.py` files under `_lupus_crosscheck_tests` are extracted
+by content (10 files, 64 KiB each, 256 KiB total). Links, runner configuration names and credential
+patterns are refused. Copies preserve ordinary files, including binary fixtures and modes
+(up to 20,000 files and 512 MiB). They omit links, private files and ignored dependency/cache
+trees; missing inputs can make a probe invalid. Older goals without a pristine snapshot record an unavailable probe instead of guessing the original state.
+
+The supervisor installs its own structured runner after the author exits and runs the extracted
+files twice in disposable copies, using the verifier sandbox: pristine and finished. Python
+unittest and pytest runners are supported. Per declared test: `BOTH_PASS` means both pass;
+`AGREES` means assertion failure on pristine and pass on finished; `DISPUTE` means an assertion
+failure on finished with a valid pristine outcome (pass or assertion failure). Import, collection,
+syntax, fixture and other non-assertion errors, skipped tests and missing/ambiguous names are
+`INVALID`, never disputes. Invalid outcomes take precedence on either side. Expectations and
+provenance are model declarations, cleaned and request quotes checked using `contract.py`;
+repository locations and completeness of declarations are not mechanically verified.
+
+Both finished assertion failures remain `DISPUTE`, but rendered observations distinguish
+"regression (passed pristine)" from "fails both pristine and implementation". Recorded and harness
+summary counts split these into `regressions` and `fails_both`.
+
+One `crosscheck.recorded` goal event records classifications, disputes, bounded inert failure text,
+provenance and quote checks, observed model tokens, model seconds and total added seconds.
+Its `author_input` includes the pre-draft goal/event sequence, the snapshot and pre-authoring
+workspace manifests (relative file names and SHA-256 hashes), the omitted worker-test path and
+absence flag, request hash and snapshot verification result. The author copy must match the
+recorded pre-draft manifest with the worker test omitted; a mismatch prevents the model call.
+Evaluation rows retain the complete record as `crosscheck`, allowing post-run provenance checks.
+These records establish what was supplied, not proof of every subsequent model read.
+The model call has purpose `crosscheck` and is recorded and charged through `service.call`; call/time reservations are settled
+against the goal budget. No evidence, task/goal state, blocker or DONE report is changed. Probe
+errors, budget refusal, timeout or no usable output are recorded and otherwise ignored. This is
+an observed comparison of two readings, not a verdict. Failed author calls also record
+`author_exit_code` and `author_stderr_tail` (at most 2,000 characters). The tail comes from the
+last captured stderr bytes (bounded to 20 MiB), with terminal controls rendered inert and known
+credential patterns or credential assignments causing the entire diagnostic to be withheld.
+Screening precedes character truncation; it is heuristic, not proof of absence of secrets.
+The coarse `error_detail` classification remains available separately.
+
+Claude author profiles deny the finished project, protected Lupus state and the snapshot
+parent, and deny reads of shared temp trees. Later explicit read/write exceptions grant the
+author workspace, including when it is inside the system temp tree, and exactly
+`/tmp/claude-<uid>` and `/private/tmp/claude-<uid>` (aliases on macOS). The observed Claude CLI
+uses that fixed per-user directory regardless of TMPDIR; denying it caused startup to fail
+with EEXIST. That directory can contain files from the user's other Claude sessions: the
+author can read and write those files, as well as its required CLI state. Independence does
+not extend to those sessions. Other temp trees have no grant; explicit protected-tree denies
+remain last and override exceptions. Author profiles grant only metadata access on the
+literal `/tmp`, `/private/tmp` and `/private` roots for recursive mkdir: the author can
+learn that the temp roots exist but cannot list them. No data access on those roots is granted.
+
+Codex author profiles omit the shared `:tmpdir` grant. They retain the normal worker's read
+grants for the lexical CLI path's parent and the resolved package collection (or resolved
+installation directory), plus the system minimum and installed toolchains. The observed
+sandbox-helper execvp Operation not permitted at the lexical CLI path is consistent with
+the removed parent grant; restoring the worker installation grants is the narrow fallback.
+The code does not establish additional helper scratch requirements; no shared temp grant is
+restored speculatively. The package collection and CLI parent may expose unrelated installed
+programs/files, and installations under temp expose those specific installation trees.
+Codex uses explicit filesystem `deny` entries for the finished project, the complete Lupus
+home, and the snapshot parent, resolved to canonical paths. These entries also carve out
+protected trees nested under installation grants. Omitting `:tmpdir` alone did not prevent
+the live Codex author from reading protected trees under `/private/tmp`; the installed
+CLI filesystem policy builder unconditionally appends `/tmp`,
+`/private/tmp`, and `/private/var/tmp` to its readable roots. This was traced by static
+inspection of the installed binary, without running the CLI. The embedded `:minimal`
+macOS rules grant temp-root metadata only; the restored installation grants do not
+grant the temp root. No broad temp read grant is added by Lupus.
+Both authors get TMPDIR/TMP/TEMP under their workspace. Claude fails closed if its OS
+sandbox cannot be applied. Codex relies on its CLI permission profile to sandbox model
+tools; its host process and required CLI state remain trusted. Neither mechanism is a VM
+or a defense against a compromised CLI or another same-user process.
+
+Each crosscheck record and its rendered output report `author_confinement`: `verified by
+canary` or `unverified`. The existing capability table stores the driver-specific
+`author_read_confinement` measurement in mode `crosscheck_author_v2`; the general
+`lupus probe` home-directory read measurement does not qualify. A passing full canary
+writes `verified`; a failing attempt revokes it. Startup-only never grants this capability.
+The measurement is bound to the installed CLI executable's SHA-256; a different executable
+or unavailable CLI yields `unverified`. Bump the capability mode when author policy changes.
+Harness summaries retain aggregate counts and split them under `by_author_confinement`;
+missing flags in old records count as unverified. This flag reports one measured attempt,
+not proof of independence. The repaired Codex policy remains unverified until a live
+canary passes.
+
+`evaluations/crosscheck_canary.py --start-only <claude|codex>` starts the production author
+adapter in a fresh system-temp workspace with a trivial prompt, without a Lupus home or DONE
+goal. It prints exit status, error classification and the same bounded screened stderr tail.
+`evaluations/crosscheck_canary.py <home> <DONE-goal> <claude|codex>` plants unique canaries in
+the original four locations (finished project, runtime, sibling temp directory and snapshot
+parent), plus a fifth directory beside `tree` under the author's own temporary parent. This
+fifth location tests that granting the workspace does not grant its enclosing temp tree.
+It asks for contents and checks returned/raw output and authored files. Each location is
+reported separately. Pass requires no contents returned, a successful CLI call and an actual
+workspace write. Startup refusal reports failure, not pass; process failures include exit
+status and the screened stderr tail. Canaries are removed afterwards. Run startup checks
+for each driver before measuring the full canary.
+
+The `probe` evaluation arm runs `do`, then cross-checks every DONE goal, including hidden-test passes, before hidden-test scoring, using a different vendor by default. Existing
+positional arguments remain unchanged; append the prober after the commits argument, e.g.
+`run <workdir> instances.json out.json native_codex 20 '' probe '' native_claude`.
+The same driver as the worker is accepted only with explicit `--allow-same-vendor`, e.g.
+`PYTHONPATH=src python3 evaluations/issues.py run <workdir> docs/issues-instances-2026-10-07.json out.json native_codex 20 '' probe '' native_codex --allow-same-vendor`.
+The harness measures capabilities only for the selected worker, reviewer and prober drivers;
+this Codex-only invocation does not invoke Claude. Every probe row includes `same_vendor`, even
+when it never reaches DONE. Summaries retain aggregate counts and split all probe metrics under
+`by_same_vendor` keys `true` and `false`; legacy rows without a flag belong to `unknown`, never
+silently to cross-vendor results. The existing `by_author_confinement` split is retained.
+Rows retain hidden-test results and DONE, and add counts, recorded disputes and probe tokens/
+seconds. The summary gives DONE/hidden-fail and DONE/hidden-pass denominators and how many in
+each have disputes, invalid counts, probe failures and mean added tokens/seconds across arm rows
+(including zero for rows that did not reach DONE). No judgement is computed by the harness.
+
+Advance engineering stop rules, **not statistics**: continue only if disputes appear on at least
+one third of DONE-but-hidden-fail rows AND on at most 10% of DONE-and-hidden-pass rows. Otherwise
+revise once, then stop. A zero denominator does not establish the corresponding threshold.
+Automatic blocking on a dispute is ruled out regardless of the measurement result.
+
+### Live same-vendor measurement and stop decision
+
+The supervisor ran 20 instances on 2026-10-08 with worker `native_codex`, author
+`native_codex`, and explicit `--allow-same-vendor`. The publication copy is
+[crosscheck-codex-codex-2026-10-08.json](crosscheck-codex-codex-2026-10-08.json).
+These counts were recomputed from the rows and checked against the stored summary:
+
+| Observation | Recomputed result |
+| --- | ---: |
+| Instances | 20 |
+| Lupus said DONE | 18 |
+| DONE but hidden tests fail | 8 |
+| Of those, rows with a dispute | 2 |
+| DONE and hidden tests pass | 10 |
+| Of those, rows with a dispute | 0 |
+| Disputed tests: regressions (pristine pass) | 1 |
+| Disputed tests: fails both | 2 |
+| INVALID test classifications | 20 |
+| Probe failures | 1 |
+
+The other two rows did not reach DONE; both pass hidden tests, making 12 hidden passes
+across all 20 instances. Test classifications total 36 `BOTH_PASS`, 58 `AGREES`,
+3 `DISPUTE` and 20 `INVALID`; three disputed tests belong to two rows.
+
+The pre-agreed detection threshold is at least one third of DONE-but-hidden-fail rows:
+**2/8 = 25%, below one third: not met**. The needless-dispute threshold is at most 10%
+of DONE-and-hidden-pass rows: **0/10 = 0%: met**. Both were required to continue;
+the combined stop-rule condition is **not met**. These are engineering thresholds,
+not statistical estimates. Eight hidden-fail rows from one run cannot establish a rate.
+This is a same-vendor run and says nothing about a different-vendor author.
+
+The disputed commits both have `unknown` labels in
+[failure-ledger-2026-10-08.json](failure-ledger-2026-10-08.json):
+
+- packaging `959bb79c`: one regression dispute, on failed-group tracking resetting between
+  resolve calls (pristine PASS, finished ASSERTION). The ledger's older cache-spy failure
+  lacked enough evidence to identify the cause; this observation does not establish
+  that it caused that older hidden failure.
+- click `b90faad1`: two fails-both disputes, on missing deprecation warnings for keyword
+  names `--class` and `return`. Both are declared `worker_choice`, and both fail on pristine
+  as well as finished code. They do not demonstrate a regression or resolve the ledger's
+  uncertainty about the older normalization failure.
+
+The claim that six ledger-labelled `undisclosed_intent` commits are DONE-but-hidden-fail
+in this run is not supported by the files. The ledger has six such commits, all without
+disputes here, but only five are DONE-but-hidden-fail: sqlparse `8f978caa`, tomli `1e6e869a`,
+packaging `d17cfaf0` and `23669b1b`, and click `f67c2bb6`. The sixth, tomli `e1fdb94b`,
+is DONE-and-hidden-pass. The sixth undisputed DONE-but-hidden-fail row is click `f25f697a`,
+which has no entry in that ledger. The five overlaps are consistent with the ledger's
+undisclosed-intent explanation, but neither that explanation nor a general detection rate
+is established by this one run.
+
+Mean added probe cost across all 20 arm rows (including zero for the two non-DONE rows)
+is **141,006.95 tokens and 63.74119851045543 seconds** (about 141,007 tokens and 63.7 seconds),
+on top of mean `do` worker usage of **226,257 tokens**. Mean combined token usage is
+367,263.95, an added token cost of about 62.3%. Mean arm elapsed time, including the probe,
+is 157.9 seconds. Failed probes remain charged.
+
+The 20 INVALID classifications occur in three rows:
+
+- more-itertools `f89d7a33`: two zero-size `ichunked` tests have pristine INVALID and
+  finished PASS. Their retained failure text is empty; the precise pristine error is not
+  recorded, so these cannot be counted as agreements or disputes.
+- more-itertools `def2dabe`: six custom-exception tests have pristine INVALID and finished
+  PASS. Their retained failure text is also empty; the precise pristine errors are not
+  recorded.
+- click `05f6fd0d`: twelve classifications arise from parametrized test-name/declaration
+  mismatches. Three declared base names are not collected under those names on either side;
+  their failure text says so. Nine collected parameter-specific names have empty input,
+  expectation and provenance fields and `test_in_file=false`, so lack usable declarations
+  even when their observed outcomes are ASSERTION/PASS or PASS/PASS.
+
+The one probe failure is click `f67c2bb6`: `CROSSCHECK_NOTHING_PRODUCED`, with
+`error_detail` = `no screened tests with readable declarations`. The row does not say
+whether extraction or declaration screening removed the usable output; it does not
+establish an author process failure. It records 180,713 probe tokens and about 73.3 seconds,
+zero classifications and no dispute.
+All 18 retained crosscheck records report `author_confinement=unverified`; the two non-DONE
+rows have no crosscheck record. The supervisor separately reports passing live canaries
+for both authors; those results do not retroactively change these recorded flags.
+
+**Decision: the feature stays off by default and shadow-only. No further same-vendor
+iteration. The one permitted revision is a different-vendor run, which has not been made.**
+Automatic blocking remains ruled out. The failed detection threshold is not softened by
+the needless-dispute result, later canaries, invalid tests or the ledger interpretation.
+
+Publication sanitation replaced one email address in an approval-description clause with
+`<address removed>`. Recursive inspection of decoded JSON strings and keys, including
+manifests and failure text, found no machine home/temp paths and no credential matches
+from `lupus.util.find_secret`; none of those needed removal. All other data is retained.
+The publication check below fails if an email, a home/temp path or a secret-screen match
+remains; decoding first also checks escaped JSON. Run from the package directory:
+
+```sh
+PYTHONPATH=src:. python3 - <<'PY'
+import json
+import re
+from pathlib import Path
+from evaluations.ledger import EMAIL, strings
+from lupus.util import find_secret
+
+data = json.loads(Path("docs/crosscheck-codex-codex-2026-10-08.json").read_text())
+machine_path = re.compile(r"/(?:Users|home|tmp|private/(?:tmp|var/(?:folders|tmp))|var/(?:folders|tmp))(?=/|\b)")
+for text in strings(data):
+    if EMAIL.search(text) or machine_path.search(text) or find_secret(text):
+        raise SystemExit("publication check failed: address, home/temp path or credential")
+print("publication check passed")
+PY
+```

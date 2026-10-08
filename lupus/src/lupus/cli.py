@@ -21,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import adapters, alpha, author, budget, contract, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, release, review, session, supervisor, vault
+from . import adapters, alpha, author, budget, contract, crosscheck, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, release, review, session, supervisor, vault
 from .kernel import Kernel
 from .util import LupusError
 
@@ -309,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--review", nargs="?", const="other", choices=("other", "claude", "codex"),
                    help="when the checks pass, have an AI that did not write the change compare it with the request; "
                         "objections go back to the worker once (default reviewer: the other AI)")
+    p.add_argument("--cross-check", choices=("claude", "codex"), help="independently author behaviour tests after DONE (experimental)")
     p.add_argument("--two-step", action="store_true",
                    help="write the implementation in a separate call after you approved the test (default: proposed "
                         "in the same call, kept aside until you approve)")
@@ -389,6 +390,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("probe", help="measure what the installed CLIs support (P0.5)")
     p.add_argument("--live", action="store_true", help="make one small subscription call per CLI")
+
+    p = sub.add_parser("cross-check", help="independently check a DONE do goal")
+    p.add_argument("goal")
+    p.add_argument("--driver", choices=("claude", "codex"), required=True)
 
     args = parser.parse_args(argv)
     global JSON_OUTPUT
@@ -807,7 +812,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             _confirm_user(f"요청: {args.request}\n먼저 이 요청을 판정할 테스트를 작성합니다 ({args.driver})")
             project = _isolate(k, project, args)
             draft = quick.draft_check(k, project, args.request, "user", stage=not args.two_step, allow_failing=args.allow_failing,
-                                      lean=args.lean)
+                                      lean=args.lean, cross_check=bool(args.cross_check))
             if draft["already_failing"]:
                 print(f"지금 실패하는 기존 테스트 {len(draft['already_failing'])}개는 그대로 실패해도 되는 것으로 봅니다: "
                       + ", ".join(draft["already_failing"][:5]) + (" …" if len(draft["already_failing"]) > 5 else ""), file=sys.stderr)
@@ -872,6 +877,9 @@ def _dispatch(args: argparse.Namespace) -> int:
                 report = _reviewed(k, args, report, draft, build)
             elif args.review:
                 report["review"] = "검사가 통과하지 않아 리뷰하지 않았습니다"
+            if args.cross_check and report["done"]:
+                report["crosscheck"] = crosscheck.shadow(k, build["goal_id"], DRIVER[args.cross_check])
+                report["crosscheck_text"] = crosscheck.render(report["crosscheck"])
             if build.get("review_base"):      # the copy of the project kept for the reviewer
                 shutil.rmtree(build["review_base"], ignore_errors=True)
             _after_isolated(k, report)
@@ -993,6 +1001,8 @@ def _dispatch(args: argparse.Namespace) -> int:
             memory.forget(k, args.node_id, "user", args.reason or "deleted by user")
         elif args.cmd == "probe":
             _out(probe.run(k, live=args.live))
+        elif args.cmd == "cross-check":
+            print(crosscheck.render(crosscheck.shadow(k, args.goal, "native_" + args.driver)))
         return 0
     finally:
         k.close()
