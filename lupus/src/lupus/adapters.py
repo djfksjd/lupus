@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from . import timing
 from .util import (
     GATE, GATE_EXEC_FAILED, SANDBOX_EXEC, LupusError, crash_point, group_alive, safe_path, sandbox_available,
     sandbox_profile_worker, scrubbed_env, stop_group,
@@ -83,6 +84,7 @@ class Adapter:
         return worker_env()
 
 
+@timing.measured("model_execution")
 def execute(
     adapter: Adapter,
     prompt: str,

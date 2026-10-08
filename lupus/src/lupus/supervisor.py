@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import adapters, budget, contract, economy, gitx, goals, handoff, judging, memory, projects, protect, recovery, release, review, runs, service, usage, verify
+from . import adapters, budget, contract, economy, gitx, goals, handoff, judging, memory, projects, protect, recovery, release, review, runs, service, timing, usage, verify
 from .adapters import Adapter
 from .kernel import Kernel
 from .util import LupusError, container_stop, crash_point, find_secret, find_secret_bytes, proc_start, sha256_json
@@ -33,6 +33,12 @@ def _verify_reserve(criteria: list[dict]) -> dict[str, int]:
 
 
 def _timed_verify(k: Kernel, goal: dict, criteria: list[dict], root: Path) -> tuple[list[tuple], int, int]:
+    stage = "baseline_red" if any(c["verifier"]["kind"] == "red_test" for c in criteria) else "verification"
+    with timing.span(stage):
+        return _verify_checks(k, goal, criteria, root)
+
+
+def _verify_checks(k: Kernel, goal: dict, criteria: list[dict], root: Path) -> tuple[list[tuple], int, int]:
     """Run verifiers; returns (results, elapsed ms, model calls made by judges). Command verifiers
     are registered as process groups of the project before they start and cleared only after
     their group is confirmed empty."""
@@ -301,6 +307,7 @@ def _snapshots(root: Path, paths: list[str]) -> tuple[list[dict], list[str]]:
     return objects, notes
 
 
+@timing.measured("workspace")
 def _checkpoint(k: Kernel, goal_id: str, next_action: str, paths: list[str], root: Path,
                 run_id: str | None = None, token: int | None = None, with_objects: bool = False) -> dict:
     done, remaining = _progress_lists(k, goal_id)
@@ -634,7 +641,8 @@ def run_task(
         try:
             try:
                 release.apply(k, goal_id, root, proposed)
-                trial, trial_ms, trial_calls = _timed_verify(k, goal, criteria, root)
+                with timing.span("trial"):
+                    trial, trial_ms, trial_calls = _verify_checks(k, goal, criteria, root)
             finally:
                 protect.restore(k, goal_id, root, keep_dir=k.runtime / "displaced" / run_id / "after-trial")
             release.note_provisional(k, goal_id, proposed, {c["id"]: v for c, v, _, _ in trial}, {c["id"]: d for c, _, _, d in trial})
@@ -793,6 +801,7 @@ def _final_verification(k: Kernel, goal_id: str, root: Path) -> str | None:
     return None
 
 
+@timing.operation("supervisor_bookkeeping")
 def finish(k: Kernel, goal_id: str) -> dict[str, Any]:
     """Decide completion without running a worker (e.g. right after the user approved a document)."""
     with k.supervisor_lock():
@@ -807,6 +816,7 @@ def finish(k: Kernel, goal_id: str) -> dict[str, Any]:
                     goals.completion_blockers(k, goal_id) + _final_blockers(k, goal_id)))}
 
 
+@timing.operation("supervisor_bookkeeping")
 def run_goal(k: Kernel, goal_id: str, adapter: Adapter, *, max_steps: int = 20,
              timeout_s: float = 600, work_calls: int = 8, tiers: list[Adapter] | None = None) -> dict[str, Any]:
     if tiers and any(t.driver != adapter.driver for t in tiers):

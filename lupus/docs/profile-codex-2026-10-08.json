@@ -1,0 +1,1838 @@
+{
+ "driver": "native_codex",
+ "reviewer": null,
+ "arms": [
+  "plain",
+  "do"
+ ],
+ "date": "2026-10-08",
+ "rows": [
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "plain",
+   "seconds": 46.0,
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 231078,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "53ff44b5",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import ast\n\nimport pytest\n\nimport sqlparse\n\n\n@pytest.mark.parametrize(('query', 'expected'), [\n    (r'SELECT \\n, \\t, \\r', r\"sql = 'SELECT \\\\n, \\\\t, \\\\r'\"),\n    (r'SELECT \\\\', r\"sql = 'SELECT \\\\\\\\'\"),\n    ('SELECT \\\\', r\"sql = 'SELECT \\\\'\"),\n    (r\"SELECT 'a\\'b'\", r\"sql = 'SELECT \\'a\\\\\\'b\\''\"),\n    ('SELECT 1', \"sql = 'SELECT 1'\"),\n])\ndef test_python_backslashes(query, expected):\n    output = sqlparse.format(query, output_format='python')\n    assert output == expected\n    assert ast.literal_eval(ast.parse(output).body[0].value) == query\n\n\n@pytest.mark.parametrize(('query', 'expected'), [\n    (r'SELECT \\n, \\t, \\r', r'$sql = \"SELECT \\\\n, \\\\t, \\\\r\";'),\n    (r'SELECT \\\\', r'$sql = \"SELECT \\\\\\\\\";'),\n    ('SELECT \\\\', r'$sql = \"SELECT \\\\\";'),\n    (r'SELECT \"a\\\"b\"', r'$sql = \"SELECT \\\"a\\\\\\\"b\\\"\";'),\n    ('SELECT 1', '$sql = \"SELECT 1\";'),\n])\ndef test_php_backslashes(query, expected):\n    assert sqlparse.format(query, output_format='php') == expected\n\n\n@pytest.mark.parametrize(('output_format', 'expected'), [\n    ('python', \"sql = ('SELECT \\\\\\\\n '\" + '\\n' + \"       'FROM t\\\\\\\\path')\"),\n    ('php', '$sql  = \"SELECT \\\\\\\\n \";' + '\\n' + '$sql .= \"FROM t\\\\\\\\path\";'),\n])\ndef test_multiline_backslashes(output_format, expected):\n    query = 'SELECT \\\\n\\nFROM t\\\\path'\n    assert sqlparse.format(query, output_format=output_format) == expected\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "Python 할당문에서 입력 백슬래시마다 백슬래시 두 개를 출력하고 작은따옴표도 이스케이프한다. SELECT 1은 sql = 'SELECT 1'이다.",
+       "input": "SELECT 뒤에 리터럴 \\n·\\t·\\r, 연속 백슬래시 두 개, 끝 백슬래시 한 개, 또는 'a\\'b'; 대조 입력 SELECT 1",
+       "quote": "Escape backslashes in output formatters.",
+       "quote_in_request": true,
+       "rule": "Python 출력에서 백슬래시를 이스케이프한다.",
+       "source": "explicit_request",
+       "test": "test_python_backslashes",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "생성된 Python 문자열을 ast.literal_eval로 복원하면 입력 SQL과 정확히 같다.",
+       "input": "위 Python 매개변수 입력 다섯 개",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "출력 문자열의 백슬래시와 따옴표가 원문을 보존한다.",
+       "source": "existing_contract",
+       "test": "test_python_backslashes",
+       "test_in_file": true,
+       "where": "sqlparse/filters/output.py: OutputPythonFilter._process의 SQL 문자열 할당 및 따옴표 이스케이프"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "PHP 할당문에서 입력 백슬래시마다 백슬래시 두 개를 출력하고 큰따옴표도 이스케이프한다. SELECT 1은 $sql = \"SELECT 1\";이다.",
+       "input": "SELECT 뒤에 리터럴 \\n·\\t·\\r, 연속 백슬래시 두 개, 끝 백슬래시 한 개, 또는 \"a\\\"b\"; 대조 입력 SELECT 1",
+       "quote": "Escape backslashes in output formatters.",
+       "quote_in_request": true,
+       "rule": "PHP 출력에서 백슬래시를 이스케이프한다.",
+       "source": "explicit_request",
+       "test": "test_php_backslashes",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "Python과 PHP 모두 두 출력 줄의 리터럴 백슬래시를 두 배로 출력하며 기존 줄 연결 형식을 유지한다.",
+       "input": "SELECT \\n FROM t\\path",
+       "quote": "Escape backslashes in output formatters.",
+       "quote_in_request": true,
+       "rule": "여러 줄의 출력에서도 백슬래시를 이스케이프한다.",
+       "source": "explicit_request",
+       "test": "test_multiline_backslashes",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Escape backslashes in output formatters.",
+       "covered_by": [
+        "test_python_backslashes",
+        "test_php_backslashes",
+        "test_multiline_backslashes"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "연속 백슬래시 세 개 이상",
+       "tested": "연속 백슬래시 한 개와 두 개"
+      },
+      {
+       "not_tested": "같은 입력에 작은따옴표와 큰따옴표가 모두 포함된 경우",
+       "tested": "백슬래시와 출력 구분 따옴표의 조합"
+      },
+      {
+       "not_tested": "CRLF로 구분된 여러 줄 SQL",
+       "tested": "LF로 구분된 여러 줄 SQL"
+      },
+      {
+       "not_tested": "백슬래시를 포함한 여러 SQL 문의 출력",
+       "tested": "단일 SQL 문의 출력"
+      }
+     ]
+    },
+    "red": "red on the current code:  = \"SELECT \\\\\"a\\\\\\\\\\\\\"b\\\\\"\";]\nFAILED tests/test_lupus_0b3b519d.py::test_multiline_backslashes[python-sql = ('SELECT \\\\\\\\n '\\n       'FROM t\\\\\\\\path')]\nFAILED tests/test_lupus_0b3b519d.py::test_multiline_backslashes[php-$sql  = \"SELECT \\\\\\\\n \";\\n$sql .= \"FROM t\\\\\\\\path\";]\n10 failed, 2 passed in 0.03s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 65.2,
+   "profile": {
+    "total_seconds": 65.21415558294393,
+    "stages": {
+     "model_execution": {
+      "seconds": 57.24384325,
+      "share": 0.8777824804799208
+     },
+     "workspace": {
+      "seconds": 0.162296457,
+      "share": 0.002488669147813775
+     },
+     "baseline_red": {
+      "seconds": 2.753570582,
+      "share": 0.042223510484588216
+     },
+     "verification": {
+      "seconds": 4.623476124,
+      "share": 0.07089681807072605
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.127107042,
+      "share": 0.00194907134599537
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.280223461,
+      "share": 0.004296972927044837
+     }
+    },
+    "unattributed_seconds": 0.023638666943938347,
+    "unattributed_share": 0.000362477543911046,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 181526,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "plain",
+   "seconds": 59.3,
+   "added_lines": 847,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 240497,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "a194d318",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import pytest\n\nimport sqlparse\nfrom sqlparse import lexer, sql, tokens as T\n\n\n@pytest.mark.parametrize('text, keyword, lower, upper', [\n    ('x BETWEEN .03 AND .06', 'BETWEEN', '.03', '.06'),\n    ('x between.0 and.9', 'between', '.0', '.9'),\n    ('x BETWEEN\\t.03 AND\\n.06', 'BETWEEN', '.03', '.06'),\n])\ndef test_keywords_before_leading_dot_floats(text, keyword, lower, upper):\n    significant = [(ttype, value) for ttype, value in lexer.tokenize(text)\n                   if ttype not in T.Whitespace]\n    assert significant == [\n        (T.Name, 'x'), (T.Keyword, keyword), (T.Number.Float, lower),\n        (T.Keyword, 'AND' if keyword == 'BETWEEN' else 'and'),\n        (T.Number.Float, upper),\n    ]\n\n\n@pytest.mark.parametrize('text', [\n    'x BETWEEN .03 AND .06',\n    'x between.0 and.9',\n    'x BETWEEN\\t.03 AND\\n.06',\n])\ndef test_between_bounds_are_standalone_numbers(text):\n    significant = [token for token in sqlparse.parse(text)[0].tokens\n                   if not token.is_whitespace]\n    assert [(type(token), token.ttype, token.value) for token in significant] == [\n        (sql.Identifier, None, 'x'),\n        (sql.Token, T.Keyword, 'between' if 'between' in text else 'BETWEEN'),\n        (sql.Token, T.Number.Float, '.0' if 'between' in text else '.03'),\n        (sql.Token, T.Keyword, 'and' if 'between' in text else 'AND'),\n        (sql.Token, T.Number.Float, '.9' if 'between' in text else '.06'),\n    ]\n\n\n@pytest.mark.parametrize('text, parent', [\n    ('schema . name', 'schema'),\n    ('schema.name', 'schema'),\n    ('schema\\t.\\nname', 'schema'),\n    ('select . name', 'select'),\n])\ndef test_member_access_preserves_name_and_grouping(text, parent):\n    significant = [(ttype, value) for ttype, value in lexer.tokenize(text)\n                   if ttype not in T.Whitespace]\n    assert significant == [(T.Name, parent), (T.Punctuation, '.'),\n                           (T.Name, 'name')]\n    statement = sqlparse.parse(text)[0]\n    assert len(statement.tokens) == 1\n    identifier = statement.tokens[0]\n    assert isinstance(identifier, sql.Identifier)\n    assert (str(identifier), identifier.get_parent_name(),\n            identifier.get_real_name()) == (text, parent, 'name')\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "x는 Name, BETWEEN과 AND는 Keyword, 양쪽 경계값은 Number.Float",
+       "input": "x BETWEEN .03 AND .06; x between.0 and.9; x BETWEEN .03 AND .06",
+       "quote": "Add a ``(?!\\d)`` negative lookahead so the Name-before-period rule ignores a period that starts a numeric literal",
+       "quote_in_request": true,
+       "rule": "숫자로 시작하는 점 앞의 키워드를 Name으로 바꾸지 않는다.",
+       "source": "explicit_request",
+       "test": "test_keywords_before_leading_dot_floats",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "최상위 유효 토큰은 Identifier(x), Keyword(BETWEEN), Number.Float(하한), Keyword(AND), Number.Float(상한)이다.",
+       "input": "x BETWEEN .03 AND .06; x between.0 and.9; x BETWEEN .03 AND .06",
+       "quote": "As a result BETWEEN was demoted to a Name, the statement was grouped incorrectly, and the bounds were no longer standalone number tokens.",
+       "quote_in_request": true,
+       "rule": "BETWEEN을 키워드로 유지하고 경계값을 독립된 숫자 토큰으로 유지한다.",
+       "source": "explicit_request",
+       "test": "test_between_bounds_are_standalone_numbers",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "공백을 제외한 렉서 결과는 Name, Punctuation(.), Name이다.",
+       "input": "schema . name; schema.name; schema . name; select . name",
+       "quote": "The SQL_REGEX rule that tags a word followed by a period as a Name (to support ``schema . name`` member access)",
+       "quote_in_request": true,
+       "rule": "멤버 접근에서 점 앞의 단어를 Name으로 유지한다.",
+       "source": "explicit_request",
+       "test": "test_member_access_preserves_name_and_grouping",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "문장의 최상위 토큰은 하나이다.",
+       "input": "schema . name; schema.name; schema . name; select . name",
+       "quote": "while ``schema . name`` grouping is preserved.",
+       "quote_in_request": true,
+       "rule": "멤버 접근 전체를 하나로 그룹화한다.",
+       "source": "explicit_request",
+       "test": "test_member_access_preserves_name_and_grouping",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "유일한 토큰은 Identifier이다.",
+       "input": "schema . name; schema.name; schema . name; select . name",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "멤버 접근의 Identifier 그룹화를 유지한다.",
+       "source": "existing_contract",
+       "test": "test_member_access_preserves_name_and_grouping",
+       "test_in_file": true,
+       "where": "tests/test_grouping.py::test_grouping_identifiers"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "Identifier 문자열은 입력과 같고 부모 이름은 schema 또는 select, 실제 이름은 name이다.",
+       "input": "schema . name; schema.name; schema . name; select . name",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "그룹화 후 원문과 한정된 식별자 이름을 유지한다.",
+       "source": "existing_contract",
+       "test": "test_member_access_preserves_name_and_grouping",
+       "test_in_file": true,
+       "where": "sqlparse/sql.py::TokenList.__str__; sqlparse/sql.py::NameAliasMixin.get_real_name; sqlparse/sql.py::TokenList.get_parent_name"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Keep keyword before leading-dot float literal (issue601)",
+       "covered_by": [
+        "test_keywords_before_leading_dot_floats",
+        "test_between_bounds_are_standalone_numbers"
+       ]
+      },
+      {
+       "clause": "Add a ``(?!\\d)`` negative lookahead so the Name-before-period rule ignores a period that starts a numeric literal, while ``schema . name`` grouping is preserved.",
+       "covered_by": [
+        "test_keywords_before_leading_dot_floats",
+        "test_between_bounds_are_standalone_numbers",
+        "test_member_access_preserves_name_and_grouping"
+       ]
+      },
+      {
+       "clause": "Adds regression tests covering both the fix and the member-access behavior.",
+       "covered_by": [
+        "test_keywords_before_leading_dot_floats",
+        "test_between_bounds_are_standalone_numbers",
+        "test_member_access_preserves_name_and_grouping"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "음수 선행 점 실수 및 지수 표기",
+       "tested": "양수 선행 점 실수, 한 자리 및 두 자리 소수, 공백 없는 표기와 탭·줄바꿈"
+      },
+      {
+       "not_tested": "따옴표 식별자 및 세 부분 이상의 멤버 접근",
+       "tested": "일반 이름과 키워드 이름의 두 부분 멤버 접근"
+      }
+     ]
+    },
+    "red": "red on the current code: y::test_between_bounds_are_standalone_numbers[x BETWEEN .03 AND .06]\nFAILED tests/test_lupus_17915c30.py::test_between_bounds_are_standalone_numbers[x between.0 and.9]\nFAILED tests/test_lupus_17915c30.py::test_between_bounds_are_standalone_numbers[x BETWEEN\\t.03 AND\\n.06]\n6 failed, 4 passed in 0.03s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 66.8,
+   "profile": {
+    "total_seconds": 66.82636458298657,
+    "stages": {
+     "model_execution": {
+      "seconds": 59.10207125,
+      "share": 0.8844124862816028
+     },
+     "workspace": {
+      "seconds": 0.172026709,
+      "share": 0.0025742341375816296
+     },
+     "baseline_red": {
+      "seconds": 2.834795375,
+      "share": 0.04242031408845657
+     },
+     "verification": {
+      "seconds": 4.256255207,
+      "share": 0.06369125768789174
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.166838123,
+      "share": 0.002496591338480136
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.266915209,
+      "share": 0.003994160248961895
+     }
+    },
+    "unattributed_seconds": 0.027462709986565415,
+    "unattributed_share": 0.00041095621702511687,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 1,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 160693,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "plain",
+   "seconds": 52.6,
+   "added_lines": 848,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 189820,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "f66d12c2",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import pytest\n\nimport sqlparse\n\n\n@pytest.mark.parametrize('text, expected', [\n    ('db.schema.tbl', 'tbl'),\n    ('db.schema.tbl.col', 'col'),\n    ('db.schema.tbl.col AS alias_name', 'col'),\n    ('db.schema.tbl.col alias_name', 'col'),\n    ('\"db\".\"schema\".\"tbl\".\"col\"', 'col'),\n    ('db.schema.tbl.*', '*'),\n    ('db.schema.func()', 'func'),\n    ('tbl.col', 'col'),\n    ('col', 'col'),\n])\ndef test_real_name_uses_last_dot(text, expected):\n    identifier = sqlparse.parse(text)[0].tokens[0]\n    assert identifier.get_real_name() == expected\n\n\n@pytest.mark.parametrize('text', [\n    'db.schema.tbl',\n    'db.schema.tbl.col',\n    'db.schema.tbl.col AS alias_name',\n    '\"db\".\"schema\".\"tbl\".\"col\"',\n    'db.schema.tbl.*',\n    'db.schema.func()',\n])\ndef test_parent_name_still_uses_first_dot(text):\n    identifier = sqlparse.parse(text)[0].tokens[0]\n    assert identifier.get_parent_name() == 'db'\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "순서대로 tbl, col, col, col, col, *, func",
+       "input": "db.schema.tbl; db.schema.tbl.col; db.schema.tbl.col AS alias_name; db.schema.tbl.col alias_name; \"db\".\"schema\".\"tbl\".\"col\"; db.schema.tbl.*; db.schema.func()",
+       "quote": "The object name is the component after the last dot. Anchor on the last dot instead.",
+       "quote_in_request": true,
+       "rule": "다중 점 이름의 실제 이름은 마지막 점 다음 구성요소다.",
+       "source": "explicit_request",
+       "test": "test_real_name_uses_last_dot",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "col",
+       "input": "tbl.col",
+       "quote": "For a 2-part name the first dot is also the last, so it was accidentally correct",
+       "quote_in_request": true,
+       "rule": "두 부분 이름의 기존 동작을 유지한다.",
+       "source": "explicit_request",
+       "test": "test_real_name_uses_last_dot",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "col",
+       "input": "col",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "점이 없는 이름은 자체 이름을 반환한다.",
+       "source": "existing_contract",
+       "test": "test_real_name_uses_last_dot",
+       "test_in_file": true,
+       "where": "sqlparse/sql.py:NameAliasMixin.get_real_name 및 TokenList._get_first_name"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "각 입력에서 db",
+       "input": "db.schema.tbl; db.schema.tbl.col; db.schema.tbl.col AS alias_name; \"db\".\"schema\".\"tbl\".\"col\"; db.schema.tbl.*; db.schema.func()",
+       "quote": "get_parent_name still uses the first dot, as documented",
+       "quote_in_request": true,
+       "rule": "부모 이름은 첫 번째 점 앞 구성요소를 유지한다.",
+       "source": "explicit_request",
+       "test": "test_parent_name_still_uses_first_dot",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Fix get_real_name for names with more than two dotted parts (#332)",
+       "covered_by": [
+        "test_real_name_uses_last_dot"
+       ]
+      },
+      {
+       "clause": "The object name is the component after the last dot.",
+       "covered_by": [
+        "test_real_name_uses_last_dot"
+       ]
+      },
+      {
+       "clause": "Anchor on the last dot instead.",
+       "covered_by": [
+        "test_real_name_uses_last_dot"
+       ]
+      },
+      {
+       "clause": "get_parent_name still uses the first dot, as documented, so parent/real name now come from opposite ends as intended.",
+       "covered_by": [
+        "test_real_name_uses_last_dot",
+        "test_parent_name_still_uses_first_dot"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "5부분 이상 이름",
+       "tested": "3·4부분 이름 및 1·2부분 경계"
+      },
+      {
+       "not_tested": "인용된 별칭",
+       "tested": "AS 별칭 및 암시적 별칭"
+      },
+      {
+       "not_tested": "백틱으로 인용된 이름",
+       "tested": "큰따옴표로 인용된 이름"
+      },
+      {
+       "not_tested": "인자가 있는 함수",
+       "tested": "와일드카드 및 인자 없는 함수"
+      }
+     ]
+    },
+    "red": "red on the current code: ]\nFAILED tests/test_lupus_eef3d9b7.py::test_real_name_uses_last_dot[\"db\".\"schema\".\"tbl\".\"col\"-col]\nFAILED tests/test_lupus_eef3d9b7.py::test_real_name_uses_last_dot[db.schema.tbl.*-*]\nFAILED tests/test_lupus_eef3d9b7.py::test_real_name_uses_last_dot[db.schema.func()-func]\n7 failed, 8 passed in 0.03s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 52.0,
+   "profile": {
+    "total_seconds": 51.95200837496668,
+    "stages": {
+     "model_execution": {
+      "seconds": 44.275972583,
+      "share": 0.8522475640101449
+     },
+     "workspace": {
+      "seconds": 0.167474209,
+      "share": 0.003223633007433419
+     },
+     "baseline_red": {
+      "seconds": 2.879344335,
+      "share": 0.055423157353574524
+     },
+     "verification": {
+      "seconds": 4.144626624,
+      "share": 0.07977798652336812
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.163217833,
+      "share": 0.003141704009245719
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.300797416,
+      "share": 0.005789909291455624
+     }
+    },
+    "unattributed_seconds": 0.020575374966682602,
+    "unattributed_share": 0.00039604580477772144,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 4,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 152608,
+   "errors": []
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "plain",
+   "seconds": 114.1,
+   "added_lines": 63,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 315694,
+   "errors": [],
+   "hidden_detail": "st_split_for_update_in_begin_end - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 45 passed in 0.06s"
+  },
+  {
+   "repo": "sqlparse",
+   "commit": "8f978caa",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "\"\"\"Regression coverage for stack-based statement nesting.\"\"\"\n\nimport pytest\n\nimport sqlparse\n\n\n@pytest.mark.parametrize('prefix', ['', 'CREATE PROCEDURE p() '])\ndef test_nested_case_preserves_enclosing_block(prefix):\n    block = (prefix + 'BEGIN SELECT CASE WHEN 1=1 THEN '\n             'CASE WHEN 2=2 THEN 3 END ELSE 4 END; SELECT 5; END;')\n    assert sqlparse.split(block + ' SELECT 6;') == [block, 'SELECT 6;']\n\n\ndef test_declaration_section_ends_with_body():\n    block = ('CREATE FUNCTION f() RETURNS INTEGER AS DECLARE x INTEGER; '\n             'BEGIN SELECT 1; END;')\n    assert sqlparse.split(block + ' SELECT 2;') == [block, 'SELECT 2;']\n\n\n@pytest.mark.parametrize('modifier', ['TRANSACTION', 'WORK', 'TRAN',\n                                      'DISTRIBUTED TRANSACTION', 'DEFERRED',\n                                      'IMMEDIATE', 'EXCLUSIVE', ''])\ndef test_transaction_begin_with_comments(modifier):\n    begin = 'BEGIN /* block; END */ ' + modifier + ';'\n    assert sqlparse.split(begin + ' SELECT 1; COMMIT;') == [\n        begin, 'SELECT 1;', 'COMMIT;']\n\n\ndef test_case_inside_parentheses_and_literal():\n    first = \"SELECT (CASE WHEN 1=1 THEN 'BEGIN; END;' ELSE 'x' END);\"\n    assert sqlparse.split(first + ' SELECT 2;') == [first, 'SELECT 2;']\n\n\ndef test_unterminated_block_retains_internal_statements():\n    text = 'BEGIN SELECT CASE WHEN 1=1 THEN 2 END; SELECT 3;'\n    assert sqlparse.split(text) == [text]\n\n\ndef test_nested_control_flow_without_create():\n    block = ('BEGIN IF x THEN WHILE y LOOP SELECT 1; END LOOP; '\n             'END IF; SELECT 2; END;')\n    assert sqlparse.split(block + ' SELECT 3;') == [block, 'SELECT 3;']\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "CASE 중첩을 단일 플래그로 처리한다",
+       "choice": "중첩 구조별로 종료를 처리한다",
+       "differs_on": "BEGIN SELECT CASE WHEN 1=1 THEN CASE WHEN 2=2 THEN 3 END ELSE 4 END; SELECT 5; END; SELECT 6;",
+       "expected": "BEGIN부터 END;까지 하나의 문장으로 유지하고 SELECT 6;을 별도 문장으로 반환",
+       "input": "prefix는 '' 또는 'CREATE PROCEDURE p() '. prefix + 'BEGIN SELECT CASE WHEN 1=1 THEN CASE WHEN 2=2 THEN 3 END ELSE 4 END; SELECT 5; END; SELECT 6;'",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "중첩 CASE의 END는 바깥 BEGIN을 닫지 않는다",
+       "source": "worker_choice",
+       "test": "test_nested_case_preserves_enclosing_block",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "DECLARE와 BEGIN을 독립적인 미종료 중첩으로 유지한다",
+       "choice": "BEGIN은 선언부를 본문으로 전환한다",
+       "differs_on": "CREATE FUNCTION f() RETURNS INTEGER AS DECLARE x INTEGER; BEGIN SELECT 1; END; SELECT 2;",
+       "expected": "['CREATE FUNCTION f() RETURNS INTEGER AS DECLARE x INTEGER; BEGIN SELECT 1; END;', 'SELECT 2;']",
+       "input": "CREATE FUNCTION f() RETURNS INTEGER AS DECLARE x INTEGER; BEGIN SELECT 1; END; SELECT 2;",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "선언부와 본문은 하나의 블록이며 END 이후 문장은 분리한다",
+       "source": "worker_choice",
+       "test": "test_declaration_section_ends_with_body",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "Keyword 토큰인 수식어만 인식한다",
+       "choice": "열거한 트랜잭션 수식어와 BEGIN;을 주석 유무에 관계없이 인식한다",
+       "differs_on": "BEGIN /* block; END */ DEFERRED; SELECT 1; COMMIT;",
+       "expected": "각 입력에서 BEGIN 문장, SELECT 1;, COMMIT;으로 분리",
+       "input": "BEGIN /* block; END */ {modifier}; SELECT 1; COMMIT; — modifier: TRANSACTION, WORK, TRAN, DISTRIBUTED TRANSACTION, DEFERRED, IMMEDIATE, EXCLUSIVE, 빈 문자열",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "주석을 건너뛰어 트랜잭션 BEGIN을 판별한다",
+       "source": "worker_choice",
+       "test": "test_transaction_begin_with_comments",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[\"SELECT (CASE WHEN 1=1 THEN 'BEGIN; END;' ELSE 'x' END);\", 'SELECT 2;']",
+       "input": "SELECT (CASE WHEN 1=1 THEN 'BEGIN; END;' ELSE 'x' END); SELECT 2;",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "문자열 내부 세미콜론은 분할하지 않고 CASE와 괄호 종료 후 분할한다",
+       "source": "existing_contract",
+       "test": "test_case_inside_parentheses_and_literal",
+       "test_in_file": true,
+       "where": "tests/test_split.py::test_split_semicolon, tests/test_split.py::test_split_casewhen"
+      },
+      {
+       "alternative": "CASE의 END로 BEGIN까지 종료된 것으로 처리한다",
+       "choice": "입력 끝에서 미종료 블록을 하나의 문장으로 반환한다",
+       "differs_on": "BEGIN SELECT CASE WHEN 1=1 THEN 2 END; SELECT 3;",
+       "expected": "['BEGIN SELECT CASE WHEN 1=1 THEN 2 END; SELECT 3;']",
+       "input": "BEGIN SELECT CASE WHEN 1=1 THEN 2 END; SELECT 3;",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "미종료 BEGIN의 내부 문장은 끝까지 유지한다",
+       "source": "worker_choice",
+       "test": "test_unterminated_block_retains_internal_statements",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "CREATE 문장에서만 제어 블록을 추적한다",
+       "choice": "BEGIN 내부 제어 블록을 스택으로 관리한다",
+       "differs_on": "BEGIN IF x THEN WHILE y LOOP SELECT 1; END LOOP; END IF; SELECT 2; END; SELECT 3;",
+       "expected": "['BEGIN IF x THEN WHILE y LOOP SELECT 1; END LOOP; END IF; SELECT 2; END;', 'SELECT 3;']",
+       "input": "BEGIN IF x THEN WHILE y LOOP SELECT 1; END LOOP; END IF; SELECT 2; END; SELECT 3;",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "CREATE 없이도 중첩 제어 블록의 종료를 구분한다",
+       "source": "worker_choice",
+       "test": "test_nested_control_flow_without_create",
+       "test_in_file": true,
+       "where": ""
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Refactor statement splitter to a simplified stack-based architecture (fixes #845)",
+       "covered_by": [
+        "test_nested_case_preserves_enclosing_block",
+        "test_declaration_section_ends_with_body",
+        "test_transaction_begin_with_comments",
+        "test_case_inside_parentheses_and_literal",
+        "test_unterminated_block_retains_internal_statements",
+        "test_nested_control_flow_without_create"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "매우 깊은 중첩",
+       "tested": "중첩 CASE와 BEGIN"
+      },
+      {
+       "not_tested": "중첩 DECLARE 선언부",
+       "tested": "CREATE 함수 선언부"
+      },
+      {
+       "not_tested": "수식어 사이에 주석이 있는 DISTRIBUTED TRANSACTION",
+       "tested": "주석을 포함한 트랜잭션 BEGIN"
+      },
+      {
+       "not_tested": "달러 인용 문자열",
+       "tested": "괄호와 작은따옴표 문자열"
+      },
+      {
+       "not_tested": "미종료 CASE와 괄호",
+       "tested": "미종료 BEGIN"
+      },
+      {
+       "not_tested": "FOR LOOP 중첩",
+       "tested": "IF와 WHILE LOOP 중첩"
+      }
+     ]
+    },
+    "red": "red on the current code: body\nFAILED tests/test_lupus_b1434e89.py::test_transaction_begin_with_comments[TRAN]\nFAILED tests/test_lupus_b1434e89.py::test_transaction_begin_with_comments[DISTRIBUTED TRANSACTION]\nFAILED tests/test_lupus_b1434e89.py::test_unterminated_block_retains_internal_statements\n5 failed, 9 passed in 0.03s"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 106.4,
+   "profile": {
+    "total_seconds": 106.42645708296914,
+    "stages": {
+     "model_execution": {
+      "seconds": 98.859542709,
+      "share": 0.9289000631856978
+     },
+     "workspace": {
+      "seconds": 0.168958253,
+      "share": 0.0015875587483691355
+     },
+     "baseline_red": {
+      "seconds": 2.860233791,
+      "share": 0.026875213827424388
+     },
+     "verification": {
+      "seconds": 3.994901958,
+      "share": 0.03753673726905716
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.19178679,
+      "share": 0.001802059330514824
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.327461624,
+      "share": 0.003076881754550128
+     }
+    },
+    "unattributed_seconds": 0.023571957969139135,
+    "unattributed_share": 0.0002214858843864608,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 56,
+   "hidden_tests_pass": false,
+   "calls": 1,
+   "tokens": 268822,
+   "errors": [],
+   "hidden_detail": "st_split_for_update_in_begin_end - AssertionErr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 45 passed in 0.05s"
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "plain",
+   "seconds": 57.7,
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 229340,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "f89d7a33",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import unittest\nfrom itertools import count\n\nimport more_itertools as mi\n\n\nclass IchunkedBoundaryTests(unittest.TestCase):\n    def test_zero_returns_no_chunks(self):\n        for values in ([], [1], [1, 2, 3], count()):\n            with self.subTest(values=type(values).__name__):\n                self.assertEqual(list(mi.ichunked(values, 0)), [])\n\n    def test_zero_preserves_input(self):\n        source = iter([10, 20])\n        list(mi.ichunked(source, 0))\n        self.assertEqual(list(source), [10, 20])\n\n    def test_negative_raises_even_for_empty_input(self):\n        for n in (-1, -2, -100):\n            for values in ([], [1, 2], count()):\n                with self.subTest(n=n, values=type(values).__name__):\n                    with self.assertRaisesRegex(ValueError, '^n must be at least 0$'):\n                        list(mi.ichunked(values, n))\n\n    def test_negative_preserves_input(self):\n        source = iter([10, 20])\n        try:\n            list(mi.ichunked(source, -1))\n        except ValueError:\n            pass\n        self.assertEqual(list(source), [10, 20])\n\n    def test_positive_boundary_and_partial_chunk(self):\n        for n, expected in ((1, [[1], [2], [3]]), (2, [[1, 2], [3]])):\n            with self.subTest(n=n):\n                self.assertEqual(\n                    [list(chunk) for chunk in mi.ichunked([1, 2, 3], n)],\n                    expected,\n                )\n\n\nif __name__ == '__main__':\n    unittest.main()\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[]",
+       "input": "n=0; iterable=[], [1], [1,2,3], count()",
+       "quote": "make ichunked match chunked for n=0 and negative n",
+       "quote_in_request": true,
+       "rule": "크기가 0이면 chunked처럼 청크를 반환하지 않는다.",
+       "source": "explicit_request",
+       "test": "test_zero_returns_no_chunks",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "남은 source는 [10,20]",
+       "input": "source=iter([10,20]); ichunked(source,0)를 소진",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "chunked의 n=0 동작처럼 입력 원소를 소비하지 않는다.",
+       "source": "existing_contract",
+       "test": "test_zero_preserves_input",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: chunked의 take 기반 iterator"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "ValueError('n must be at least 0')",
+       "input": "n=-1,-2,-100 각각에 iterable=[], [1,2], count()",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "빈 입력을 포함하여 음수 크기는 chunked와 동일한 오류를 발생시킨다.",
+       "source": "existing_contract",
+       "test": "test_negative_raises_even_for_empty_input",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: chunked의 음수 n 검사"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "남은 source는 [10,20]",
+       "input": "source=iter([10,20]); ichunked(source,-1)를 소진 시도",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "chunked처럼 음수 크기를 검사할 때 입력 원소를 소비하지 않는다.",
+       "source": "existing_contract",
+       "test": "test_negative_preserves_input",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: chunked는 iter(iterable)보다 먼저 음수 n을 검사"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "각각 [[1],[2],[3]], [[1,2],[3]]",
+       "input": "iterable=[1,2,3]; n=1 및 n=2",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "양수 크기의 청크 분할과 마지막 부분 청크 동작을 유지한다.",
+       "source": "existing_contract",
+       "test": "test_positive_boundary_and_partial_chunk",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: ichunked와 chunked의 docstring"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Issue 1304: make ichunked match chunked for n=0 and negative n",
+       "covered_by": [
+        "test_zero_returns_no_chunks",
+        "test_zero_preserves_input",
+        "test_negative_raises_even_for_empty_input",
+        "test_negative_preserves_input"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "사용자 정의 iterable의 __iter__ 부작용",
+       "tested": "0 및 음수 정수 크기, 빈 입력·유한 입력·무한 입력"
+      },
+      {
+       "not_tested": "입력 길이보다 큰 양수 크기",
+       "tested": "양수 크기 1과 2"
+      }
+     ]
+    },
+    "red": "red on the current code: ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"^n must be at least 0$\" does not match \"Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.\"\n\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nFAILED (failures=10, errors=4)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 80.5,
+   "profile": {
+    "total_seconds": 80.5313242910197,
+    "stages": {
+     "model_execution": {
+      "seconds": 60.981491625,
+      "share": 0.7572393992259262
+     },
+     "workspace": {
+      "seconds": 0.144330126,
+      "share": 0.0017922234269788942
+     },
+     "baseline_red": {
+      "seconds": 6.588148916,
+      "share": 0.08180852573828423
+     },
+     "verification": {
+      "seconds": 12.629602417,
+      "share": 0.15682844567860119
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.024994792,
+      "share": 0.0003103735375029372
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.137531541,
+      "share": 0.001707801805208071
+     }
+    },
+    "unattributed_seconds": 0.025224874019698973,
+    "unattributed_share": 0.0003132305874983839,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 184143,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "plain",
+   "seconds": 60.3,
+   "added_lines": 16,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 211781,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "3eb4053e",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import gc\nimport unittest\nfrom itertools import chain\n\nimport more_itertools as mi\n\n\nclass ZeroCacheLookaheadTests(unittest.TestCase):\n    def test_repeated_lookahead_has_bounded_storage(self):\n        pulls = []\n\n        def source():\n            for value in [None, 20, 30]:\n                pulls.append(value)\n                yield value\n\n        seeker = mi.seekable(source(), maxlen=0)\n        view = seeker.elements()\n        observations = [(seeker.peek(), bool(seeker)) for _ in range(2048)]\n        self.assertEqual(observations, [(None, True)] * 2048)\n        self.assertEqual(pulls, [None])\n\n        # Traverse only the iterator wrappers used to put lookahead back.\n        # A fixed wrapper is allowed; one wrapper per probe is unbounded.\n        pending = [seeker._source]\n        seen = set()\n        wrappers = 0\n        while pending:\n            obj = pending.pop()\n            if id(obj) in seen:\n                continue\n            seen.add(id(obj))\n            if isinstance(obj, chain):\n                wrappers += 1\n            if isinstance(obj, (chain, tuple, type(iter(())))):\n                pending.extend(gc.get_referents(obj))\n        self.assertLessEqual(wrappers, 1)\n        self.assertEqual((list(seeker), list(view), pulls),\n                         ([None, 20, 30], [], [None, 20, 30]))\n\n    def test_seek_consumes_pending_lookahead(self):\n        seeker = mi.seekable(range(6), maxlen=0)\n        results = [seeker.peek()]\n        seeker.seek(0)\n        results.append(next(seeker))\n        results.append(seeker.peek())\n        seeker.seek(2)\n        results.append(next(seeker))\n        results.append(seeker.peek())\n        seeker.relative_seek(-10)\n        results.append(next(seeker))\n        seeker.relative_seek(1)\n        self.assertEqual((results, list(seeker), list(seeker.elements())),\n                         ([0, 0, 1, 3, 4, 4], [], []))\n\n    def test_empty_and_exhausted_lookahead(self):\n        for values in ([], [False]):\n            with self.subTest(values=values):\n                seeker = mi.seekable(values, maxlen=0)\n                self.assertEqual(list(seeker), values)\n                self.assertEqual([(seeker.peek('end'), bool(seeker))\n                                  for _ in range(100)], [('end', False)] * 100)\n                with self.assertRaises(StopIteration):\n                    seeker.peek()\n                seeker.seek(10)\n                self.assertEqual(list(seeker.elements()), [])\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "매번 (None,true)",
+       "input": "maxlen=0, [None,20,30]에서 peek와 bool을 2048회 반복",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "확인은 항목을 소비하지 않는다",
+       "source": "existing_contract",
+       "test": "test_repeated_lookahead_has_bounded_storage",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: seekable 문서의 peek 및 bool 설명"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "생성기가 내놓은 값은 [None]뿐",
+       "input": "같은 항목을 2048회 반복 확인하는 생성기",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "반복 확인은 원본을 추가로 진행시키지 않는다",
+       "source": "existing_contract",
+       "test": "test_repeated_lookahead_has_bounded_storage",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: seekable.peek 문서"
+      },
+      {
+       "alternative": "고정 래퍼 두 개도 허용",
+       "choice": "고정 chain 래퍼 하나까지 허용하는 구조 검사",
+       "differs_on": "반복 확인 후 고정 chain 래퍼가 두 개 있는 구현",
+       "expected": "도달 가능한 chain 객체가 1개 이하",
+       "input": "maxlen=0에서 peek와 bool을 2048회 반복한 뒤 원본의 연결 래퍼 검사",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "반복 확인으로 연결 래퍼가 누적되지 않는다",
+       "source": "worker_choice",
+       "test": "test_repeated_lookahead_has_bounded_storage",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "소비 결과 [None,20,30], 뷰 [], 생성기 산출 기록 [None,20,30]",
+       "input": "반복 확인 후 전체 소비 및 미리 얻은 elements 뷰 확인",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "항목 순서와 빈 캐시 뷰를 유지한다",
+       "source": "existing_contract",
+       "test": "test_repeated_lookahead_has_bounded_storage",
+       "test_in_file": true,
+       "where": "tests/test_more.py: SeekableTest.test_maxlen_zero 및 test_maxlen_zero_peek_does_not_drop_items"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "관측값 [0,0,1,3,4,4], 남은 항목 [], 캐시 []",
+       "input": "range(6), maxlen=0에서 peek, seek(0), next, peek, seek(2), next, peek, relative_seek(-10), next, relative_seek(1)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "선행 확인 항목을 탐색 시 정상 소비하고 저장되지 않은 과거로 돌아가지 않는다",
+       "source": "existing_contract",
+       "test": "test_seek_consumes_pending_lookahead",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: seekable.seek 및 relative_seek 구현; tests/test_more.py: SeekableTest.test_maxlen_zero"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "각 입력과 동일한 결과",
+       "input": "maxlen=0으로 [] 및 [False]를 전체 소비",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "빈 입력과 거짓 값도 정상 순회한다",
+       "source": "existing_contract",
+       "test": "test_empty_and_exhausted_lookahead",
+       "test_in_file": true,
+       "where": "tests/test_more.py: SeekableTest.test_maxlen_zero"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "매번 ('end',false)",
+       "input": "소진된 [] 및 [False]에서 peek('end')와 bool을 100회 반복",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "소진 후 기본값과 거짓 상태를 유지한다",
+       "source": "existing_contract",
+       "test": "test_empty_and_exhausted_lookahead",
+       "test_in_file": true,
+       "where": "tests/test_more.py: PeekableMixinTests.test_peek_default 및 test_truthiness"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "StopIteration",
+       "input": "소진된 maxlen=0 반복자에 기본값 없이 peek 호출",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "기본값 없는 소진 확인은 예외를 발생시킨다",
+       "source": "existing_contract",
+       "test": "test_empty_and_exhausted_lookahead",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: seekable.peek"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[]",
+       "input": "소진된 maxlen=0 반복자에서 seek(10) 후 elements 확인",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "끝 너머 탐색도 캐시를 채우지 않는다",
+       "source": "existing_contract",
+       "test": "test_empty_and_exhausted_lookahead",
+       "test_in_file": true,
+       "where": "tests/test_more.py: SeekableTest.test_past_end 및 test_maxlen_zero"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Bound zero-cache seekable lookahead storage",
+       "covered_by": [
+        "test_repeated_lookahead_has_bounded_storage",
+        "test_seek_consumes_pending_lookahead",
+        "test_empty_and_exhausted_lookahead"
+       ]
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "무한 생성기의 장시간 반복 확인",
+       "tested": "2048회 반복 확인하는 유한 생성기"
+      },
+      {
+       "not_tested": "소비 도중 사용자 정의 예외를 발생시키는 원본",
+       "tested": "None과 False를 포함한 입력"
+      },
+      {
+       "not_tested": "음수 절대 인덱스 탐색",
+       "tested": "maxlen=0에서 절대·상대 탐색"
+      }
+     ]
+    },
+    "red": "red on the current code: py\", line 37, in test_repeated_lookahead_has_bounded_storage\n    self.assertLessEqual(wrappers, 1)\n    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^\nAssertionError: 4096 not less than or equal to 1\n\n----------------------------------------------------------------------\nRan 3 tests in 0.008s\n\nFAILED (failures=1)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 112.7,
+   "profile": {
+    "total_seconds": 112.70669670798816,
+    "stages": {
+     "model_execution": {
+      "seconds": 92.868621792,
+      "share": 0.8239849494712222
+     },
+     "workspace": {
+      "seconds": 0.16681079,
+      "share": 0.0014800432882190679
+     },
+     "baseline_red": {
+      "seconds": 6.616477625,
+      "share": 0.058705275003690646
+     },
+     "verification": {
+      "seconds": 12.830616625,
+      "share": 0.11384076545374097
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.023852292,
+      "share": 0.00021163154183995755
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.162919876,
+      "share": 0.0014455208142787575
+     }
+    },
+    "unattributed_seconds": 0.037397707988162665,
+    "unattributed_share": 0.00033181442700832946,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 16,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 249905,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "plain",
+   "seconds": 41.4,
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 167198,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "2b8d5cdd",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import unittest\n\nfrom more_itertools import bucket\n\n\nclass BucketLookupTests(unittest.TestCase):\n    def test_membership_misses_do_not_register_keys(self):\n        s = bucket(['a1', 'b1', 'a2'], key=lambda item: item[0])\n        for key in ['c', 'd', 'c']:\n            self.assertNotIn(key, s)\n        self.assertEqual(sorted(s), ['a', 'b'])\n        self.assertEqual(list(s['a']), ['a1', 'a2'])\n        self.assertEqual(list(s['b']), ['b1'])\n\n    def test_missing_subscript_and_empty_source(self):\n        for items, expected_keys in [([], []), (['a1'], ['a'])]:\n            with self.subTest(items=items):\n                s = bucket(items, key=lambda item: item[0])\n                self.assertEqual(list(s['missing']), [])\n                self.assertNotIn('another', s)\n                self.assertEqual(list(s), expected_keys)\n                self.assertIs(type(s._cache), dict)\n\n    def test_directly_yielded_key_is_registered_immediately(self):\n        s = bucket(['a1', 'a2'], key=lambda item: item[0])\n        values = s['a']\n        self.assertEqual(next(values), 'a1')\n        self.assertEqual(list(s._cache), ['a'])\n        self.assertEqual(list(values), ['a2'])\n        self.assertEqual(list(s), ['a'])\n        self.assertNotIn('a', s)\n        self.assertEqual(list(s), ['a'])\n\n    def test_membership_preserves_item_and_validator_filters_keys(self):\n        s = bucket(\n            ['x1', 'a1', 'b1', 'a2'],\n            key=lambda item: item[0],\n            validator=lambda key: key != 'x',\n        )\n        self.assertIn('a', s)\n        self.assertEqual(list(s['a']), ['a1', 'a2'])\n        self.assertNotIn('c', s)\n        self.assertEqual(sorted(s), ['a', 'b'])\n        self.assertEqual(list(s['b']), ['b1'])\n\n\nif __name__ == '__main__':\n    unittest.main()\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "모두 False",
+       "input": "['a1','b1','a2']에서 'c','d','c' 멤버십 조회",
+       "quote": "every failed lookup left a permanent phantom key behind",
+       "quote_in_request": true,
+       "rule": "없는 키의 멤버십 조회는 실패한다",
+       "source": "explicit_request",
+       "test": "test_membership_misses_do_not_register_keys",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a','b']",
+       "input": "위 조회 후 sorted(s)",
+       "quote": "don't let a bucket lookup invent a key",
+       "quote_in_request": true,
+       "rule": "실패한 조회는 키를 추가하지 않는다",
+       "source": "explicit_request",
+       "test": "test_membership_misses_do_not_register_keys",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a1','a2']",
+       "input": "위 조회 후 list(s['a'])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "실패한 조회 중 만난 항목은 캐시에 보존된다",
+       "source": "existing_contract",
+       "test": "test_membership_misses_do_not_register_keys",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: bucket 문서의 'exhaust the iterable and cache all values'"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['b1']",
+       "input": "위 조회 후 list(s['b'])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "다른 키의 캐시 항목도 보존된다",
+       "source": "existing_contract",
+       "test": "test_membership_misses_do_not_register_keys",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: bucket 문서"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "[]",
+       "input": "빈 입력 또는 ['a1']에서 list(s['missing'])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "없는 키의 하위 반복자는 비어 있다",
+       "source": "existing_contract",
+       "test": "test_missing_subscript_and_empty_source",
+       "test_in_file": true,
+       "where": "tests/test_more.py: BucketTests.test_basic"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "False",
+       "input": "위 입력에서 'another' 멤버십 조회",
+       "quote": "every failed lookup left a permanent phantom key behind",
+       "quote_in_request": true,
+       "rule": "없는 키는 멤버십에 포함되지 않는다",
+       "source": "explicit_request",
+       "test": "test_missing_subscript_and_empty_source",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "빈 입력은 [], ['a1'] 입력은 ['a']",
+       "input": "위 조회 후 list(s)",
+       "quote": "register a key only where an item with that key is actually seen",
+       "quote_in_request": true,
+       "rule": "빈 입력과 실패한 하위 반복자 조회에도 유령 키가 생기지 않는다",
+       "source": "explicit_request",
+       "test": "test_missing_subscript_and_empty_source",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "dict",
+       "input": "위 두 입력에서 type(s._cache)",
+       "quote": "Make _cache a plain dict so a lookup cannot insert",
+       "quote_in_request": true,
+       "rule": "캐시는 일반 dict이다",
+       "source": "explicit_request",
+       "test": "test_missing_subscript_and_empty_source",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "'a1'",
+       "input": "['a1','a2']에서 next(s['a'])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "일치하는 항목을 호출자에게 전달한다",
+       "source": "existing_contract",
+       "test": "test_directly_yielded_key_is_registered_immediately",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: bucket 문서의 next(a_iterable) 예제"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a']",
+       "input": "첫 항목을 받은 직후 list(s._cache)",
+       "quote": "A key whose items are produced straight to the caller is registered at that point",
+       "quote_in_request": true,
+       "rule": "직접 전달한 항목의 키는 전달 시점에 등록된다",
+       "source": "explicit_request",
+       "test": "test_directly_yielded_key_is_registered_immediately",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a2']",
+       "input": "첫 항목을 받은 반복자의 나머지를 list로 소비",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "등록 과정은 항목을 복제하거나 누락하지 않는다",
+       "source": "existing_contract",
+       "test": "test_directly_yielded_key_is_registered_immediately",
+       "test_in_file": true,
+       "where": "tests/test_more.py: BucketTests.test_basic"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a']",
+       "input": "모든 'a' 항목 소비 후 list(s)",
+       "quote": "a key fully consumed through s[key] is still listed",
+       "quote_in_request": true,
+       "rule": "완전히 소비된 키도 나열된다",
+       "source": "explicit_request",
+       "test": "test_directly_yielded_key_is_registered_immediately",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "False",
+       "input": "모든 'a' 항목 소비 후 'a' 멤버십 조회",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "소비 후 멤버십은 남은 항목의 존재 여부를 나타낸다",
+       "source": "existing_contract",
+       "test": "test_directly_yielded_key_is_registered_immediately",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: bucket.__contains__"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a']",
+       "input": "소비된 'a'의 실패한 멤버십 조회 후 list(s)",
+       "quote": "a key fully consumed through s[key] is still listed",
+       "quote_in_request": true,
+       "rule": "실패한 조회는 이미 등록된 키를 제거하지 않는다",
+       "source": "explicit_request",
+       "test": "test_directly_yielded_key_is_registered_immediately",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "True",
+       "input": "['x1','a1','b1','a2'], 'x' 거부 validator에서 'a' 멤버십 조회",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "존재하는 유효 키의 멤버십 조회는 성공한다",
+       "source": "existing_contract",
+       "test": "test_membership_preserves_item_and_validator_filters_keys",
+       "test_in_file": true,
+       "where": "tests/test_more.py: BucketTests.test_in"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a1','a2']",
+       "input": "성공한 멤버십 조회 후 list(s['a'])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "멤버십 조회는 항목을 소비하지 않는다",
+       "source": "existing_contract",
+       "test": "test_membership_preserves_item_and_validator_filters_keys",
+       "test_in_file": true,
+       "where": "tests/test_more.py: BucketTests.test_in"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "False",
+       "input": "위 입력에서 'c' 멤버십 조회",
+       "quote": "every failed lookup left a permanent phantom key behind",
+       "quote_in_request": true,
+       "rule": "유효하지만 없는 키의 조회는 실패한다",
+       "source": "explicit_request",
+       "test": "test_membership_preserves_item_and_validator_filters_keys",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['a','b']",
+       "input": "위 조회 후 sorted(s)",
+       "quote": "register a key only where an item with that key is actually seen",
+       "quote_in_request": true,
+       "rule": "없는 키와 validator가 거부한 키는 등록되지 않는다",
+       "source": "explicit_request",
+       "test": "test_membership_preserves_item_and_validator_filters_keys",
+       "test_in_file": true,
+       "where": "tests/test_more.py: BucketTests.test_list_validator"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "['b1']",
+       "input": "위 조회 후 list(s['b'])",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "다른 유효 키의 항목은 보존된다",
+       "source": "existing_contract",
+       "test": "test_membership_preserves_item_and_validator_filters_keys",
+       "test_in_file": true,
+       "where": "tests/test_more.py: BucketTests.test_basic"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "don't let a bucket lookup invent a key",
+       "covered_by": [
+        "test_membership_misses_do_not_register_keys",
+        "test_missing_subscript_and_empty_source"
+       ]
+      },
+      {
+       "clause": "Make _cache a plain dict so a lookup cannot insert",
+       "covered_by": [
+        "test_missing_subscript_and_empty_source"
+       ]
+      },
+      {
+       "clause": "register a key only where an item with that key is actually seen",
+       "covered_by": [
+        "test_membership_misses_do_not_register_keys",
+        "test_missing_subscript_and_empty_source",
+        "test_membership_preserves_item_and_validator_filters_keys"
+       ]
+      },
+      {
+       "clause": "A key whose items are produced straight to the caller is registered at that point",
+       "covered_by": [
+        "test_directly_yielded_key_is_registered_immediately"
+       ]
+      },
+      {
+       "clause": "a key fully consumed through s[key] is still listed",
+       "covered_by": [
+        "test_directly_yielded_key_is_registered_immediately"
+       ]
+      },
+      {
+       "clause": "the docstring's own \"Get the keys\" example returned a fourth key after one membership test",
+       "covered_by": []
+      },
+      {
+       "clause": "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>",
+       "covered_by": []
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "무한 입력과 숫자 키",
+       "tested": "빈 입력과 유한 문자열 항목, 문자열 키"
+      },
+      {
+       "not_tested": "대량의 서로 다른 없는 키 조회",
+       "tested": "여러 없는 키의 반복 조회"
+      },
+      {
+       "not_tested": "동일 키의 여러 하위 반복자를 교차 소비",
+       "tested": "직접 전달 및 완전 소비"
+      },
+      {
+       "not_tested": "validator가 조회 키를 거부하는 경우",
+       "tested": "validator가 원본 항목의 키를 거부하는 경우"
+      },
+      {
+       "not_tested": "문서 예제의 일곱 항목을 그대로 사용한 경우",
+       "tested": "축약된 문자열 입력에서 조회 후 키 나열"
+      }
+     ]
+    },
+    "red": "red on the current code: First differing element 0:\n'missing'\n'a'\n\nFirst list contains 2 additional elements.\nFirst extra element 1:\n'a'\n\n- ['missing', 'a', 'another']\n+ ['a']\n\n----------------------------------------------------------------------\nRan 4 tests in 0.001s\n\nFAILED (failures=4)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 96.2,
+   "profile": {
+    "total_seconds": 96.24296537507325,
+    "stages": {
+     "model_execution": {
+      "seconds": 76.291784375,
+      "share": 0.7926998516481646
+     },
+     "workspace": {
+      "seconds": 0.158785,
+      "share": 0.0016498348672153967
+     },
+     "baseline_red": {
+      "seconds": 6.568245833,
+      "share": 0.06824650308105701
+     },
+     "verification": {
+      "seconds": 13.025104583,
+      "share": 0.13533565317983726
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.023664875,
+      "share": 0.0002458868023005571
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.148030042,
+      "share": 0.0015380868765120105
+     }
+    },
+    "unattributed_seconds": 0.02735066707325018,
+    "unattributed_share": 0.0002841835449132363,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 5,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 134718,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "plain",
+   "seconds": 56.6,
+   "added_lines": 9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 171418,
+   "errors": []
+  },
+  {
+   "repo": "more-itertools",
+   "commit": "def2dabe",
+   "arm": "do",
+   "already_failing": 0,
+   "check_drafted": true,
+   "approval": {
+    "test": "import unittest\n\nimport more_itertools as mi\n\n\nclass FalsyError(Exception):\n    def __bool__(self):\n        return False\n\n\nclass BrokenRepr:\n    def __repr__(self):\n        raise RuntimeError('repr must not be called')\n\n\nclass CustomExceptionTests(unittest.TestCase):\n    def test_falsy_too_long(self):\n        for function in (mi.one, mi.only):\n            with self.subTest(function=function.__name__):\n                exc = FalsyError('requested')\n                with self.assertRaises(FalsyError) as caught:\n                    function(iter([1, 2]), too_long=exc)\n                self.assertIs(caught.exception, exc)\n\n    def test_falsy_too_short(self):\n        exc = FalsyError('requested')\n        with self.assertRaises(FalsyError) as caught:\n            mi.one(iter([]), too_short=exc)\n        self.assertIs(caught.exception, exc)\n\n    def test_custom_exception_skips_broken_repr(self):\n        for function in (mi.one, mi.only):\n            for error_type in (FalsyError, RuntimeError):\n                for items in ([BrokenRepr(), 2], [1, BrokenRepr()]):\n                    with self.subTest(function=function.__name__,\n                                      error_type=error_type, position=type(items[0]).__name__):\n                        exc = error_type('requested')\n                        with self.assertRaises(error_type) as caught:\n                            function(iter(items), too_long=exc)\n                        self.assertIs(caught.exception, exc)\n\n    def test_exception_class_skips_broken_repr(self):\n        for function in (mi.one, mi.only):\n            with self.subTest(function=function.__name__):\n                with self.assertRaises(IndexError):\n                    function([BrokenRepr(), BrokenRepr()], too_long=IndexError)\n\n    def test_none_uses_default_errors(self):\n        for function in (mi.one, mi.only):\n            with self.subTest(function=function.__name__):\n                with self.assertRaises(ValueError) as caught:\n                    function([1, 2], too_long=None)\n                self.assertEqual(str(caught.exception),\n                                 'Expected exactly one item in iterable, but got '\n                                 '1, 2, and perhaps more.')\n        with self.assertRaises(ValueError) as caught:\n            mi.one([], too_short=None)\n        self.assertEqual(str(caught.exception),\n                         'too few items in iterable (expected 1)')\n\n    def test_valid_cardinalities_ignore_custom_errors(self):\n        item = BrokenRepr()\n        exc = FalsyError('requested')\n        self.assertIs(mi.one([item], too_short=exc, too_long=exc), item)\n        self.assertIs(mi.only([item], too_long=exc), item)\n        self.assertIs(mi.only([], default=item, too_long=exc), item)\n\n\nif __name__ == '__main__':\n    unittest.main()\n",
+    "described": {
+     "assertions": [
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "FalsyError 발생 및 전달한 인스턴스와 동일",
+       "input": "one와 only에 iter([1, 2]), too_long=FalsyError('requested') 전달",
+       "quote": "Fix one()/only() dropping a falsy user-supplied exception",
+       "quote_in_request": true,
+       "rule": "falsy 사용자 예외를 보존한다",
+       "source": "explicit_request",
+       "test": "test_falsy_too_long",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "FalsyError 발생 및 전달한 인스턴스와 동일",
+       "input": "one(iter([]), too_short=FalsyError('requested'))",
+       "quote": "a `too_long`/`too_short` whose instances are falsy (e.g. an Exception subclass overriding `__bool__`) was discarded and the default `ValueError` raised instead.",
+       "quote_in_request": true,
+       "rule": "빈 iterable에서도 falsy 사용자 예외를 보존한다",
+       "source": "explicit_request",
+       "test": "test_falsy_too_short",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "요청한 예외 발생 및 전달한 인스턴스와 동일",
+       "input": "one와 only에 첫째 또는 둘째 원소의 __repr__가 RuntimeError를 발생시키는 iterator와 FalsyError 또는 RuntimeError 인스턴스 전달",
+       "quote": "only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception.",
+       "quote_in_request": true,
+       "rule": "사용자 예외가 있으면 원소의 repr로 기본 메시지를 만들지 않는다",
+       "source": "explicit_request",
+       "test": "test_custom_exception_skips_broken_repr",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "IndexError 발생",
+       "input": "one와 only에 [BrokenRepr(), BrokenRepr()], too_long=IndexError 전달",
+       "quote": "only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception.",
+       "quote_in_request": true,
+       "rule": "사용자 예외 클래스를 전달해도 기본 메시지 생성을 건너뛴다",
+       "source": "explicit_request",
+       "test": "test_exception_class_skips_broken_repr",
+       "test_in_file": true,
+       "where": ""
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "ValueError 발생",
+       "input": "one와 only에 [1, 2], too_long=None 전달",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "사용자 예외가 없으면 기본 ValueError를 발생시킨다",
+       "source": "existing_contract",
+       "test": "test_none_uses_default_errors",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: one와 only의 문서 및 기본 예외 처리"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "예외 메시지: Expected exactly one item in iterable, but got 1, 2, and perhaps more.",
+       "input": "one와 only에 [1, 2], too_long=None 전달",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "기존 기본 메시지를 유지한다",
+       "source": "existing_contract",
+       "test": "test_none_uses_default_errors",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: one와 only의 msg 생성"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "ValueError 발생",
+       "input": "one([], too_short=None)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "빈 iterable에 사용자 예외가 없으면 ValueError를 발생시킨다",
+       "source": "existing_contract",
+       "test": "test_none_uses_default_errors",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: one의 빈 iterable 처리"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "예외 메시지: too few items in iterable (expected 1)",
+       "input": "one([], too_short=None)",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "기존 빈 iterable 오류 메시지를 유지한다",
+       "source": "existing_contract",
+       "test": "test_none_uses_default_errors",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: one의 빈 iterable 처리"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "item과 동일한 객체 반환",
+       "input": "one([item], too_short=exc, too_long=exc); item은 BrokenRepr, exc는 FalsyError",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "단일 원소는 사용자 예외와 관계없이 반환한다",
+       "source": "existing_contract",
+       "test": "test_valid_cardinalities_ignore_custom_errors",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: one의 return first"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "item과 동일한 객체 반환",
+       "input": "only([item], too_long=exc); item은 BrokenRepr, exc는 FalsyError",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "단일 원소는 사용자 예외와 관계없이 반환한다",
+       "source": "existing_contract",
+       "test": "test_valid_cardinalities_ignore_custom_errors",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: only의 return first"
+      },
+      {
+       "alternative": "",
+       "choice": "",
+       "differs_on": "",
+       "expected": "item과 동일한 객체 반환",
+       "input": "only([], default=item, too_long=exc); item은 BrokenRepr, exc는 FalsyError",
+       "quote": "",
+       "quote_in_request": true,
+       "rule": "빈 iterable에서는 default를 반환한다",
+       "source": "existing_contract",
+       "test": "test_valid_cardinalities_ignore_custom_errors",
+       "test_in_file": true,
+       "where": "more_itertools/more.py: only의 return default"
+      }
+     ],
+     "clauses": [
+      {
+       "clause": "Fix one()/only() dropping a falsy user-supplied exception `one(it, too_long=exc)` and `only(it, too_long=exc)` used `raise too_long or ValueError(msg)`, so a `too_long`/`too_short` whose instances are falsy (e.g. an Exception subclass overriding `__bool__`) was discarded and the default `ValueError`",
+       "covered_by": [
+        "test_falsy_too_long",
+        "test_falsy_too_short"
+       ]
+      },
+      {
+       "clause": "Switch to explicit `is not None` checks, and only build the default message when no custom exception is supplied so a faulty `__repr__` on the iterable's items can't shadow the requested exception.",
+       "covered_by": [
+        "test_custom_exception_skips_broken_repr",
+        "test_exception_class_skips_broken_repr",
+        "test_none_uses_default_errors"
+       ]
+      },
+      {
+       "clause": "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+       "covered_by": []
+      }
+     ],
+     "clauses_not_in_request": 0,
+     "untested": [
+      {
+       "not_tested": "__len__이 0을 반환하는 예외",
+       "tested": "__bool__가 False를 반환하는 예외"
+      },
+      {
+       "not_tested": "무한 iterable에서 사용자 예외 처리",
+       "tested": "원소 두 개의 iterable에서 사용자 예외 처리"
+      },
+      {
+       "not_tested": "__repr__가 실패하는 원소와 기본 예외",
+       "tested": "__repr__가 실패하는 원소와 사용자 예외"
+      },
+      {
+       "not_tested": "새 테스트에서 예외 인자를 생략한 기본 예외",
+       "tested": "None을 명시한 기본 예외"
+      },
+      {
+       "not_tested": "iteration 자체가 예외를 발생시키는 iterable",
+       "tested": "빈 iterable과 단일 원소 iterable"
+      }
+     ]
+    },
+    "red": "red on the current code: repr\n    self.assertIs(caught.exception, exc)\n    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RuntimeError('repr must not be called') is not RuntimeError('requested')\n\n----------------------------------------------------------------------\nRan 6 tests in 0.002s\n\nFAILED (failures=4, errors=9)"
+   },
+   "lupus_done": true,
+   "staged": true,
+   "build_steps": [
+    "ALREADY_SATISFIED"
+   ],
+   "seconds": 87.1,
+   "profile": {
+    "total_seconds": 87.14235112501774,
+    "stages": {
+     "model_execution": {
+      "seconds": 66.915573334,
+      "share": 0.767888087366387
+     },
+     "workspace": {
+      "seconds": 0.165535916,
+      "share": 0.001899603509234171
+     },
+     "baseline_red": {
+      "seconds": 6.490813708,
+      "share": 0.07448517998657199
+     },
+     "verification": {
+      "seconds": 13.362424917,
+      "share": 0.1533401927362478
+     },
+     "trial": {
+      "seconds": 0.0,
+      "share": 0.0
+     },
+     "acceptance": {
+      "seconds": 0.025373918,
+      "share": 0.0002911777989969264
+     },
+     "supervisor_bookkeeping": {
+      "seconds": 0.142073416,
+      "share": 0.0016303601425233074
+     }
+    },
+    "unattributed_seconds": 0.04055591601773756,
+    "unattributed_share": 0.00046539846003873015,
+    "target_met": true,
+    "operations": 4
+   },
+   "added_lines": 9,
+   "hidden_tests_pass": true,
+   "calls": 1,
+   "tokens": 133609,
+   "errors": []
+  }
+ ],
+ "summary": {
+  "plain": {
+   "n": 8,
+   "hidden_pass": 7,
+   "added_lines_mean": 224.6,
+   "tokens_mean": 219603,
+   "seconds_mean": 61.0
+  },
+  "do": {
+   "n": 8,
+   "hidden_pass": 7,
+   "added_lines_mean": 12.5,
+   "tokens_mean": 183253,
+   "seconds_mean": 83.4,
+   "stage_seconds_mean": {
+    "model_execution": 69.56736261475,
+    "workspace": 0.1632771825,
+    "baseline_red": 4.698953770625,
+    "verification": 8.608376056874999,
+    "trial": 0.0,
+    "acceptance": 0.093354458125,
+    "supervisor_bookkeeping": 0.220744073125
+   },
+   "unattributed_seconds_mean": 0.02822223437064686,
+   "unattributed_share_mean": 0.0003481990586948781,
+   "lupus_said_done": 8,
+   "said_done_but_hidden_fail": 1
+  }
+ }
+}

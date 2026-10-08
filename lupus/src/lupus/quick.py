@@ -24,7 +24,7 @@ import shutil
 import stat
 from pathlib import Path
 
-from . import contract, gitx, goals, protect, review, runners, runs, verify
+from . import contract, gitx, goals, protect, review, runners, runs, timing, verify
 from .kernel import Kernel
 from .util import LupusError, atomic_write, find_secret, sha256_bytes
 
@@ -49,6 +49,7 @@ def check_argv(root: Path, command: str) -> list[str]:
     return argv
 
 
+@timing.measured("baseline_red")
 def suite(k: Kernel, project: dict, check: str | None = None, protect_paths: list[str] | None = None,
           files_only: bool = False, container: str | None = None, need_tests: bool = True) -> tuple[dict, dict, str, str]:
     """The project's own test run as a verifier, and what it says right now:
@@ -143,6 +144,7 @@ def fix_tests(k: Kernel, project: dict, actor: str, caps: dict | None = None, ch
 MAX_REQUEST = 2000
 
 
+@timing.measured("baseline_red")
 def _baseline(k: Kernel, project: dict, verifier: dict) -> tuple[str, str]:
     root = Path(project["canonical_root"])
     taken = gitx.guard(root)
@@ -162,6 +164,7 @@ MAX_STAGED_BYTES = 2 * 1024 * 1024
 MAX_ALLOWED_FAILURES = 300
 
 
+@timing.operation("supervisor_bookkeeping", result_goal=True)
 def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict | None = None, stage: bool = True,
                 allow_failing: bool = False, lean: bool = False) -> dict:
     """Step 1 of `lupus do`: a goal whose only job is to WRITE the acceptance test for a request.
@@ -202,8 +205,9 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
                 again = {**whole, "argv": runners.with_failure_names(found["runner"], whole["argv"])}
                 taken = gitx.guard(root)
                 try:
-                    _, output = verify._run_gated(again, root, runs.aux_recorder(k, project["project_id"], "baseline"),
-                                                  lambda pid: runs.clear_aux(k, pid))
+                    with timing.span("baseline_red"):
+                        _, output = verify._run_gated(again, root, runs.aux_recorder(k, project["project_id"], "baseline"),
+                                                      lambda pid: runs.clear_aux(k, pid))
                 finally:
                     gitx.unguard(k, root, taken)
                 already_failing = sorted(runners.failed_ids(found["runner"], output) or [])
@@ -247,6 +251,7 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
             "already_failing": already_failing}
 
 
+@timing.operation("acceptance", result_goal=True)
 def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, test_sha256: str, actor: str,
                   caps: dict | None = None, keep_base: bool = False, contract_sha256: str | None = None) -> dict:
     """Step 2: the user has read the drafted test and approves THIS exact version. Creates the

@@ -36,6 +36,7 @@ import shutil
 from pathlib import Path
 
 from . import goals, protect, runs
+from . import timing
 from .kernel import Kernel
 from .util import LupusError, atomic_write, find_secret_bytes, sha256_bytes, sha256_file, sha256_json
 
@@ -104,6 +105,7 @@ def _is_released(path: str, allowed: list[str]) -> bool:
     return any(path == a or (a.endswith(os.sep) and path.startswith(a)) for a in allowed)
 
 
+@timing.operation("acceptance")
 def grant(k: Kernel, goal_id: str, paths: list[str], actor: str) -> dict:
     if actor != "user":
         raise LupusError("USER_AUTHORITY_REQUIRED", "only the user releases a frozen file")
@@ -161,6 +163,7 @@ def digest(goal_id: str, revision: int, entries: list[dict]) -> str:
     return sha256_json([goal_id, revision, sorted([e["path"], e["change"], e["old_sha256"], e["new_sha256"], e["mode"]] for e in entries)])
 
 
+@timing.measured("workspace")
 def capture(k: Kernel, goal_id: str, root: Path) -> dict | None:
     """Called after a worker and BEFORE the protected files are put back: take aside what the
     worker did to released files. Returns the proposal, or None when it touched none of them."""
@@ -224,6 +227,7 @@ def proposal(k: Kernel, goal_id: str) -> dict | None:
     return None if found is None or _was_approved(k, goal_id, found) else found
 
 
+@timing.measured("workspace")
 def complete(k: Kernel, goal_id: str, root: Path) -> bool:
     """Finish an approval that was recorded but whose files did not all get written (the process
     stopped in between). The record is the decision, and the record is all that is used: the
@@ -255,6 +259,7 @@ def complete(k: Kernel, goal_id: str, root: Path) -> bool:
     return True
 
 
+@timing.measured("workspace")
 def apply(k: Kernel, goal_id: str, root: Path, found: dict) -> None:
     """Write the proposed versions into the project (never through a link)."""
     real_root = Path(os.path.realpath(root))
@@ -333,6 +338,7 @@ def show(k: Kernel, goal_id: str) -> str:
 
 # ---------------------------------------------------------------- decision
 
+@timing.operation("acceptance")
 def approve(k: Kernel, goal_id: str, shown_digest: str, actor: str) -> dict:
     """The user approves exactly the proposal they were shown. A new acceptance revision begins:
     the previous frozen state with the approved files replaced, and nothing else."""

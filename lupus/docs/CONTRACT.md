@@ -322,6 +322,67 @@ worker가 "검사 대상을 바꿔서" 통과하지 못하게 한다(`protect.py
 
 **만들지 않은 것**: 구현 전에 모델이 사용자에게 되묻는 단계. "모델에게 더 말해 주거나 더 묻는" 변경은 지금까지 세 번 재어 세 번 다 이득이 없었고(독립 리뷰, `--lean`, coverage floor), 사용자의 답을 파일럿이 흉내 낼 수 없다.
 
+## DONE 오판 증거 원장과 시간 계측 (2026-10-08)
+
+`evaluations/ledger.py collect <평가 작업 폴더> <출력>`은 2026-10-07의 `issues-*.json`에서 plain 이외의 DONE·숨긴 테스트 실패를 모은다. [failure-ledger-2026-10-08.json](failure-ledger-2026-10-08.json)은 23개 관측을 **8개 고유 커밋**으로 묶고 요청, upstream 테스트 diff·부모 테스트, 저장된 실패 꼬리·승인 자료, 같은 파일의 plain 결과를 보존한다. 판단을 채운 뒤 `check <원장>`으로 인용이 원자료에 그대로 있는지 확인한다.
+
+| 분류 | 고유 커밋 | 관측 |
+|---|---:|---:|
+| 요청에 없는 의도 (`undisclosed_intent`) | 6 | 19 |
+| 명시 요구 누락 (`missed_explicit_requirement`) | 0 | 0 |
+| 회귀 (`regression`) | 0 | 0 |
+| 고정 테스트 충돌 (`frozen_test_conflict`) | 0 | 0 |
+| 근거 부족 (`unknown`) | 2 | 4 |
+
+6건은 요청이 정하지 않은 값·문구·경계를 숨긴 테스트가 요구한다. 나머지 2건은 내부 호출 signature를 바꾼 spy 검사(packaging 959bb79c), argument/option 이름·경고 검사(click b90faad1)라서 남은 출력만으로 실패 원인을 구별할 수 없다. **worker 구현과 전체 traceback은 저장되지 않았다.** 이 집계는 기대와 요청의 차이를 보여 주며, worker가 실제로 무엇을 구현했는지 또는 각 실패가 왜 생겼는지를 확정하지 않는다. 반복 관측은 독립 표본이 아니고, 0은 이 DONE 오판 집합에서 입증한 사례가 없다는 뜻이다. 미완료였던 TOML 고정 테스트 충돌은 이 집합에 포함되지 않는다.
+
+기존 이벤트의 시각과 예산 청구만으로는 파일 보호·기준 검사·검증·승인 처리를 나눌 수 없다. 새 `timing.operation` 이벤트는 각 API 호출의 단조 시계 경과 시간과 중첩 시간을 제외한 단계별 시간을 기록한다. `evaluations/profile.py <home> [goal-id]`는 읽기 전용으로 단계별 초·비율과 미귀속 비율, 95% 귀속 목표 충족 여부를 출력한다. 모델 실행은 adapter 실행 전체(프로세스 준비·종료 포함), workspace는 checkpoint·보호·복원·git guard·리뷰 사본, baseline_red는 기존 기준 검사·초안의 red 확인·승인 직전 red 확인, verification은 나머지 검사, trial은 해제 제안의 임시 검사, acceptance는 승인·해제 처리의 나머지, supervisor_bookkeeping은 감독 호출의 나머지다. 판정 모델을 부르는 검사의 모델 시간도 중복 합산하지 않는다.
+
+분모는 기록된 첫 호출 시작부터 마지막 호출 끝까지의 구간이다. 호출 사이 대기는 미귀속이고, goal 생성 이전·마지막 호출 이후의 사용자 시간은 이 구간 밖이다. 리뷰 내부에서 수행한 수정 목표는 리뷰를 시작한 목표의 호출에 집계된다. 이벤트 기록 자체와 benchmark의 프로젝트 등록·점수 계산 등 호출 밖 작업은 `issues.py`의 행 전체 시간 대비 미귀속으로 남는다. 죽어서 끝 이벤트를 남기지 못한 호출과 과거 로그의 세부 시간은 복원할 수 없다. 과거 로그는 goal 이벤트 구간 전체를 미귀속으로 표시한다. `issues.py`는 기존 필드를 유지하면서 각 Lupus 행에 `profile`, arm 요약에 단계별 평균과 미귀속 평균을 더한다. 이 계측을 과거 파일럿에 소급한 시간 비율은 보고하지 않는다.
+
+계측 이벤트 기록은 best effort다. 일반 기록 실패와 kernel의 `SupervisorStopping`은 호출의 반환값·원래 예외를 바꾸지 않고, 호출이 열어 둔 transaction에는 기록하지 않는다. 기록 중 발생한 `KeyboardInterrupt`와 `SystemExit`은 호출자에게 전달한다. `SupervisorStopping` 등 `Exception`이 아닌 `BaseException`으로 끝난 호출은 실제 crash처럼 계측 이벤트를 남기지 않는다. 단계별 배타 시간의 합은 각 호출의 경과 시간과 같고, 외부 span 진입·종료 비용은 그 span의 단계에 포함한다. 95% 귀속 목표는 실제 실행 보고서의 지표이며, 짧은 단위 테스트는 스케줄러 대기 비율 대신 시간 합산·중첩 제외·모든 단계의 보고를 검증한다.
+
+
+### 실제 프로파일과 중복 실행 검토 (2026-10-08)
+
+원자료 [profile-codex-2026-10-08.json](profile-codex-2026-10-08.json), [profile-claude-2026-10-08.json](profile-claude-2026-10-08.json)의 각 driver별 plain 8행·do 8행에서 다시 계산했다. 아래 단위는 초이며 각 칸은 **평균 / 중앙값**이다. 전체 시간은 행의 `seconds`(소수 첫째 자리 반올림), 단계 시간은 `profile.stages.*.seconds` 원값을 썼다.
+
+| 시간 | Codex | Claude |
+|---|---:|---:|
+| plain 전체 | 61.000 / 57.150 | 59.263 / 30.850 |
+| do 전체 | 83.363 / 83.800 | 107.275 / 75.700 |
+| model_execution | 69.567 / 63.949 | 93.680 / 67.936 |
+| baseline_red | 4.699 / 4.685 | 4.747 / 4.695 |
+| verification | 8.608 / 8.627 | 8.336 / 8.353 |
+| workspace | 0.163 / 0.166 | 0.162 / 0.162 |
+| acceptance | 0.093 / 0.076 | 0.099 / 0.079 |
+| supervisor_bookkeeping | 0.221 / 0.215 | 0.217 / 0.213 |
+| trial | 0.000 / 0.000 | 0.000 / 0.000 |
+| 미귀속 | 0.028 / 0.026 | 0.026 / 0.025 |
+
+평균 do−plain 차이는 Codex **22.363초**, Claude **48.013초**다. `baseline_red + verification`은 각각 **13.307초 / 13.082초**, `model_execution − plain 전체`는 **8.567초 / 34.417초**, 나머지는 **0.488초 / 0.513초**다(전체 행의 반올림 오차 포함). plain은 `evaluations/issues.py:pilot`에서 한 번의 `adapters.execute`만 시간 구간 안에서 실행하므로 plain 전체를 모델 호출 시간의 비교값으로 사용했다. 모델 단계는 추론만이 아니라 adapter의 프로세스 준비·종료도 포함한다. 검사 단계도 순수 test body 시간만이 아니라 검사 시작·종료·출력 판정 비용을 포함한다. workspace·acceptance·bookkeeping의 합은 **0.477초 / 0.478초**다.
+
+Claude sqlparse `8f978caa`의 do 모델 시간은 **331.412초**, 같은 instance의 plain 전체는 **266.600초**다. 이 instance를 양쪽에서 제외한 7쌍에서는 do 모델 평균 **59.718초**, plain 평균 **29.643초**, 차이 **30.075초**다(do 전체 평균 74.129초, 차이 44.486초). do 쪽의 이 행만 제외하고 8행 plain 평균 59.263초와 비교하면 모델 차이는 **0.455초**다. 따라서 이 원자료에서는 “331초 instance 제외 시 모델 +11초”를 재현하지 못했다.
+
+모든 do 행은 `calls=1`, `staged=true`, build의 유일한 step이 `ALREADY_SATISFIED`다. 현재 코드에서 이 성공 경로의 supervisor 검사 실행은 다음 **7회**다. worker가 자체적으로 실행한 검사는 이 개수에 포함하지 않는다.
+
+| 구간 | 함수와 이유 | 전체 suite 명령 | 새 검사만의 명령 |
+|---|---|---:|---:|
+| draft 생성 | `quick.draft_check → quick.suite → verify._run_gated`: worker 전 기존 테스트가 green인지 관측 | 1 | 0 |
+| draft worker 종료·원본 복원 뒤 | `supervisor.run_task → _timed_verify → _verify_checks → _run_checks → verify.run`: 새 검사가 원본에서 실제로 red인지 확인 (`red_test`의 PASS는 red라는 뜻) | 0 | 1 |
+| 사용자 승인 직전 | `quick.approve_check → quick._baseline → verify.run`: 승인된 정확한 파일이 현재 코드에서도 red인지 다시 확인 | 0 | 1 |
+| build의 staged 구현 적용 뒤 | `supervisor.run_task → _already_satisfied → _timed_verify → verify.run`: 모델 재호출 전에 c0 승인 검사와 c1 전체 suite가 통과하는지 확인 | 1 | 1 |
+| build run 종료 뒤 | `supervisor._run_goal → _final_verification → _timed_verify → verify.run`: `_already_satisfied` 증거에는 attempt_id가 없어 `goals.evidence_stale`이 막 닫힌 run을 이후 실행으로 판단하므로 c0·c1을 다시 확인 | 1 | 1 |
+| 합계 | | **3** | **4** |
+
+새 검사 자체는 위 네 번의 단독 명령 외에도 build의 전체 suite 두 번에 포함된다(총 여섯 번 포함). draft의 post-worker 증거에는 attempt_id가 있어 자기 run의 종료가 stale로 처리되지 않으므로 draft DONE 직전 별도 red 실행은 없다. draft 생성 당시 suite에는 아직 새 검사가 없다. 실패·재시도·중단 복구·`--allow-failing`에서 실패 이름을 모으는 추가 실행·리뷰가 있으면 횟수는 늘 수 있다. 행에는 개별 subprocess 기록이 없으므로 위 횟수는 저장된 경로 정보와 코드 추적으로 산출했고, 명령별 초는 단계 합계에서 나눌 수 없다.
+
+plain prompt는 요청의 구현을 요구한다. `quick.draft_check(stage=True)`는 구현에 더해 구체적 입력·기대값·경계 사례를 가진 새 테스트를 쓰고 원본에서는 red, 구현 뒤에는 green이어야 한다고 요구한다. `supervisor.build_prompt`가 덧붙이는 `contract.REQUEST`는 동작 단언마다 JSON 항목을 만들고, 규칙의 출처·요청의 정확한 인용·기존 계약의 위치·worker 선택의 대안과 구별 입력, 요청 구절별 검사 매핑, 가까운 미검사 입력 종류까지 설명하도록 한다. 테스트 작성, 근거 조사와 JSON 출력, 구현이라는 추가 작업이 모델 호출에 들어 있다. 다만 모델 단계 안의 개별 작업별 시간·토큰은 기록하지 않았으므로 각 요구가 지연을 몇 초 만들었는지 또는 지연의 인과관계는 입증할 수 없다.
+
+숨긴 테스트 통과는 Codex 양쪽 **7/8**, Claude 양쪽 **8/8**이고, 평균 토큰은 Codex plain **219,603**, do **183,253**, Claude plain **76,594**, do **102,916**이다. 8개 instance에 arm별 한 번씩 실행한 자료라 변동성·일반적인 속도·품질 우위를 확정할 수 없다. 자동 승인이므로 사람이 테스트와 설명을 읽고 수정하는 시간이나 그때의 품질도 측정하지 않았다. 전체 요청에서 이 결과가 유지되는지, worker 내부의 자체 검사 횟수, 모델 지연 중 서비스 대기·추론·출력의 비중도 알 수 없다.
+
+**이번 검토에서 제거한 검사 실행은 없다. 예상 절감은 goal당 0초다.** `quick.suite`는 goal 제출 전 관측으로 evidence 행을 남기지 않는다. draft red와 승인 직전 red는 명령이 같지만 `goals.record_evidence`가 저장하는 `artifact_hash`는 red verifier가 선언한 테스트 파일 범위이며 `review.fingerprint`의 전체 workspace 내용·mode·링크·dependency·git·cache 상태가 아니다. 환경 hash도 기록되지 않는다. build의 사전 검사와 최종 검사는 같은 verifier·acceptance revision의 evidence가 있지만 전체 fingerprint와 환경 hash의 일치를 증명할 기록이 없고, 검사와 checkpoint가 workspace를 변경할 수도 있다. 전체 suite와 단독 검사는 명령·verifier 정의가 다르므로 서로 대체하지 않는다. 승인 후에는 구현 proposal을 적용하고 build goal을 새로 만들므로 draft의 red 결과를 build의 green 증거로 쓸 수도 없다. 따라서 요구한 네 가지 identity가 모두 같은 앞선 evidence를 입증한 실행이 없었다. 기존 `_same_failure`의 실패 재사용은 이 성공 경로에서 발생하지 않으며 이번에 수정하지 않았다. build의 최종 검사를 유지해 worker 종료 후 supervisor가 최종 workspace에서 모든 criterion을 실제 실행하는 gate를 그대로 두었다. 새 재사용 로직이나 재사용 evidence 행을 만들지 않았으므로 그에 대한 identity 변경 테스트도 추가하지 않았다.
+
 ## 결과 품질 파일럿 (2026-10-07)
 
 실제 upstream 커밋 20건(5개 프로젝트), worker에게는 커밋 직전 저장소와 커밋 메시지만 주고 upstream 테스트는 숨겨 채점. `do`의 검사는 자동 승인(실제 사용과 다름). 아래 두 번째 측정은 두 방식을 같은 실행에서 번갈아 돌렸고 `do`는 `--allow-failing`과 `--review`(리뷰어는 worker가 아닌 쪽)를 썼다.

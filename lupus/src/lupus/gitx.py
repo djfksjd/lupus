@@ -24,7 +24,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from . import goals, projects, protect
+from . import goals, projects, protect, timing
 from .kernel import Kernel
 from .util import LupusError, new_id, safe_path, scrubbed_env
 
@@ -178,11 +178,13 @@ def guard_restore(root: Path, snap: dict | None) -> list[str]:
     return undone
 
 
+@timing.measured("workspace")
 def guard(root: Path) -> tuple:
     """Taken before anything of the project's is executed (a worker, a check, a baseline run)."""
     return guard_snapshot(root), protect.env_snapshot(root)
 
 
+@timing.measured("workspace")
 def unguard(k: Kernel, root: Path, taken: tuple, goal_id: str | None = None) -> list[str]:
     keep = k.runtime / "displaced" / (goal_id or "baseline") / "environment"
     undone = guard_restore(root, taken[0]) + [f"{name}/ (new environment set aside)" for name in protect.env_restore(root, taken[1], keep)]

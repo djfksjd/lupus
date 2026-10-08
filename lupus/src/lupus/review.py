@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import goals, protect, service
+from . import timing
 from .kernel import Kernel
 from .util import LupusError, atomic_write, find_secret, find_secret_bytes, sha256_file, sha256_json
 
@@ -83,6 +84,7 @@ def _files(root: Path) -> dict[str, bytes]:
     return out
 
 
+@timing.measured("workspace")
 def snapshot(k: Kernel, label: str, root: Path) -> Path:
     """Copy the project's text files into the runtime (outside the project): the "before" side of
     the diff a reviewer reads. Not a backup; see `backup`."""
@@ -96,6 +98,7 @@ def snapshot(k: Kernel, label: str, root: Path) -> Path:
     return dest
 
 
+@timing.measured("workspace")
 def diff(base: Path, root: Path, skip: set[str] = frozenset()) -> tuple[str, list[str]]:
     """(unified diff from the snapshot to the project as it is now, changed paths)."""
     if not base.is_dir():      # a missing snapshot must not read as "every file is new"
@@ -166,6 +169,7 @@ def _git_state(root: Path) -> str:
     return sha256_json(seen)
 
 
+@timing.measured("workspace")
 def fingerprint(root: Path) -> str | None:
     """One hash over every file of the project (content and mode), its links, its dependency
     trees, and what the file listing leaves out but a check could still read: git's own state
@@ -192,6 +196,7 @@ def fingerprint(root: Path) -> str | None:
     return sha256_json([entries, sorted(links.items()), sorted(trees.items())])
 
 
+@timing.measured("workspace")
 def backup(k: Kernel, label: str, root: Path) -> Path:
     """A complete copy of the project's files in the runtime, to return to if a revision fails.
     It is complete or it does not exist: the manifest is written last, and `roll_back` refuses a
@@ -218,6 +223,7 @@ def backup(k: Kernel, label: str, root: Path) -> Path:
     return dest
 
 
+@timing.measured("workspace")
 def roll_back(saved: Path, root: Path, keep_dir: Path) -> dict[str, list[str]]:
     """Return the project to a `backup`. Whatever is displaced (a changed file, a file that was not
     there) is first moved to `keep_dir`, outside the project: a hash cannot tell the worker's edit
@@ -400,6 +406,7 @@ def revision_goal(k: Kernel, goal_id: str, request: str, objections: list[dict],
     return goal
 
 
+@timing.operation("supervisor_bookkeeping")
 def cycle(k: Kernel, goal_id: str, request: str, driver: str, base: Path, run: Callable[[str], dict], caps: dict,
           skip: set[str] = frozenset()) -> dict:
     """Review a finished goal; send objections back once; review what came of it.
