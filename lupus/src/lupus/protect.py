@@ -23,6 +23,7 @@ import shutil
 from pathlib import Path
 
 from . import goals
+from . import timing
 from .kernel import Kernel
 from .util import LupusError, atomic_write, find_secret_bytes, sha256_bytes, sha256_file, sha256_json
 
@@ -75,10 +76,12 @@ def _named(root: Path, names: set[str]) -> list[str]:
 ENV_DIRS = (".venv", "venv", "env")
 
 
+@timing.measured("workspace")
 def env_snapshot(root: Path) -> set[str]:
     return {name for name in ENV_DIRS if os.path.lexists(Path(root) / name)}
 
 
+@timing.measured("workspace")
 def env_restore(root: Path, before: set[str], keep_dir: Path | None = None) -> list[str]:
     """A virtual environment that appeared while a worker or a check ran is taken out of the
     project: the next command would otherwise take its `python` for the project's test runner.
@@ -98,6 +101,7 @@ def env_restore(root: Path, before: set[str], keep_dir: Path | None = None) -> l
     return removed
 
 
+@timing.measured("workspace")
 def tree_fingerprint(root: Path, rel: str, strict: bool = False) -> str:
     """Cheap identity of a large directory (a dependency tree): every entry's size, modification
     time, change time and mode. The change time cannot be set back by a program, so an edit is
@@ -175,6 +179,7 @@ def _plain(real_root: Path, rel: str) -> Path | None:
     return current
 
 
+@timing.measured("workspace")
 def freeze(k: Kernel, goal_id: str, root: Path, force: bool = False) -> int:
     """Record the protected files for the goal's current acceptance revision. Idempotent."""
     goal = goals.get(k, goal_id)
@@ -246,6 +251,7 @@ def refreeze(k: Kernel, goal_id: str, root: Path, actor: str) -> int:
     return freeze(k, goal_id, root, force=True)
 
 
+@timing.measured("workspace")
 def drift(k: Kernel, goal_id: str, root: Path) -> list[dict]:
     """How the protected files differ from their frozen state right now."""
     revision = goals.get(k, goal_id)["acceptance_revision"]
@@ -284,6 +290,7 @@ def drift(k: Kernel, goal_id: str, root: Path) -> list[dict]:
     return out
 
 
+@timing.measured("workspace")
 def restore(k: Kernel, goal_id: str, root: Path, keep_dir: Path | None = None) -> dict[str, list[str]]:
     """Put protected files back after a worker ran. Returns what was undone and what could only
     be detected (no stored content).

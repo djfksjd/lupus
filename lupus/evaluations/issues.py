@@ -33,6 +33,11 @@ from lupus import adapters, contract, goals, probe, projects, quick, release, re
 from lupus.kernel import Kernel
 from lupus.util import LupusError, sha256_bytes
 
+if __package__:
+    from .profile import breakdown
+else:
+    from profile import breakdown
+
 REPOS = {      # pure-Python projects whose tests need nothing but pytest/unittest
     "sqlparse": ("https://github.com/andialbrecht/sqlparse.git", "sqlparse", "tests"),
     "more-itertools": ("https://github.com/more-itertools/more-itertools.git", "more_itertools", "tests"),
@@ -217,6 +222,17 @@ def scripted_release(k: Kernel, clone: Path, inst: dict, goal_id: str, adapter) 
     return out
 
 
+def profile_means(rows: list[dict]) -> dict:
+    measured = [r["profile"] for r in rows if "profile" in r]
+    if not measured:
+        return {}
+    stages = measured[0]["stages"]
+    return {"stage_seconds_mean": {name: sum(p["stages"][name]["seconds"] for p in measured) / len(measured)
+                                   for name in stages},
+            "unattributed_seconds_mean": sum(p["unattributed_seconds"] for p in measured) / len(measured),
+            "unattributed_share_mean": sum(p["unattributed_share"] for p in measured) / len(measured)}
+
+
 def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int, reviewer: str | None = None,
         arms: tuple[str, ...] = ("plain", "do"), only: tuple[str, ...] = ()) -> None:
     instances = [i for i in json.loads(Path(instances_path).read_text()) if not only or i["commit"].startswith(only)][:limit]
@@ -233,6 +249,7 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
             checkout(clone, inst["commit"] + "~1", root)
             log: list = []
             adapter = recording(adapters.native(driver), log)
+            timing_seq = k.one("SELECT COALESCE(MAX(seq), 0) FROM event")[0]
             started = time.monotonic()
             row = {"repo": inst["repo"], "commit": inst["commit"][:8], "arm": arm}
             try:
@@ -282,7 +299,12 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
                         quick.discard_draft(k, project, draft["goal_id"], "user")
             except LupusError as exc:
                 row["refused"] = f"{exc.code}: {exc.detail[:120]}"
-            row["seconds"] = round(time.monotonic() - started, 1)
+            elapsed = time.monotonic() - started
+            row["seconds"] = round(elapsed, 1)
+            if arm != "plain":
+                operations = [json.loads(r["payload"]) for r in k.q(
+                    "SELECT payload FROM event WHERE type = 'timing.operation' AND seq > ? ORDER BY seq", timing_seq)]
+                row["profile"] = breakdown(operations, elapsed)
             row["added_lines"] = added_lines(pristine, root)
             passed, detail = score(clone, inst, root)
             row.update(hidden_tests_pass=passed, **usage_of(log), **({} if passed else {"hidden_detail": detail[-160:]}))
@@ -297,6 +319,7 @@ def run(work: Path, instances_path: str, out_path: str, driver: str, limit: int,
                                   "tokens_mean": round(sum(r["tokens"] for r in sel) / len(sel)),
                                   "seconds_mean": round(sum(r["seconds"] for r in sel) / len(sel), 1)}
                     if a != "plain":
+                        summary[a].update(profile_means(sel))
                         said_done = [r for r in sel if r.get("lupus_done")]
                         summary[a].update(lupus_said_done=len(said_done),
                                           said_done_but_hidden_fail=sum(not r["hidden_tests_pass"] for r in said_done))
