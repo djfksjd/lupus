@@ -150,9 +150,16 @@ lupus learn --undo                                             # 가장 최근 �
 - 전역 설정을 건드리지 않습니다. PATH, `~/.claude`, `~/.codex`를 수정하지 않습니다. `lupus session`의 hook은 그 프로세스 하나에만 전달됩니다.
 
 <div align="center">
-<img src="./asset/screenshots/graph.png" alt="Lupus 지식 그래프 화면" width="760" />
-<br/><sub>지식 그래프 화면(<code>lupus graph</code>): 노드, 종류가 있는 연결, 지식이 기록되고 회상된 목표</sub>
+<img src="./asset/screenshots/graph.png" alt="행성형 노드, 우주 배경, 그래프 조작 버튼과 플로팅 늑대 버튼이 있는 Lupus 3D 지식 그래프" width="960" />
+<br/><sub>예시 데이터로 표시한 최신 개발 화면: 행성형 노드, 종류별 연결, 맥락 대화를 여는 플로팅 늑대 버튼.</sub>
 </div>
+
+<div align="center">
+<img src="./asset/screenshots/knowledge-chat.png" alt="지식 문서를 읽으며 플로팅 대화 패널에서 실제 Codex 답변을 받은 Lupus 화면" width="960" />
+<br/><sub>선택한 지식 노드나 문서에 대해 질문할 수 있습니다. 예시 문서를 바탕으로 실제 Codex 답변을 받은 화면입니다.</sub>
+</div>
+
+2026년 11월 6일 현재 로컬 개발 버전에서 캡처한 화면입니다. 이 UI 구현과 로컬 대화 서버는 아직 `main`에 포함되지 않았습니다.
 
 ## 알아야 할 한계
 
