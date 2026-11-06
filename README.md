@@ -150,9 +150,16 @@ A goal with your own checks, other languages, containers, the knowledge graph an
 - Nothing global is modified: no PATH changes, no edits to `~/.claude` or `~/.codex`. The hooks of `lupus session` are passed to that one process.
 
 <div align="center">
-<img src="./asset/screenshots/graph.png" alt="Lupus knowledge graph viewer" width="760" />
-<br/><sub>Knowledge graph view (<code>lupus graph</code>): nodes, typed links, where knowledge was recorded and recalled</sub>
+<img src="./asset/screenshots/graph.png" alt="Lupus 3D knowledge graph with planet nodes, space background, graph controls and floating wolf chat button" width="960" />
+<br/><sub>Latest development preview with sample data: planet-shaped nodes, typed connections and a floating wolf button for contextual chat.</sub>
 </div>
+
+<div align="center">
+<img src="./asset/screenshots/knowledge-chat.png" alt="Lupus document reader with the floating knowledge chat panel showing a real Codex response" width="960" />
+<br/><sub>Ask about a selected node or document. This capture shows a real Codex response grounded in the sample document.</sub>
+</div>
+
+These screenshots show the current local development version, captured on November 6, 2026. The viewer implementation and local chat server are not yet included on `main`.
 
 ## Limits you should know
 
