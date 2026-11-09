@@ -1,198 +1,136 @@
-<div align="center">
-
-<img src="./asset/logo/lupuslogo2.png" alt="LUPUS — AI works together" width="380" />
+<p align="center">
+  <img src="asset/logo/lupuslogo2.png" alt="LUPUS — wolf and crescent moon" width="144" />
+</p>
 
 # LUPUS
 
-**AI WORKS TOGETHER**
+**Relevant memory. The right amount of work. Checks before completion.**
 
-### A local supervisor that makes Claude Code and Codex CLI finish verifiable work —<br/>with evidence, budgets, crash recovery and Claude ↔ Codex handoff
+LUPUS is a local, terminal-first workspace for AI coding on macOS. Choose your provider, model and working mode, carry useful knowledge between tasks, and run bounded work with explicit checks and budgets.
 
-[English](./README.md) · [한국어](./README.ko.md) · [简体中文](./README.zh-CN.md) · [日本語](./README.ja.md)
+[한국어](README.ko.md) · [Quick start](#quick-start) · [Current UI](#current-ui) · [CLI guide](lupus/README.md)
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-1f2937?style=flat-square)](./LICENSE)
-![Stage](https://img.shields.io/badge/stage-v0.2%20alpha-d69526?style=flat-square)
-![Python](https://img.shields.io/badge/python-3.12%2B-3776ab?style=flat-square)
-![Dependencies](https://img.shields.io/badge/runtime%20deps-0-2ea043?style=flat-square)
-![Tests](https://img.shields.io/badge/offline%20tests-318%20passing-2ea043?style=flat-square)
+![Stage: alpha](https://img.shields.io/badge/stage-alpha-3d5fc9?style=flat-square)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-0f1b2d?style=flat-square)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-7e93ad?style=flat-square)](LICENSE)
 
-</div>
+<img src="asset/readme/moonlight-memory-v1.png" alt="A silver crescent above mist, with a few connected stones representing selected memories" width="100%" />
 
-Lupus runs the `claude` and `codex` CLIs you already have (with your existing subscription login) as workers, and decides "done" itself: a goal is complete only when checks the worker cannot influence pass, never because a model said so.
+## Why LUPUS
 
-**This is `v0.2 alpha`.** A single-user tool for macOS. Workers and verifiers run in OS sandboxes, not in a VM. The measurements below are small. Do not use it on sensitive material.
+A repository question should take a short path. A code change needs a clear scope. A task with acceptance checks needs evidence before it is marked complete. LUPUS provides these paths in one CLI, with memory and task state kept locally.
 
-## What it does
+- **Use relevant memory.** Retrieve a small, budgeted selection of project facts, decisions and lessons for the current request.
+- **Learn from corrections.** Keep explicit feedback and provenance; record observed edits as candidates when their authorship is unknown.
+- **Choose how work runs.** Select a provider and model, use independent goals in parallel, and enable an on-failure supervisor when needed.
+- **Keep completion reviewable.** Track checks, budgets, changes and owned jobs instead of relying on a model's completion message.
 
-| | |
-|---|---|
-| **Evidence-only completion** | DONE requires passing checks bound to the current acceptance criteria. A worker's "I fixed it" is not evidence. |
-| **Frozen tests** | Test files and runner config are frozen before a worker starts. Edited, deleted or skipped tests are put back before verification. |
-| **Python, Node, Go, Rust — or any command** | unittest, pytest, node:test, jest, vitest, `go test`, `cargo test` are recognised from the project's files. Anything else: `--check "<your test command>"`. |
-| **One line for any request** | `lupus fix-tests` turns the red tests it observes into the goal. `lupus do "<request>"` drafts a failing test (and, kept aside, a proposed implementation) in one call; you approve the test, then the proposal is applied and verified. |
-| **Documents, plans, research** | `lupus write`: a rubric you approve first, a judge that is a different AI and must quote the document for every item it accepts, then your sign-off on the exact version. |
-| **Your normal interactive session** | `lupus session` starts your usual `claude` / `codex` screen with your own configuration, freezes the tests, and verifies by itself when you exit. |
-| **Claude ↔ Codex handoff** | When one AI stops (quota, crash, your choice), the other continues from a validated checkpoint. Finished steps are not redone; budgets and attempt counts are not reset. |
-| **Several projects, in the background** | `lupus alpha-run` advances every open goal in turn under shared budgets and switches AI when one runs out of quota. `--background` keeps it running after the terminal closes. `--parallel N` works on up to N goals at once, each in a different project or isolated checkout. |
-| **Budgets and loop control** | Calls, attempts, time and tokens are reserved before work starts. Repeating the same failed attempt is refused before any model is called. |
-| **Crash-safe checkpoints** | Recovery objects are written durably before the database commit; tested by killing the process at every boundary. |
-| **Your working tree stays yours** | `--isolated` does the work in a separate checkout of your committed HEAD. `lupus diff` shows the result, `lupus accept` brings it over as one commit (fast-forward only, re-checked as that exact commit; if your branch has moved, the result is combined with it and the combination is checked before anything is accepted), `lupus discard` drops it. |
-| **You see what the test assumes** | Before you approve a drafted test, Lupus shows what the worker says it asserts and, set apart, what the worker decided on its own because the request did not say (a limit, a wording, a boundary). Quotes from the request are checked against it; the description is bound to that exact test. |
-| **When a request changes what old tests pin** | `lupus release <goal> <files>` lets named frozen test or fixture files change. The worker's edits to them are held as a proposal; you approve the exact diff, and only then do they become the new frozen state. The whole suite still has to pass. |
-| **OS-level confinement** | The Claude worker and every verifier run inside a macOS sandbox applied by Lupus; verifiers can run in a Docker container instead. |
-| **Memory that has to earn its place** | Project knowledge as typed, linked nodes. `lupus learn` proposes procedures from recorded failures; they stay candidates until later verified outcomes promote or retire them. |
-
-## Measured on one Mac (2026-10-06)
-
-Same tasks, same checks, fresh directory per run, 3 runs per cell, every run passed. Claude Code 2.1.290, codex-cli 0.160.0. Tokens = new input + cached input + output, summed over the 3 tasks; mean of 3 runs.
-
-| 3 one-shot coding tasks | Your CLI as configured | Same CLI, plugins/MCP off | Lupus |
-|---|---|---|---|
-| Claude | 400,640 tokens · 53.9 s | 55,290 · 33.5 s | **37,216 · 18.0 s** |
-| Codex | 244,458 tokens · 58.7 s | 203,780 · 50.6 s | **107,931 · 28.5 s** |
-
-| Other situations | Without Lupus | Lupus |
-|---|---|---|
-| 4-step project, Claude (1–2 runs, 2026-10-05) | 298,327 tokens · 52.0 s | 70,768 · 42.5 s |
-| Same project interrupted, other AI takes over (2026-10-05) | 337,133 tokens · 82.0 s · 1,139 chars of re-explanation | 138,989 · 64.1 s · none |
-| 4-step project, Codex, one call per step vs batched | 185,278 tokens · 89.0 s | 122,595 · 53.1 s |
-| Feature request via `lupus do` vs one plain lean call, Claude (3 runs, 2026-10-07) | 17,493 tokens · 10.1 s | **15,629 · 15.1 s** |
-| Same, Codex (3 runs, 2026-10-07) | 72,083 tokens · 24.4 s | **37,502 · 24.8 s** |
-
-**On a real project.** Three changes the maintainers of [hukkin/tomli](https://github.com/hukkin/tomli) really made (a bug fix, a TOML 1.1 feature, a hardening change): source as it was before the commit, tests as they were after it, nothing else given. `lupus fix-tests` finished all three on the first attempt with both Claude (36k–64k tokens, 10–21 s) and Codex (82k–119k tokens, 16–21 s), judged by the upstream tests, which no run tried to edit.
-
-**Does it get more requests right? It now matches a plain call; it does not beat one.** 20 real upstream commits from five projects (sqlparse, more-itertools, tomli, packaging, click): the worker got the repository before the commit and only the commit message; the upstream tests were kept hidden and used as the score. The check `lupus do` drafts was approved automatically, which is not how it is meant to be used.
-
-| Hidden upstream tests passed (2026-10-07, same run, same day) | Plain call | `lupus do` |
-|---|---|---|
-| Codex, 20 instances | 13 | 13 |
-| Claude, first 12 instances | 10 | 11 |
-| Earlier the same day, before the fix below: Codex 20 / Claude 7 | 13 / 7 | 11 / 4 |
-
-The earlier loss had a measured cause. `lupus do` asked the worker to write its proposed implementation as complete files in a side folder; on large files that ran into the time limit (two more-itertools instances: 850 s, failed). The worker now edits the sources in place, Lupus takes those edits out again before it judges and shows you the test, and puts them back after you approve. The same two instances now take 54 s and 100 s and pass. `lupus do` still costs more time than a plain call (per instance, before the optional review: Codex 77 s vs 55 s, Claude 85 s vs 46 s).
-
-When Lupus reported DONE, the hidden tests still failed in 7 of 18 cases on Codex and 1 of 10 on Claude (in 7 of those 8 a plain call failed too). **DONE means the check you approved passed. It does not mean the request was understood.** In the other direction, Lupus said "not done" in 4 cases where the hidden tests passed: each time the request changed behaviour that the project's existing tests pin down, and those tests are frozen.
-
-**An independent review did not help here.** `lupus do --review` has the other AI compare the request with the change after the checks pass (it must quote the request for every objection; objections go back to the worker once; a revision that breaks the approved checks is undone). Over 28 reviewed results it objected twice and changed the hidden-test outcome in none. Of the 8 results that were wrong it objected to one, and the revision that followed did not make it right. It is off by default and unproven.
-
-**Judging documents.** A document missing a rubric item and a document that tells the judge to pass it were both rejected by both judges; the complete one was accepted (6 of 6 as expected, one run each).
-
-Read these honestly:
-
-- **Most of the saving against "your CLI as configured" comes from not loading plugins, MCP servers and skill descriptions**, which you can also get without Lupus (middle column). What Lupus adds on top is the prompt technique and the verification.
-- **`lupus do` now uses one model call instead of two.** The test and a proposed implementation come from the same call; the proposal is kept aside, the test is checked and shown to you against the code as it is, and only after your approval is the proposal applied and verified. That brought it from 29,104 to 15,629 tokens on Claude and from 74,245 to 37,502 on Codex, below a plain call in tokens. It is still slower than a plain call on Claude (15.1 s vs 10.1 s) and, because more of its tokens are output, its estimated list price there is about 1.6× (subscription use is not billed per token). All holdout tests passed in every arm; `--two-step` restores the old behaviour.
-- `--cheap-first` did not save tokens on Claude in this measurement (107,738 vs 37,216).
-- Three runs per cell, one machine, small tasks. Timings in the first table were taken while other CLI calls were running.
-- On three harder tasks with hidden holdout tests (2026-10-05), all 36 runs passed with and without Lupus, so that benchmark could not show that frozen tests reduce false completion.
-
-Raw data and scripts: [`lupus/docs/`](./lupus/docs) · [`lupus/evaluations/`](./lupus/evaluations) · full record in [docs/design/LUPUS-IMPLEMENTATION-REVIEW.md](./docs/design/LUPUS-IMPLEMENTATION-REVIEW.md).
-
-## When to use it, and when not
-
-**Use it** for failing tests, feature work that deserves a check you have read, multi-step or long jobs that may be interrupted or moved between Claude and Codex, documents that someone other than the writer should judge, and interactive sessions in which you want the tests to stay untouched.
-
-**Use the plain CLI** for one-off questions and quick exploration: there Lupus only adds steps.
-
-**It does not replace** an editor-integrated assistant (Cline, Cursor), a tool with its own agent loop and wide model choice (Aider, OpenHands), or a multi-agent workspace (Claude Squad, claude-flow). It is a supervisor for bounded Claude Code / Codex tasks on macOS: reproducible checks, reviewable changes, interruption recovery.
+These are implemented mechanisms. Lower token use, faster work, fewer repeat mistakes and broad superiority over other tools remain validation goals.
 
 ## Quick start
 
-Requirements: macOS, Python **3.12+** whose SQLite is **3.51.3+ with FTS5** (Homebrew Python works), and `claude` and/or `codex` installed and logged in.
+Requirements: **macOS**, **Python 3.12+**, and Python's **SQLite 3.51.3+ with FTS5**. For AI work, connect an installed and authenticated native CLI, a configured API provider, or a running local model server.
 
 ```bash
 git clone https://github.com/djfksjd/lupus.git
-cd lupus/lupus
-python3 -m pip install -e .          # or: export PYTHONPATH=src and use `python3 -m lupus`
-
-lupus init                           # creates ~/.lupus (database + vault)
-lupus probe --live                   # measures what your installed CLIs support (2 tiny calls)
-
-cd ~/work/my-project
-lupus fix-tests --driver claude      # observe red -> freeze tests -> fix -> verify
-lupus do "add a --json flag to the export command" --driver claude
-                                     # one call: failing test + proposal kept aside -> you approve the test -> applied and verified
-lupus do "…" --driver claude --review     # after the checks pass, the other AI compares the change with the request (opt-in; see the pilot)
-lupus do "…" --driver claude --isolated   # same, in a separate checkout; then: lupus diff | accept | discard <goal>
-lupus do "…" --driver claude --lean       # add reuse-first, smallest-change guidance for the worker (opt-in; no gain measured, see the contract)
-lupus release <goal> tests/test_x.py        # the request changes what this frozen test pins: let it change, then `lupus release-approve <goal>` to approve the exact diff
-lupus session --driver claude        # your usual interactive Claude Code, tests frozen, verified on exit
-lupus write "migration plan for the billing tables" --out docs/plan.md --driver claude
-                                     # rubric you approve -> written -> judged by the other AI -> your sign-off
+cd lupus
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ./lupus
+lupus
 ```
 
-Several goals, unattended:
+The initial provider is **Codex**, unless a saved preference or `LUPUS_DRIVER` selects another. LUPUS does not install providers or download models when you select them.
 
-```bash
-lupus alpha-budget --calls 300 --attempts 40 --minutes 600     # one cap for everything
-lupus alpha-run --drivers claude,codex --background            # all open goals in turn; switches AI on quota
-lupus alpha-run --drivers claude,codex --parallel 2            # two goals at a time (different projects or isolated checkouts)
-lupus jobs        # what is running          lupus logs <job>        lupus stop <job>
-lupus alpha-status                                             # every project at a glance
-lupus learn --driver claude                                    # candidate procedures from recorded failures
-lupus learn --undo                                             # take back what the latest learning pass added
-```
-
-A goal with your own checks, other languages, containers, the knowledge graph and every command: [`lupus/README.md`](./lupus/README.md).
-
-## How it works
+Inside LUPUS:
 
 ```text
- you ──► goal + acceptance checks ──► ┌──────────────── Lupus supervisor (plain program) ───────────────┐
-                                      │ budget · attempts · leases · checkpoints · frozen tests · memory │
-                                      └───────┬───────────────────────────────────────────────┬─────────┘
-                                   lean prompt│                                               │verify (deterministic)
-                                              ▼                                               ▼
-                                   claude  ◄──handoff──►  codex                    PASS evidence ──► DONE
+/provider codex
+/model default
+/mode ask
+Explain the structure of this repository.
 ```
 
-- The supervisor is ordinary code. No model call decides routing, budgets, retries or completion.
-- Workers get a prompt and a directory. They never get the database, the CLI or any authority.
-- Nothing global is modified: no PATH changes, no edits to `~/.claude` or `~/.codex`. The hooks of `lupus session` are passed to that one process.
+Type `/` for suggestions. Use the arrow keys to select, **Tab** to insert, and **Enter** to confirm. Commands with choices, such as `/mode`, open the next selection step. **Esc** dismisses suggestions and preserves your input.
 
-<div align="center">
-<img src="./asset/screenshots/graph.png" alt="Lupus 3D knowledge graph with planet nodes, space background, graph controls and floating wolf chat button" width="960" />
-<br/><sub>Latest development preview with sample data: planet-shaped nodes, typed connections and a floating wolf button for contextual chat.</sub>
-</div>
+## Pick the amount of work
 
-<div align="center">
-<img src="./asset/screenshots/knowledge-chat.png" alt="Lupus document reader with the floating knowledge chat panel showing a real Codex response" width="960" />
-<br/><sub>Ask about a selected node or document. This capture shows a real Codex response grounded in the sample document.</sub>
-</div>
+| Mode | What happens |
+|---|---|
+| `auto` | Routes the request to a short local path, an answer, an edit or a verified workflow. |
+| `ask` | Answers with read-only workspace access. |
+| `agent` | Allows edits; the result remains unverified. |
+| `verify` | Uses the workflow for explicit acceptance checks and recorded verification. |
 
-These screenshots show the current local development version, captured on November 6, 2026. The viewer implementation and local chat server are not yet included on `main`.
+Use `/mode ask`, `/mode agent` or `/mode verify` to change the session. `/ask TASK`, `/agent TASK` and `/verify TASK` apply a mode to one request.
 
-## Limits you should know
+For an explicit check from your shell:
 
-- **It does not make the model smarter.** On hidden tests it did as well as a plain call, not better, and an independent review by the other AI changed nothing (pilot above). What it gives you is a result that was checked the way you agreed to, in a place that is not your working tree, and that survives interruption.
-- **Not a VM.** The Claude worker and verifiers run in a macOS sandbox (home directory unreadable except what the CLI itself needs, no writes outside the project and temp, Lupus's own state out of reach); Codex uses its own sandbox with a profile Lupus sets; verifiers can use Docker. The temp directory is shared, the worker's network is open, and an interactive session is not sandboxed at all. Do not give it protected or customer data.
-- **You start it.** `lupus session` wraps your interactive CLI; nothing activates Lupus when you type `claude` yourself. Token usage of an interactive session is not reported by the CLIs, so it is charged at its full reservation.
-- **A judge is an opinion.** The quote check stops unsupported passes, not wrong facts. That is why your sign-off is the last condition. Images and visual design cannot be judged.
-- **Tests are run by the code they test.** Output parsing resists accidents and cheap tricks; code that sets out to forge a runner's whole summary from inside the test process is not something Lupus can detect. Rust unit tests inside source files cannot be frozen (their names are pinned, their bodies are not).
-- **One writer per project.** `alpha-run --parallel` runs up to 4 goals at once, but never two in the same folder: goals of one repository run together only as isolated checkouts, and their results are accepted one after the other. A request is not split into parallel subtasks, and the tasks of one goal still run in turn.
-- Learning proposes candidates and lets later verified outcomes decide; there is no fixed evaluation set.
-- jest and vitest were checked with real installs; Go and Rust with toolchains installed temporarily for the check. Linux and Windows have no OS sandbox support here.
-- A wait always has a way out: `lupus status <goal>` says why, and `resolve`, `release`, `refreeze`, `approve`, `revise`, `revalidate`, `budget-raise` continue from there. `lupus prune` clears old leftovers.
-- Young code. Twenty-eight external review rounds found 140 defects, all of them fixed, and a usability audit another 16; assume more remain.
+```bash
+lupus auto "Fix the pagination offset"   --check "python3 -m unittest test_inventory" --driver codex
+```
 
-## Adapted from other projects
+Replace the request and check with ones for your project. Passing checks establishes the recorded conditions; it does not establish general correctness.
 
-Lupus is its own code (Python, standard library only), but five parts of it are adaptations of code from three MIT-licensed projects, read at pinned commits and reshaped to Lupus's rules (one supervisor, completion only on evidence, the user's authority). Only what actually works in the original was taken; the contract lists what was reviewed and left out, and why.
+## Providers, models and skills
 
-| From | What Lupus took | What Lupus changed |
-|---|---|---|
-| [Ruflo](https://github.com/ruvnet/ruflo) | Bounded parallel workers, each writer in its own working tree; integration of results in order; recall diversity (MMR), duplicate notes, prompt-injection patterns | Slots refill as they free; one writer per project is still enforced by the kernel; a combined result is checked again before it is accepted |
-| [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent) | A failed check is not re-run over unchanged files; a learning pass is recorded and taken back as a unit | Whole-project fingerprint instead of git status, same supervisor process only; learning can only add candidates that later verified outcomes judge |
-| [Ponytail](https://github.com/DietrichGebert/ponytail) | The implementation-economy guidance (bundled unmodified) and its mode filter | Three sections only, below the request and never a reason to build less; off by default |
+`/provider` lists the catalog. `/model` selects a model for the chosen provider; `/model default` returns to its default. `/models` shows configured choices, and `/models --discover` explicitly requests discovery where supported.
 
-Measured on 2026-10-07 with the real CLIs: two goals of one repository took a median of 18.9 s in turn and 9.8 s side by side on Codex (18.3 s and 10.8 s on Claude), three runs each. `--lean` did not change which hidden tests passed (Codex 7 of 8 either way, Claude 5 of 6 either way) and used more tokens on most tasks, so it stays opt-in. Of the memory changes, the recall order made no difference on the one task it was measured on (4 of 4 right either way), and a fourth change taken from Ruflo, a relevance floor for small stores, made that task fail 4 times out of 4 and was switched off. The duplicate-note and injection-pattern changes have offline tests only.
+| Connection | Catalog IDs |
+|---|---|
+| Installed native CLI | `codex`, `claude` |
+| Hosted API | `glm`, `openrouter`, `deepseek`, `gemini` |
+| Local server | `ollama`, `lmstudio` |
+| Custom endpoint | `openai-compatible` |
 
-## Documentation
+Catalog presence describes a connection path, not confirmed compatibility with every model or backend. API profiles store environment-variable names for credentials. See the [CLI guide](lupus/README.md#provider-configuration) for configuration.
 
-- [Machine contract](./lupus/docs/CONTRACT.md) — the rules the code enforces, and what is out of scope
-- [Implementation record](./docs/design/LUPUS-IMPLEMENTATION-REVIEW.md) — decisions, review rounds, every measurement and its limits (Korean)
-- [Design](./docs/design/LUPUS-PLAN.md) — the full design the implementation is a slice of (Korean)
-- [Third-party notices](./lupus/THIRD_PARTY_NOTICES.md) — vis-network and Ponytail's guidance text are bundled unmodified; code adapted from Ruflo, Prime Agent and Ponytail is listed with its sources
+`/skills` lists discovered local skills and bundled guidance adapted from OMC and Superpowers. Use `/skill ID TASK` to request a skill explicitly. Skill access depends on the selected backend and native profile.
 
-## License
+## Memory and coordinated work
 
-[Apache-2.0](./LICENSE). The bundled vis-network and Ponytail text, and the code adapted from Ruflo, Prime Agent and Ponytail, are MIT; see the notices.
+**Memory is selective.** LUPUS stores structured knowledge and retrieves relevant notes within a prompt budget. The database, generated vault and job logs are separate from the small selection sent to a model. This is not a promise that all stored data is compressed, or that local storage contains no logs.
+
+**Corrections have a history.** Explicit feedback, superseded notes and observed file changes can inform later work. An unexplained edit does not prove who made it; candidates and retrieved notes still need review. Reduced mistake recurrence has not yet been established.
+
+**Parallel work needs independent scopes.** `/parallel auto` or `/parallel 2` runs existing open goals with a concurrency limit. Goals must use different projects or isolated checkouts for concurrent writing. A single prompt is not automatically decomposed into a team of agents.
+
+**Supervision is optional.** `/supervisor PROVIDER MODEL` configures a separate role for eligible verification failures; `/supervisor off` disables it. You choose the execution model and supervisor model. Routine request routing uses local rules rather than an extra supervisor call.
+
+## Current UI
+
+Actual LUPUS screens captured on **2026-11-09** using **public example data**. Counts, trust labels and goals in these images are demo state, not measured development or performance results.
+
+### Dashboard
+
+See stored knowledge, goal state, projects and the connections between them.
+
+[![LUPUS dashboard showing public example knowledge and projects](asset/screenshots/dashboard-20261109.png)](asset/screenshots/dashboard-20261109.png)
+
+### Node graph
+
+Explore connected knowledge in the 3D graph and inspect a selected node's provenance and relationships.
+
+[![LUPUS node graph with the Remember user corrections detail panel open](asset/screenshots/node-graph-20261109.png)](asset/screenshots/node-graph-20261109.png)
+
+```bash
+lupus graph --open                 # generate and open the viewer
+lupus graph --serve --open         # local viewer server with knowledge chat
+```
+
+Knowledge chat can invoke Codex or Claude Code, selected in the viewer. The screenshots were captured without model calls. The moon-and-stones banner is generated concept art; the two screens above are actual UI captures.
+
+## Boundaries and current status
+
+LUPUS is **alpha**. The current code includes terminal selection flows, provider profiles, selective memory, correction history, bounded parallel goals and process-lifetime controls. Backend compatibility, terminal behavior and cleanup still need validation across real environments.
+
+- **Security:** execution policies and protected checks reduce specific risks. They are not VM isolation or a blanket guarantee against data exposure. Native profiles, hooks, MCP tools and API workspace tools have different boundaries.
+- **Jobs:** Ctrl+C exits an idle prompt; during work it requests cancellation before returning to the prompt. `/jobs` shows tracked background work. LUPUS aims to clean up owned processes and containers; absence of every possible ghost session has not been proven.
+- **Comparison:** no general claim of better cost, speed, accuracy or security than native CLIs, OMO, Aider or other open-source tools is established. Older narrow measurements do not prove that claim.
+
+## Read more
+
+- [CLI guide and provider configuration](lupus/README.md)
+- [Verification contract](lupus/docs/CONTRACT.md)
+- [Third-party notices](lupus/THIRD_PARTY_NOTICES.md) — adapted guidance and bundled asset licenses
+- [License](LICENSE) — Apache 2.0
