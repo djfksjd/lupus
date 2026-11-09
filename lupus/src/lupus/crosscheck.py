@@ -10,9 +10,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import budget, contract, goals, release, review, runners, runs, service, timing, verify
+from . import adapters, budget, contract, goals, providers, release, review, runners, runs, service, timing, verify
 from .kernel import Kernel
-from .util import LupusError, diagnostic_tail, find_secret, find_secret_bytes
+from .util import LupusError, timeout_ms, checked_ms_sum, diagnostic_tail, find_secret, find_secret_bytes
 
 
 def manifest(root: Path) -> dict[str, str]:
@@ -119,8 +119,8 @@ import json, sys, traceback, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
 rows = []
-def note(name, outcome, detail="", collection=False):
-    rows.append({"test": name, "outcome": outcome, "detail": detail[-4000:], "collection": collection})
+def note(test_id, outcome, detail="", collection=False, **identity):
+    rows.append({"test": test_id, "outcome": outcome, "detail": detail[-4000:], "collection": collection, **identity})
 if sys.argv[1] == "unittest":
     class Result(unittest.TestResult):
         def addSuccess(self, test):
@@ -159,14 +159,18 @@ else:
         @pytest.hookimpl(hookwrapper=True)
         def pytest_runtest_makereport(self, item, call):
             report = (yield).get_result()
-            if report.failed:
+            name = getattr(item, "originalname", None) or item.name
+            identity = {"name": name, "identity": item.parent.nodeid + "::" + name}
+            if hasattr(report, "wasxfail"):
+                note(item.nodeid, "INVALID", "expected failure or unexpected success", **identity)
+            elif report.failed:
                 assertion = (call.when == "call" and call.excinfo is not None
                              and call.excinfo.errisinstance((AssertionError, pytest.fail.Exception)))
-                note(item.nodeid, "ASSERTION" if assertion else "INVALID", str(report.longrepr))
+                note(item.nodeid, "ASSERTION" if assertion else "INVALID", str(report.longrepr), **identity)
             elif report.skipped:
-                note(item.nodeid, "INVALID", str(report.longrepr))
+                note(item.nodeid, "INVALID", str(report.longrepr), **identity)
             elif call.when == "call":
-                note(item.nodeid, "PASS")
+                note(item.nodeid, "PASS", **identity)
         def pytest_collectreport(self, report):
             if report.failed:
                 note(report.nodeid, "INVALID", str(report.longrepr), True)
@@ -201,16 +205,23 @@ def _observations(k: Kernel, goal: dict, source: Path, tests: dict[str, bytes], 
         return rows
 
 
+def _test_name(row: dict) -> str:
+    # pytest parameter IDs may contain dots, brackets or even "::". Use the runner's
+    # collection identity, never parse an input value out of the display node ID.
+    return str(row.get("name", str(row.get("test", "")).split("::")[-1].split(".")[-1]))
+
+
 def _outcome(rows: list[dict], name: str) -> tuple[str, str]:
     matching = [r for r in rows if isinstance(r, dict) and not r.get("collection") and (
-        str(r.get("test", "")).split("::")[-1].split(".")[-1] == name)]
+        _test_name(r) == name)]
     if not matching:
         detail = next((str(r.get("detail", "")) for r in rows if isinstance(r, dict) and r.get("outcome") == "INVALID"),
                       "test was not collected under its declared name")
         return "INVALID", detail
-    # Duplicate leaf names cannot identify a declared input unambiguously. Subtests may report
-    # several outcomes for one id; an error wins over any assertion or success for that test.
-    if len({r["test"] for r in matching}) != 1:
+    # Parameter cases share one collected function identity. Different modules/classes
+    # with the same leaf name remain ambiguous. Errors dominate assertions and successes,
+    # including teardown errors, skipped parameter cases and unittest subtest errors.
+    if len({r.get("identity", r["test"]) for r in matching}) != 1:
         return "INVALID", "ambiguous test name"
     for outcome in ("INVALID", "ASSERTION", "PASS"):
         for row in matching:
@@ -269,13 +280,26 @@ def author_confinement(k: Kernel, driver: str) -> str:
     return "unverified"
 
 
-def shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float = 300) -> dict:
+def shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float = 300, *, model: str | None = None) -> dict:
     """One authoring call and two sandbox runs; only spend and an event are added."""
+    timeout_ms(timeout_s)
+    checked_ms_sum(k.now(), int((timeout_s + 240) * 1000))
     with k.supervisor_lock():
-        return _shadow(k, goal_id, driver, timeout_s)
+        return _shadow(k, goal_id, driver, timeout_s, model=model)
 
 
-def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
+def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float, *, model: str | None = None) -> dict:
+    api = driver.startswith('api:')
+    selected_model = model
+    if api or (driver not in service.OVERRIDE and driver not in ('native_codex','native_claude')):
+        spec = providers.resolve(driver, k.home)
+        driver, api = spec.driver, spec.protocol != 'native'
+        if api:
+            if not spec.base_url:raise LupusError('PROVIDER_CONFIG_REQUIRED','configure the author endpoint first')
+            if spec.api_key_env and not os.environ.get(spec.api_key_env):raise LupusError('API_AUTH_MISSING','set the selected author API key environment variable')
+            selected_model = model or spec.default_model
+            if selected_model is None:raise LupusError('MODEL_REQUIRED','cross-check author needs --model or configured default_model')
+    if selected_model is not None:providers.validate_model(selected_model)
     goal = goals.get(k, goal_id)
     if goal["status"] != "DONE":
         raise LupusError("CROSSCHECK_NOT_READY", "only a DONE do goal can be cross-checked")
@@ -288,10 +312,22 @@ def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
     worker_drivers = [r[0] for r in k.q(
         "SELECT DISTINCT execution_driver FROM run WHERE goal_id IN (?, ?) ORDER BY execution_driver",
         goal_id, draft_id)]
-    record = {"driver": driver, "worker_drivers": worker_drivers, "same_vendor": driver in worker_drivers, "author_confinement": author_confinement(k, driver), "tests": [], "disputes": [], "counts": dict.fromkeys(CLASSIFICATIONS, 0),
-              "tokens": 0, "seconds": 0.0, "model_seconds": 0.0, "usage_observed": False, "regressions": 0, "fails_both": 0}
+    independence_unknown = api or any(d.startswith('api:') for d in worker_drivers)
+    record = {"driver": driver, "worker_drivers": worker_drivers,
+              "same_vendor": None if independence_unknown else driver in worker_drivers,
+              "author_confinement": "unverified" if api else author_confinement(k, driver),
+              "tests": [], "disputes": [], "counts": dict.fromkeys(CLASSIFICATIONS, 0),
+              "tokens": None if api else 0, "seconds": 0.0, "model_seconds": 0.0, "usage_observed": False, "regressions": 0, "fails_both": 0}
+    if api:
+        record['author_confinement_detail'] = 'application-tool workspace policy; local fixtures only, not native-canary verified'
+    if independence_unknown:
+        record.update(independence_status='unknown', independence_verified=False, confirmation_eligible=False)
+    if api or model is not None:
+        record.update(requested_model=selected_model,effective_backend_confirmed=False)
     started, hold, result = time.monotonic(), None, None
     calls_before = k.one("SELECT COUNT(*) FROM service_call WHERE goal_id = ?", goal_id)[0]
+    service_boundary = k.one("SELECT COALESCE(MAX(rowid),0) FROM service_call")[0]
+    call_cap = service.call_limit(driver, author=True)
     try:
         root = goals.project_root(k, goal_id)
         if k.one("SELECT 1 FROM run WHERE project_id = ? AND status <> 'STOPPED'", goal["project_id"]) or runs.aux_alive(k, goal["project_id"]):
@@ -304,7 +340,7 @@ def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
         if runner not in ("unittest", "pytest"):
             raise LupusError("CROSSCHECK_RUNNER_UNSUPPORTED", "behaviour crosschecks currently require Python tests")
         hold = budget.reserve(k, goal["budget_id"], "work", "crosscheck",
-                              {"calls": 1, "active_ms": int((timeout_s + 240) * 1000)})
+                              {"calls": call_cap, "active_ms": int((timeout_s + 240) * 1000)})
         with tempfile.TemporaryDirectory(prefix="lupus-crosscheck-author-") as tmp:
             work = Path(os.path.realpath(tmp)) / "tree"
             _copy_files(base, work, approved["test"])
@@ -337,12 +373,13 @@ def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
             call_started = time.monotonic()
             try:
                 result = service.call(k, project_id=goal["project_id"], goal_id=goal_id, budget_id=goal["budget_id"],
-                                      purpose="crosscheck", driver=driver, prompt=prompt, timeout_s=timeout_s, workspace=work, author_exclude=(str(k.home), str(base.parent),))
+                                      purpose="crosscheck", driver=driver, prompt=prompt, timeout_s=timeout_s, workspace=work, author_exclude=(str(k.home), str(base.parent),), **({"model":selected_model} if selected_model is not None else {}))
             finally:
                 record["model_seconds"] = time.monotonic() - call_started
-            if result.usage:
-                record["tokens"] = sum(result.usage.get(key, 0) for key in ("tokens_in", "tokens_cached", "tokens_out"))
-            record["usage_observed"] = result.usage is not None
+            usage = adapters.usage_info(result.usage, result.raw)
+            record['tokens'] = usage['tokens']
+            record['usage_observed'] = usage['complete']
+            record['known_token_lower_bound'] = usage['known_token_lower_bound']
             if result.error_class:
                 record["author_exit_code"] = result.exit_code
                 record["author_stderr_tail"] = diagnostic_tail(result.stderr_tail)
@@ -363,7 +400,7 @@ def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
         for row in before + after:
             if not isinstance(row, dict):
                 continue
-            name = str(row.get("test", "")).split("::")[-1].split(".")[-1]
+            name = _test_name(row)
             if name.startswith("test_") and not row.get("collection") and name not in named:
                 named.add(name)
                 descriptions.append({"test": contract._text(name), "input": "", "expected": "",
@@ -373,11 +410,16 @@ def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
         for entry in descriptions:
             old, _ = _outcome(before, entry["test"])
             new, detail = _outcome(after, entry["test"])
+            cases = [{r["test"] for r in rows if isinstance(r, dict) and not r.get("collection")
+                      and _test_name(r) == entry["test"]} for rows in (before, after)]
+            same_cases = cases[0] == cases[1]
             described = (entry["test_in_file"] and entry["input"] and entry["expected"]
                          and (entry["quote"] if entry["source"] == "explicit_request" else
                               entry["where"] if entry["source"] == "existing_contract" else
                               entry["choice"] and entry["alternative"]))
-            classification = classify(old, new) if described else "INVALID"
+            classification = classify(old, new) if described and same_cases else "INVALID"
+            if not same_cases:
+                detail = "test collection changed between pristine and implementation"
             item = {**entry, "classification": classification, "pristine": old, "finished": new,
                     "observed": _inert(detail)}
             record["tests"].append(item)
@@ -388,12 +430,33 @@ def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
     except Exception as exc:
         record["error"] = _inert(exc.code if isinstance(exc, LupusError) else type(exc).__name__)
         record["error_detail"] = _inert(exc.detail if isinstance(exc, LupusError) else str(exc))
+    except BaseException:
+        record.update(error='interrupted',interrupted=True)
+        raise
     finally:
         record["seconds"] = time.monotonic() - started
         if hold:
-            calls = k.one("SELECT COUNT(*) FROM service_call WHERE goal_id = ?", goal_id)[0] - calls_before
+            observation = 'measured'
+            if api:
+                attempts = k.q("SELECT call_id,status,usage FROM service_call WHERE goal_id=? AND rowid>? AND purpose='crosscheck' AND driver=? ORDER BY rowid", goal_id, service_boundary, driver)
+                calls, known = 0, True
+                provenance=[]
+                for attempt in attempts:
+                    values=json.loads(attempt['usage']) if attempt['usage'] else {}
+                    info=adapters.usage_info(values)
+                    valid=isinstance(values.get('_coverage'),dict) and info['fields']['calls'] and adapters.valid_counter(values.get('calls')) and 0<values['calls']<=call_cap
+                    provenance.append({'call_id':attempt['call_id'],'status':attempt['status'],'http_calls':values.get('calls') if valid else None,'calls_complete':bool(valid)})
+                    known = known and valid
+                    if valid:calls += values['calls']
+                known = known and calls<=call_cap
+                if attempts and not known:calls,observation=call_cap,'estimated'
+                record['http_call_settlement']={'reserved':call_cap,'charged':calls,'observation':observation,'service_attempts':provenance}
+            else:
+                calls = k.one("SELECT COUNT(*) FROM service_call WHERE goal_id = ?", goal_id)[0] - calls_before
             budget.settle(k, hold, {"calls": calls,
-                                   "active_ms": int(record["seconds"] * 1000)}, "measured")
+                                   "active_ms": int(record["seconds"] * 1000)}, observation)
+        if record.get('interrupted'):
+            with k.tx():k.emit('supervisor','crosscheck.recorded','goal',goal_id,**record)
     with k.tx():
         k.emit("supervisor", "crosscheck.recorded", "goal", goal_id, **record)
     return record
@@ -402,12 +465,21 @@ def _shadow(k: Kernel, goal_id: str, driver: str, timeout_s: float) -> dict:
 def render(record: dict, limit: int = 5) -> str:
     """Several checks of one rule appear once; crosscheck errors are observations, never verdicts."""
     prefix = "Author confinement: " + record.get("author_confinement", "unverified") + "\n"
-    if record.get("same_vendor"):
+    if record.get('author_confinement_detail'):
+        prefix += diagnostic_tail(record['author_confinement_detail']) + "\n"
+    if record.get("same_vendor") is None and record.get("independence_status") == "unknown":
+        prefix += "Same vendor: unknown (API/backend provenance not independently established)\n"
+    elif record.get("same_vendor"):
         prefix += "Same vendor: true (author and worker; not cross-vendor results)\n"
     elif record.get("worker_drivers"):
         prefix += "Same vendor: false (author and worker)\n"
     else:
         prefix += "Same vendor: false (worker vendor unavailable; cross-vendor comparison not established)\n"
+    counts = record.get("counts")
+    if counts is not None:
+        usable = sum(counts.get(name, 0) for name in CLASSIFICATIONS if name != "INVALID")
+        invalid = counts.get("INVALID", 0)
+        prefix += f"Checks: {usable + invalid} total; {usable} usable; {invalid} invalid.\n"
     lines, seen = [], set()
     for entry in record.get("disputes", []):
         finding = "regression (passed pristine)" if entry.get("pristine") == "PASS" else "fails both pristine and implementation"
@@ -427,4 +499,8 @@ def render(record: dict, limit: int = 5) -> str:
             break
     if lines:
         return prefix + "\n".join(lines)
-    return prefix + ("Cross-check unavailable: " + _inert(record["error"]) if record.get("error") else "No disputes observed.")
+    if record.get("error"):
+        return prefix + "Cross-check unavailable: " + _inert(record["error"])
+    if counts is not None and not usable:
+        return prefix + "No usable cross-checks observed."
+    return prefix + "No disputes observed."

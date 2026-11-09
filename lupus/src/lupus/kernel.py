@@ -52,6 +52,7 @@ DEFAULT_POLICY = {
     "lease_ttl_ms": 120_000,
     "handoff_ttl_ms": 3_600_000,
     "orphan_grace_ms": 3_600_000,
+    "automatic_learning": 1,          # explicit corrections / bounded unknown-actor file observations
     "memory_recall_tokens": 1200,       # §11.1: added memory stays well under 3,000 tokens; 0 = off
     "memory_max_nodes": 6,
     "batch_max_tasks": 3,               # tasks one worker call may cover on drivers that batch; 1 = off
@@ -80,6 +81,8 @@ SCHEMA_VERSION = len(migrations())
 class Kernel:
     def __init__(self, home: Path, clock: Callable[[], int] | None = None):
         self.home = Path(home)
+        from .job_context import owner_for
+        self._job_owner = owner_for(self.home)
         self.runtime = self.home / "runtime"
         self.db_path = self.runtime / "lupus.db"
         self.objects_dir = self.runtime / "objects"
@@ -98,7 +101,10 @@ class Kernel:
         if not self.db_path.exists():
             raise LupusError("NOT_INITIALIZED", str(self.home))
         self.conn = self._connect()
-        self._check_schema()
+        try:self._check_schema()
+        except BaseException:
+            self.conn.close()
+            raise
 
     # ------------------------------------------------------------ lifecycle
 
@@ -194,6 +200,7 @@ class Kernel:
             raise LupusError("SUPERVISOR_LOCK_REQUIRED", "a kernel is forked only by the supervisor that holds the lock")
         other = Kernel(self.home, self._clock)
         other._owner, other._stop = self, stop
+        other._job_owner = self._job_owner
         # Several threads commit through one database: wait for the others instead of failing.
         other.conn.execute("PRAGMA busy_timeout=60000")
         return other

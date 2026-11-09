@@ -28,7 +28,7 @@ import json
 import re
 import secrets
 
-from . import alpha, budget, memory, service
+from . import adapters, alpha, budget, memory, service
 from .kernel import Kernel
 from .util import LupusError, find_secret, new_id, sha256_json
 
@@ -135,7 +135,8 @@ def refine(k: Kernel, project: dict, driver: str, actor: str) -> dict:
             k.emit("supervisor", "learn.case", "task", case["task_id"], driver=driver, **{"pass": pass_id})
         k.emit("supervisor", "learn.pass", "project", project["project_id"], driver=driver, **{"pass": pass_id},
                added=[{"node_id": n["node_id"], "snapshot": _snapshot(n)} for n in learned])
-    return {"pass": pass_id, "cases": len(cases), "learned": learned, "rejected": rejected, "usage": result.usage,
+    return {"pass": pass_id, "cases": len(cases), "learned": learned, "rejected": rejected, "usage": result.usage, "usage_coverage": adapters.usage_info(result.usage, result.raw)["fields"],
+            "known_token_lower_bound": adapters.usage_info(result.usage, result.raw)["known_token_lower_bound"],
             "note": "후보로 저장했습니다. 이후 작업에서 검증 결과에 따라 승격되거나 은퇴합니다(note-list 로 확인, note-retire 로 하나씩, "
                     "`lupus learn --undo` 로 이번 묶음 전체를 철회)"}
 

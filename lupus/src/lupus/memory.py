@@ -23,6 +23,10 @@ That is why it yields `confirmed`, never `verified`.
 from __future__ import annotations
 
 import math
+import json
+import sqlite3
+import time
+from pathlib import Path
 import re
 from typing import Any, Mapping
 
@@ -110,7 +114,12 @@ def likeness(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b) if a and b else 0.0
 
 
-def diverse(nodes: list[dict]) -> list[dict]:
+def _deadline(deadline):
+    if deadline is not None and time.monotonic() >= deadline:
+        raise LupusError("MEMORY_SELECTION_DEADLINE", "reference selection deadline reached")
+
+
+def diverse(nodes: list[dict], *, deadline=None) -> list[dict]:
     """The order in which to offer nodes to a limited budget: the most relevant first, then each
     time the one that adds most beyond what is already taken, so that three notes saying the same
     thing do not take three of the few places.
@@ -121,15 +130,24 @@ def diverse(nodes: list[dict]) -> list[dict]:
     likeness. Ruflo falls back to Jaccard only without embeddings; Lupus has none by design, and
     uses its own tokens (Korean/CJK as bigrams). Scores are scaled to 0..1 first, since here they
     are unbounded BM25 products and would otherwise drown the likeness term."""
+    _deadline(deadline)
     if len(nodes) <= 1:
         return list(nodes)
     rest = sorted(nodes, key=lambda n: -n["score"])
     top = rest[0]["score"] or 1.0
-    tokens = {n["node_id"]: set(tokenize(n["title"] + " " + n["body"])) for n in rest}
+    tokens = {}
+    for n in rest:
+        _deadline(deadline)
+        tokens[n["node_id"]] = set(tokenize(n["title"] + " " + n["body"]))
     picked = [rest.pop(0)]
+    penalties = {id(n): 0.0 for n in rest}
     while rest:
-        best = max(rest, key=lambda n: MMR_RELEVANCE * (n["score"] / top) - (1 - MMR_RELEVANCE) * max(
-            likeness(tokens[n["node_id"]], tokens[p["node_id"]]) for p in picked))      # (max keeps the first of equals)
+        def rank(n):
+            _deadline(deadline)
+            # Only the newest pick can increase the already-observed maximum.
+            penalties[id(n)] = max(penalties[id(n)], likeness(tokens[n["node_id"]], tokens[picked[-1]["node_id"]]))
+            return MMR_RELEVANCE * (n["score"] / top) - (1 - MMR_RELEVANCE) * penalties[id(n)]
+        best = max(rest, key=rank)      # (max keeps the first of equals)
         rest.remove(best)
         picked.append(best)
     return picked
@@ -180,6 +198,8 @@ def add(
     source_goal_id: str | None = None,
     source_task_id: str | None = None,
     source_attempt_id: str | None = None,
+    near_duplicate: bool = True,
+    literal_identity: bool = False,
 ) -> dict:
     """Record one piece of knowledge. Returns the existing node (marked `already_stored`) when
     the same statement is already stored in that scope, or, for a note written by a program,
@@ -202,7 +222,7 @@ def add(
     if leak:
         # Never into memory, the search index or the vault (§10.1).
         raise LupusError("MEMORY_CONTAINS_SECRET", leak)
-    content_hash = sha256_json([kind, title.lower(), _normalise(body).lower()])
+    content_hash = sha256_json([kind,title,body] if literal_identity else [kind, title.lower(), _normalise(body).lower()])
     with k.tx():
         if project_id is not None and k.one("SELECT 1 FROM project WHERE project_id = ?", project_id) is None:
             raise LupusError("PROJECT_NOT_FOUND", project_id)
@@ -212,7 +232,7 @@ def add(
                          _scope(project_id), content_hash)
         if existing is not None:
             return {**dict(existing), "already_stored": True}
-        if origin != "user":
+        if origin != "user" and near_duplicate and not literal_identity:
             # Workers restate the same lesson in slightly different words, and each restatement would
             # otherwise be a new candidate competing for the same few places in a prompt. (Dedup at the
             # store, as in Ruflo's `intelligence.cjs` `deduplicateByContent`, MIT, (c) 2024-2026 ruvnet;
@@ -240,6 +260,9 @@ def add(
 
 
 def _retire(k: Kernel, node_id: str, reason: str, actor: str) -> None:
+    if actor == "user":
+        from .auto_learning import suppress_node
+        suppress_node(k,node_id)
     k.run("UPDATE node SET status = 'retired', retired_reason = ?, updated_at = ? WHERE node_id = ?",
           reason, k.now(), node_id)
     k.emit(actor, "memory.retired", "node", node_id, reason=reason)
@@ -309,6 +332,8 @@ def forget(k: Kernel, node_id: str, actor: str, reason: str) -> None:
         raise LupusError("USER_AUTHORITY_REQUIRED", "forget")
     with k.tx():
         node = get(k, node_id)
+        from .auto_learning import suppress_node
+        suppress_node(k,node_id)
         rowid = k.one("SELECT rowid FROM node WHERE node_id = ?", node_id)[0]
         k.run("INSERT OR IGNORE INTO node_tombstone(scope, content_hash, reason, created_at) VALUES (?,?,?,?)",
               _scope(node["project_id"]), node["content_hash"], reason, k.now())
@@ -336,7 +361,8 @@ def search(k: Kernel, project_id: str | None, query: str, limit: int = 30) -> li
     out = []
     for row in rows:
         node = dict(row)
-        overlap = len(wanted & set((node.pop("t_title") + " " + node.pop("t_body")).split()))
+        # compared as search tokens, so case and punctuation do not hide a shared word ("TypeError." / "typeerror")
+        overlap = len(wanted & set(tokenize(node.pop("t_title") + " " + node.pop("t_body"))))
         if overlap < min(k.policy["memory_min_overlap"], len(wanted)):
             continue          # a single shared bigram is noise, not relevance
         utility = (node["helped"] + 1) / (node["helped"] + node["unhelped"] + 2)
@@ -351,44 +377,103 @@ def search(k: Kernel, project_id: str | None, query: str, limit: int = 30) -> li
     return sorted(out, key=lambda n: -n["score"])
 
 
-def recall(k: Kernel, *, project_id: str, goal_id: str, attempt_id: str, query: str) -> list[dict]:
-    """Pick what to show the worker for this attempt, within the token budget, and record it.
+STANDING_KINDS = ("decision", "preference")
+MAX_STANDING = 3
 
-    Direct matches come first; then nodes linked to them (`relates`, `part_of`, and
-    `contradicts` so a conflict is shown rather than hidden). A linked node needs no text
-    match: being connected is the reason it is relevant."""
-    budget_tokens = k.policy["memory_recall_tokens"]
-    if budget_tokens <= 0:
-        return []
-    with k.tx():
-        chosen: dict[str, dict] = {}
-        for node in search(k, project_id, query):
-            chosen[node["node_id"]] = {**node, "via": "match", "conflict_with": None}
-        for node in list(chosen.values()):
-            for edge in k.q(
-                    "SELECT * FROM edge WHERE (src = ? OR dst = ?) AND type IN ('relates','part_of','contradicts')",
-                    node["node_id"], node["node_id"]):
-                other_id = edge["dst"] if edge["src"] == node["node_id"] else edge["src"]
-                if other_id in chosen:
-                    if edge["type"] == "contradicts":
-                        chosen[other_id]["conflict_with"] = chosen[other_id]["conflict_with"] or node["node_id"]
-                    continue
-                other = get(k, other_id)
-                if other["status"] == "retired" or other["project_id"] not in (project_id, None):
-                    continue
-                chosen[other_id] = {**other, "via": "link", "score": node["score"] * 0.5,
-                                    "conflict_with": node["node_id"] if edge["type"] == "contradicts" else None}
-        # The budget covers everything that is actually appended to the prompt: the header
-        # line and each rendered line including its status label and conflict remark.
-        picked, used = [], estimate_tokens(_HEADER)
-        for node in diverse(list(chosen.values())):
-            cost = estimate_tokens(_line(node))
-            if len(picked) >= k.policy["memory_max_nodes"] or used + cost > budget_tokens:
+
+def standing(k: Kernel, project_id: str) -> list[dict]:
+    """The user's own live rules and preferences for this project, newest first, at most MAX_STANDING."""
+    rows = k.q("SELECT * FROM node WHERE project_id = ? AND origin = 'user' AND status <> 'retired' "
+               f"AND kind IN ({','.join('?' * len(STANDING_KINDS))}) ORDER BY created_at DESC LIMIT ?",
+               project_id, *STANDING_KINDS, MAX_STANDING)
+    return [dict(r) for r in rows]
+
+
+def select(k: Kernel, *, project_id: str | None, query: str,
+           budget_tokens: int | None = None, node_limit: int | None = None,
+           candidate_limit: int | None = None, edge_limit: int | None = None, deadline=None,
+           primary_filter: bool = False) -> list[dict]:
+    """Pure scoped selector; opt-in primary filters run before prompt capacity is spent."""
+    budget_tokens = k.policy["memory_recall_tokens"] if budget_tokens is None else budget_tokens
+    node_limit = k.policy["memory_max_nodes"] if node_limit is None else node_limit
+    if budget_tokens <= 0 or node_limit <= 0:return []
+    _deadline(deadline)
+    chosen: dict[str, dict] = {}
+    edge_count=0
+    # A rule or preference the user recorded for this project holds for every request in it, whether
+    # or not the request happens to use its words: it is shown first. (A request for `clamp(amount,
+    # ...)` shares one word with "every function that takes an amount must raise TypeError for a
+    # float", and the word-overlap floor dropped it; measured 2026-10-27, evaluations/continuity.py.)
+    # Recorded as a match: the user's own words name what it applies to.
+    rules = [{**node, "via": "match", "conflict_with": None} for node in (standing(k, project_id) if project_id is not None else [])]
+    ruled = {node["node_id"]:node for node in rules}
+    for node in search(k, project_id, query):
+        _deadline(deadline)
+        if node["node_id"] in ruled:
+            continue
+        chosen[node["node_id"]] = {**node, "via": "match", "conflict_with": None}
+    if candidate_limit is not None and len(chosen)+len(rules)>candidate_limit:
+        raise LupusError("MEMORY_SELECTION_LIMIT", "reference candidate bound reached")
+    for node in list(chosen.values()):
+        _deadline(deadline)
+        sql="SELECT * FROM edge WHERE (src = ? OR dst = ?) AND type IN ('relates','part_of','contradicts')"
+        params=[node["node_id"],node["node_id"]]
+        if edge_limit is not None:
+            sql+=" LIMIT ?";params.append(edge_limit-edge_count+1)
+        linked=k.q(sql,*params)
+        edge_count+=len(linked)
+        if edge_limit is not None and edge_count>edge_limit:
+            raise LupusError("MEMORY_SELECTION_LIMIT", "reference edge bound reached")
+        for edge in linked:
+            _deadline(deadline)
+            other_id = edge["dst"] if edge["src"] == node["node_id"] else edge["src"]
+            if other_id in chosen or other_id in ruled:
+                if edge["type"] == "contradicts":
+                    target = chosen.get(other_id) or ruled[other_id]
+                    target["conflict_with"] = target["conflict_with"] or node["node_id"]
+                    node["conflict_with"] = node["conflict_with"] or other_id
                 continue
-            used += cost
-            picked.append({**node, "tokens": cost})
+            row = k.one("SELECT * FROM node WHERE node_id = ? AND (project_id = ? OR project_id IS NULL) AND status <> 'retired'", other_id, project_id)
+            if row is None:continue
+            other = dict(row)
+            if edge["type"] == "contradicts":node["conflict_with"] = node["conflict_with"] or other_id
+            if candidate_limit is not None and len(chosen)+len(rules)>=candidate_limit:
+                raise LupusError("MEMORY_SELECTION_LIMIT", "reference candidate bound reached")
+            chosen[other_id] = {**other, "via": "link", "score": node["score"] * 0.5,
+                                "conflict_with": node["node_id"] if edge["type"] == "contradicts" else None}
+    # The budget covers everything that is actually appended to the prompt: the header
+    # line and each rendered line including its status label and conflict remark.
+    picked, used = [], estimate_tokens(_HEADER)
+    seen_hashes = set() if primary_filter else None
+    literal_entries = k.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='auto_learning_entry'") is not None
+    for node in rules + diverse(list(chosen.values()),deadline=deadline):
+        _deadline(deadline)
+        if find_secret(visible(node["title"]+"\n"+node["body"])):
+            continue
+        if primary_filter and (node["content_hash"] in seen_hashes or
+                               _REFERENCE_OVERRIDE.search(visible(node["title"]+"\n"+node["body"]))):
+            continue
+        if literal_entries:
+            entry=k.one('SELECT snapshot FROM auto_learning_entry WHERE node_id=?',node['node_id'])
+            if entry is not None and entry['snapshot']==sha256_json([node['title'],node['body']]):
+                node={**node,"_literal":True}
+        cost = estimate_tokens(_line(node))
+        if len(picked) >= node_limit or used + cost > budget_tokens:
+            continue
+        used += cost
+        picked.append({**node, "tokens": cost})
+        if primary_filter:seen_hashes.add(node["content_hash"])
+    return picked
+
+
+def recall(k: Kernel, *, project_id: str, goal_id: str, attempt_id: str, query: str) -> list[dict]:
+    """Select reference DATA and preserve verified-attempt bookkeeping/feedback."""
+    if k.policy["memory_recall_tokens"] <= 0:return []
+    with k.tx():
+        picked = select(k, project_id=project_id, query=query)
+        for node in picked:
             k.run("INSERT OR IGNORE INTO recall(node_id, attempt_id, goal_id, via, tokens, created_at) "
-                  "VALUES (?,?,?,?,?,?)", node["node_id"], attempt_id, goal_id, node["via"], cost, k.now())
+                  "VALUES (?,?,?,?,?,?)", node["node_id"], attempt_id, goal_id, node["via"], node["tokens"], k.now())
             k.run("UPDATE node SET recalled = recalled + 1 WHERE node_id = ?", node["node_id"])
         return picked
 
@@ -398,7 +483,8 @@ _LABEL = {"verified": "사용자 확인", "confirmed": "반복 사용됨", "cand
 
 
 def _line(node: Mapping) -> str:
-    line = f"- [{_LABEL[node['status']]}] {node['title']}: {_normalise(node['body'])}"
+    body=node['body'] if node.get('_literal') else _normalise(node['body'])
+    line = f"- [{_LABEL[node['status']]}] {node['title']}: {body}"
     if node.get("conflict_with"):
         line += " (다른 기록과 상충함. 현재 파일 상태를 우선하라)"
     return line
@@ -491,3 +577,79 @@ def summary(k: Kernel, goal_id: str) -> dict[str, Any]:
     learned = k.one("SELECT COUNT(*) FROM node WHERE source_goal_id = ?", goal_id)[0]
     return {"recalls": row["n"], "estimated_prompt_tokens": row["tokens"], "by_attempt_outcome": by_outcome,
             "nodes_recorded": learned}
+
+
+class _ReadContext:
+    def __init__(self, conn):
+        from .kernel import DEFAULT_POLICY
+        self.conn=conn
+        row=self.one("SELECT value FROM meta WHERE key='policy'")
+        if row is None:raise ValueError("memory policy missing")
+        self.policy={**DEFAULT_POLICY,**json.loads(row[0])}
+    def q(self,sql,*params):return self.conn.execute(sql,params).fetchall()
+    def one(self,sql,*params):return self.conn.execute(sql,params).fetchone()
+
+
+_REFERENCE_OVERRIDE = re.compile(
+    r"<\|(?:im_start|im_end|system|assistant|user)\|>|\[/?INST\]|</?system>"
+    r"|\b(?:ignore|disregard|forget)\s+(?:all\s+|the\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?)"
+    r"|\b(?:new|updated|revised)\s+(?:instructions?|task|directives?)\s*:"
+    r"|\byou\s+are\s+now\b|이전\s*지시.{0,12}무시", re.I)
+
+
+def primary_context(k, project_id: str | None, query: str) -> tuple[str,dict]:
+    """Reference only. No recall counters, synthetic attempts, promotions or feedback."""
+    empty={"estimated_input_tokens":0,"nodes":[]}
+    try:
+        tokens=k.policy["memory_recall_tokens"];limit=k.policy["memory_max_nodes"]
+        overlap=k.policy["memory_min_overlap"]
+        if any(type(value) is not int for value in (tokens,limit,overlap)) or tokens<0 or limit<0 or overlap<0:
+            raise ValueError("memory policy invalid")
+        tokens=min(1200,tokens);limit=min(6,limit)
+        if tokens==0 or limit==0:return "",{"status":"off",**empty}
+        picked=select(k,project_id=project_id,query=query,budget_tokens=tokens,node_limit=limit,
+                      candidate_limit=128,edge_limit=128,deadline=time.monotonic()+.5,primary_filter=True)
+        # Old/hand-edited data is not trusted as new conversation instructions.
+        safe=[];seen=set()
+        for node in picked:
+            if node["content_hash"] in seen or _REFERENCE_OVERRIDE.search(visible(node["title"]+"\n"+node["body"])):continue
+            seen.add(node["content_hash"]);safe.append(node)
+        picked=safe
+        text="\n\n"+render(picked) if picked else ""
+        while picked and estimate_tokens(text)>tokens:
+            picked.pop();text="\n\n"+render(picked) if picked else ""
+        return text,{"status":("project" if project_id is not None else "global_only") if picked else "no_relevant_memory",
+                     "estimated_input_tokens":estimate_tokens(text) if text else 0,
+                     "token_estimate":True,"verified_feedback":False,
+                     "nodes":[{"id":n["node_id"],"hash":n["content_hash"],"status":n["status"]} for n in picked]}
+    except LupusError as exc:
+        status={"MEMORY_SELECTION_LIMIT":"skipped_limit","MEMORY_SELECTION_DEADLINE":"skipped_deadline"}.get(exc.code,"unavailable")
+        return "",{"status":status,**empty}
+    except (sqlite3.Error,ValueError,TypeError,KeyError):
+        return "",{"status":"unavailable",**empty}
+
+
+def readonly_context(home: Path, cwd: Path, query: str) -> tuple[str,dict]:
+    """Read only an existing runtime. Missing/unsupported data never creates or migrates it."""
+    from . import projects
+    from .kernel import migrations
+    db=Path(home)/"runtime/lupus.db"
+    if not db.is_file():return "",{"status":"missing","estimated_input_tokens":0,"nodes":[]}
+    conn=None
+    try:
+        conn=sqlite3.connect(db.resolve().as_uri()+"?mode=ro",uri=True,isolation_level=None,timeout=.1)
+        conn.row_factory=sqlite3.Row
+        conn.execute("PRAGMA query_only=ON");conn.execute("PRAGMA trusted_schema=OFF")
+        deadline=time.monotonic()+.5
+        conn.set_progress_handler(lambda:int(time.monotonic()>=deadline),1000)
+        conn.execute("BEGIN")
+        expected={version:checksum for version,_,_,checksum in migrations()}
+        actual={r["version"]:r["checksum"] for r in conn.execute("SELECT version,checksum FROM schema_migration")}
+        if actual!=expected:raise ValueError("unsupported memory schema")
+        reader=_ReadContext(conn)
+        project=projects.resolve(reader,cwd)
+        return primary_context(reader,project["project_id"] if project is not None else None,query)
+    except (OSError,sqlite3.Error,ValueError,TypeError,KeyError,LupusError):
+        return "",{"status":"unavailable","estimated_input_tokens":0,"nodes":[]}
+    finally:
+        if conn is not None:conn.close()

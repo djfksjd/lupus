@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "pack": "lupus-basic-workflows",
+  "date": "2026-11-08",
+  "kind": "adapted instruction-only skills",
+  "execution": "Loaded on selection; no scripts, hooks, runtime installation or provider calls during discovery. Selected mode and original task govern execution.",
+  "adaptations": [
+    "Self-contained workflows; supporting concepts are integrated instead of unresolved cross-skill or script references.",
+    "Provider-neutral; no Claude requirement, tool aliases, bootstrap policy, model routing or mandatory delegation.",
+    "Proportional planning and validation; preserve user scope, existing authorization, edits and reusable valid evidence.",
+    "No automatic commits, worktree creation, global configuration edits or external messages."
+  ],
+  "skills": [
+    {
+      "id": "omc/minimal-code-discipline",
+      "path": "omc/minimal-code-discipline/SKILL.md",
+      "sha256": "cea19209f8d67b87098fcce65e21185f6a82a5d66b6758bbb933d653c96b5f5f",
+      "license": "MIT",
+      "notice": "LICENSE-OMC.txt",
+      "adapted": true,
+      "upstream": [
+        {
+          "id": "omc-minimal",
+          "repo": "Yeachan-Heo/oh-my-claudecode",
+          "sha": "fd829431e9199f27714af65e5f79a82ff203d5f7",
+          "path": "skills/minimal-code-discipline/SKILL.md",
+          "url": "https://raw.githubusercontent.com/Yeachan-Heo/oh-my-claudecode/fd829431e9199f27714af65e5f79a82ff203d5f7/skills/minimal-code-discipline/SKILL.md",
+          "snapshot_sha256": "a9bc4ef986105a56560ef8c9a96328f52475c7e5679bca92f6fbfa38718a130c"
+        }
+      ]
+    },
+    {
+      "id": "superpowers/systematic-debugging",
+      "path": "superpowers/systematic-debugging/SKILL.md",
+      "sha256": "dcbfceed3f40b8d2efc1ef6d019997866a2fff20cd9061e1c33c53345079214b",
+      "license": "MIT",
+      "notice": "LICENSE-SUPERPOWERS.txt",
+      "adapted": true,
+      "upstream": [
+        {
+          "id": "sp-debug",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/systematic-debugging/SKILL.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/systematic-debugging/SKILL.md",
+          "snapshot_sha256": "7e94d379f82af4ac772dd191541e618a41c3331ab7ef6054d5569a82bb3d3682"
+        },
+        {
+          "id": "sp-rootcause",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/systematic-debugging/root-cause-tracing.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/systematic-debugging/root-cause-tracing.md",
+          "snapshot_sha256": "05d4e0352e2bdd5cbd02b21707f795607e2e004d2300926723d2e5394222453c"
+        },
+        {
+          "id": "sp-defense",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/systematic-debugging/defense-in-depth.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/systematic-debugging/defense-in-depth.md",
+          "snapshot_sha256": "9e59d63e8ab85eb90448f46b5d28721db21092f781a012015a2008c4dfc7beac"
+        },
+        {
+          "id": "sp-waits",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/systematic-debugging/condition-based-waiting.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/systematic-debugging/condition-based-waiting.md",
+          "snapshot_sha256": "71b28562d9a438c7529cef488c57e99dffe630385c3ad02b9f8a389fd685bb5e"
+        }
+      ]
+    },
+    {
+      "id": "superpowers/receiving-code-review",
+      "path": "superpowers/receiving-code-review/SKILL.md",
+      "sha256": "e8e36bebcdd9ce0189ef39ac4921b39e0b286d81c4ae66916d958b9c9163b3ff",
+      "license": "MIT",
+      "notice": "LICENSE-SUPERPOWERS.txt",
+      "adapted": true,
+      "upstream": [
+        {
+          "id": "sp-review",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/receiving-code-review/SKILL.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/receiving-code-review/SKILL.md",
+          "snapshot_sha256": "1bf7ae86cefc5a66b3e1929e57d81c5061cadd12842253b04edd3a37c3095389"
+        }
+      ]
+    },
+    {
+      "id": "superpowers/test-driven-development",
+      "path": "superpowers/test-driven-development/SKILL.md",
+      "sha256": "2d7db600a3247015db64b01f63307b048d04b593105bcd94be305e4e7cbbb474",
+      "license": "MIT",
+      "notice": "LICENSE-SUPERPOWERS.txt",
+      "adapted": true,
+      "upstream": [
+        {
+          "id": "sp-tdd",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/test-driven-development/SKILL.md",
+          "snapshot_sha256": "085dc003088bbde06e99bb7a5e8dcac64097027810f1b7cf0cf2ad5a61210a62"
+        },
+        {
+          "id": "sp-goodtests",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/writing-good-tests.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/test-driven-development/writing-good-tests.md",
+          "snapshot_sha256": "2eee7aba4772f8bd9fff96f8c6be9a18fef26c48c15fcd94910f2199e1daf9d6"
+        }
+      ]
+    },
+    {
+      "id": "superpowers/writing-plans",
+      "path": "superpowers/writing-plans/SKILL.md",
+      "sha256": "315f056d4f540f48223a3726d936f27d4385e4fe776f9a49415b8314d31709c8",
+      "license": "MIT",
+      "notice": "LICENSE-SUPERPOWERS.txt",
+      "adapted": true,
+      "upstream": [
+        {
+          "id": "sp-plans",
+          "repo": "obra/superpowers",
+          "sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/writing-plans/SKILL.md",
+          "url": "https://raw.githubusercontent.com/obra/superpowers/22f0b463e7a5e579904dd6211a520321035526f7/skills/writing-plans/SKILL.md",
+          "snapshot_sha256": "55c6ba20633d25fde15cf02a59344991a95dcf9fb3e6dca4f616d882efe790d3"
+        }
+      ]
+    }
+  ]
+}

@@ -48,9 +48,7 @@ def prompt(request: str, rubric: list[str], document: str, nonce: str) -> str:
     )
 
 
-def parse(text: str, rubric: list[str], document: str) -> tuple[bool, str]:
-    """(all met, what is missing). The model's own "met" counts only with a quote that is
-    literally in the document."""
+def _items(text):
     found = None
     for match in re.finditer(r"\{", text):
         try:
@@ -60,6 +58,13 @@ def parse(text: str, rubric: list[str], document: str) -> tuple[bool, str]:
         if isinstance(found, dict) and isinstance(found.get("items"), list):
             break
         found = None
+    return found
+
+
+def parse(text: str, rubric: list[str], document: str) -> tuple[bool, str]:
+    """(all met, what is missing). The model's own "met" counts only with a quote that is
+    literally in the document."""
+    found = _items(text)
     if found is None:
         return False, "the judge did not return a readable verdict"
     by_n = {int(i["n"]): i for i in found["items"] if isinstance(i, dict) and str(i.get("n", "")).isdigit()}
@@ -84,14 +89,18 @@ def run(k: Kernel, goal: dict, criterion: dict, root: Path) -> tuple[str, str, s
     kind = verifier["kind"]
     if kind == "user_approval":
         # Only `approve` below writes a PASS for this criterion.
+        verify.observe(verifier,False,"awaiting_approval")
         return "FAIL", digest, "awaiting the user's approval of this version", 0
     path = verify._inside(root, verifier["path"])
     if not path.is_file():
+        verify.observe(verifier,True,"artifact_missing")
         return "FAIL", digest, "file missing", 0
     document = path.read_text(encoding="utf-8", errors="replace")
     if len(document) > MAX_DOCUMENT_CHARS:
+        verify.observe(verifier,False,"judge_input_limit")
         return "FAIL", digest, f"the document is longer than a judge is given ({MAX_DOCUMENT_CHARS} characters)", 0
     if find_secret(document):
+        verify.observe(verifier,False,"judge_input_secret")
         return "FAIL", digest, "the document contains something that looks like a credential; it is not sent to a judge", 0
     nonce = "DOC-" + secrets.token_hex(6)
     result = service.call(
@@ -101,6 +110,21 @@ def run(k: Kernel, goal: dict, criterion: dict, root: Path) -> tuple[str, str, s
     if result.error_class:
         # No verdict is not a failed document: stop here and let the attempt be closed as interrupted.
         raise LupusError("JUDGE_UNAVAILABLE", f"{verifier['driver']}: {result.error_class}")
+    items=_items(result.text)
+    required=set(range(1,len(verifier["rubric"])+2))
+    entries=(items or {}).get("items",[])
+    by_n={int(i["n"]):i for i in entries if isinstance(i,dict) and type(i.get("n")) in (int,str) and str(i["n"]).isdigit()}
+    # A bad positive quote or duplicate item is an invalid observation, not a
+    # trustworthy negative assessment of the worker's document. Verdicts below
+    # deliberately retain the existing parser and acceptance behavior.
+    valid=(len(entries)==len(required)==len(by_n) and set(by_n)==required)
+    for n,item in by_n.items():
+        valid=valid and type(item.get("met")) is bool and isinstance(item.get("why",""),str)
+        if item.get("met") is True and n<=len(verifier["rubric"]):
+            quote=_norm(str(item.get("quote","")))
+            valid=valid and isinstance(item.get("quote"),str) and len(quote)>=MIN_QUOTE and quote in _norm(document)
+    genuine=result.exit_code==0 and not result.leftover_processes and valid
+    verify.observe(verifier,genuine,"judge_verdict" if genuine else "judge_verdict_unknown")
     ok, missing = parse(result.text, verifier["rubric"], document)
     return ("PASS" if ok else "FAIL"), digest, (f"judge {verifier['driver']}: all items met with quotes found in the document"
                                                  if ok else f"평가자({verifier['driver']})가 충족되지 않았다고 본 기준:\n{missing}"), 1

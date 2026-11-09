@@ -15,9 +15,9 @@ from __future__ import annotations
 import json
 from typing import Mapping
 
-from . import budget, goals, projects
+from . import budget, goals, projects, job_context
 from .kernel import Kernel
-from .util import LupusError, canonical_json, group_alive, new_id, proc_start, sha256_json
+from .util import LupusError, checked_ms_sum, canonical_json, group_alive, new_id, proc_start, sha256_json
 from .util import container_alive
 
 BLOCK_STATUSES = ("NEEDS_ANSWER", "NEEDS_APPROVAL", "BUDGET_EXHAUSTED", "EXTERNAL_BLOCKED", "NO_PROGRESS",
@@ -73,7 +73,7 @@ def claim(k: Kernel, task_id: str, driver: str, auth_mode: str, ttl_ms: int | No
             "fencing_token, status, lease_expires_at, revocation_epoch, recovery_epoch, policy_version, "
             "started_at) VALUES (?,?,?,?,?,?,?, 'ACTIVE', ?,?,?,?,?)",
             run_id, project["project_id"], goal["goal_id"], task_id, driver, auth_mode, token,
-            now + (ttl_ms or k.policy["lease_ttl_ms"]), project["revocation_epoch"], k.recovery_epoch,
+            checked_ms_sum(now, ttl_ms or k.policy["lease_ttl_ms"]), project["revocation_epoch"], k.recovery_epoch,
             project["policy_version"], now,
         )
         goals.move_task(k, task_id, "RUNNING")
@@ -110,7 +110,7 @@ def heartbeat(k: Kernel, run_id: str, token: int, ttl_ms: int | None = None) -> 
     run has to be stopped, confirmed and claimed again."""
     with k.tx():
         guard(k, run_id, token)
-        expires = k.now() + (ttl_ms or k.policy["lease_ttl_ms"])
+        expires = checked_ms_sum(k.now(), ttl_ms or k.policy["lease_ttl_ms"])
         k.run("UPDATE run SET lease_expires_at = ? WHERE run_id = ?", expires, run_id)
         return expires
 
@@ -124,6 +124,7 @@ def attach_process(k: Kernel, run_id: str, token: int, pid: int) -> None:
         if start is None:
             raise LupusError("PROCESS_NOT_FOUND", str(pid))
         k.run("UPDATE run SET pid = ?, proc_start = ? WHERE run_id = ?", pid, start, run_id)
+        job_context.record(k,pid,start,'worker',run_id=run_id)
 
 
 # ---------------------------------------------------------------- auxiliary process groups
@@ -138,7 +139,7 @@ def container_of(purpose: str) -> str | None:
 
 
 def aux_recorder(k: Kernel, project_id: str, purpose: str):
-    """on_spawn callback for verify.run: records the process group, and the container it drives."""
+    """on_spawn callback for verify.run: records the process group, and its exact container ownership descriptor (legacy names remain observation-only)."""
     return lambda pid, tag="": register_aux(k, project_id, pid, purpose + tag)
 
 
@@ -152,6 +153,7 @@ def register_aux(k: Kernel, project_id: str, pid: int, purpose: str) -> None:
             "INSERT OR REPLACE INTO aux_process(pid, proc_start, project_id, purpose, created_at) VALUES (?,?,?,?,?)",
             pid, start, project_id, purpose, k.now(),
         )
+        job_context.record(k,pid,start,'aux',project_id=project_id,purpose=purpose)
 
 
 def clear_aux(k: Kernel, pid: int) -> None:
@@ -163,6 +165,7 @@ def clear_aux(k: Kernel, pid: int) -> None:
         if _proc_alive(row["pid"], row["proc_start"], row["purpose"]):
             raise LupusError("WRITER_STILL_ALIVE", f"{row['purpose']} pid {pid}")
         k.run("DELETE FROM aux_process WHERE pid = ?", pid)
+        job_context.discharge(k,pid,row['proc_start'],'aux')
 
 
 def aux_alive(k: Kernel, project_id: str | None = None) -> list[dict]:
@@ -175,6 +178,7 @@ def aux_alive(k: Kernel, project_id: str | None = None) -> list[dict]:
                     alive.append(dict(row))
             else:
                 k.run("DELETE FROM aux_process WHERE pid = ?", row["pid"])
+                job_context.discharge(k,row['pid'],row['proc_start'],'aux')
     return alive
 
 
@@ -259,6 +263,8 @@ def _close_run(k: Kernel, run: Mapping, evidence: dict, result: str) -> None:
             # Its criteria may have been removed from the contract while it ran.
             goals.cancel_if_obsolete(k, task_id, "supervisor")
     k.emit("supervisor", "run.stopped", "run", run_id, evidence=evidence.get("kind"), result=result)
+    if run['pid'] is not None and evidence.get('kind')!='user_attested':
+        job_context.discharge(k,run['pid'],run['proc_start'],'worker')
     goals.refresh(k, run["goal_id"])
 
 

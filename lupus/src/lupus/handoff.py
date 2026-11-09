@@ -21,7 +21,7 @@ from typing import Any, Mapping
 
 from . import goals, projects, recovery, runs
 from .kernel import Kernel
-from .util import LupusError, canonical_json, new_id, sha256_json
+from .util import LupusError, checked_ms_sum, canonical_json, new_id, sha256_json
 
 SCHEMA_VERSION = 1
 
@@ -80,7 +80,7 @@ def prepare(k: Kernel, goal_id: str, target_driver: str) -> dict:
             "budget": state["budget"],
             "attempts": state["tasks"],
             "safety": {"unresolved_action_intents": [], "resume_ready": True},
-            "expires_at": now + k.policy["handoff_ttl_ms"],
+            "expires_at": checked_ms_sum(now, k.policy["handoff_ttl_ms"]),
         }
         k.run(
             "UPDATE handoff SET status = 'REJECTED', reject_reason = 'superseded', resolved_at = ? "

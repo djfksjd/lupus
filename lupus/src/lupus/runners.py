@@ -24,7 +24,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .util import LupusError, safe_path, scrubbed_env
+from .util import LupusError, active_python_env, safe_path, scrubbed_env
 
 SKIP = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", "target", "dist",
         "build", "vendor", ".next"}
@@ -133,14 +133,16 @@ def _python(root: Path, host: bool = True, python_from: Path | None = None) -> d
     # An isolated checkout has no environment of its own: it uses the one of the repository it was
     # made from (outside the checkout, so nothing a worker there can write to).
     borrowed = project_python(python_from) if host and own is None and python_from is not None else None
-    python = own[0] if own else (borrowed[0] if borrowed else sys.executable)
+    selected_env = active_python_env() if host else None
+    host_python = os.path.join(selected_env, "bin", "python") if selected_env else sys.executable
+    python = own[0] if own else (borrowed[0] if borrowed else host_python)
     if uses_pytest and not host:
         argv, runner = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider"], "pytest"
     elif uses_pytest:
         # Is pytest there? Asked only of Lupus's own interpreter, outside the project and with the
         # scrubbed environment. An interpreter that belongs to the project is never run here: it
         # runs only as a sandboxed check, where a missing pytest shows up as that check failing.
-        probe = None if own or borrowed else subprocess.run(
+        probe = None if own or borrowed or selected_env else subprocess.run(
             [python, "-m", "pytest", "--version"], capture_output=True, cwd=tempfile.gettempdir(), env=scrubbed_env(),
             stdin=subprocess.DEVNULL)
         if probe is not None and probe.returncode != 0:
@@ -366,6 +368,36 @@ _FAILED_ID = {
 }
 
 
+def unexecuted(runner: str, output: str) -> int | None:
+    """Skipped/expected-failure cases in a recognised runner summary; None if unreadable.
+
+    This is strict for a newly approved acceptance check. Whole existing suites may have
+    legitimate platform skips and do not opt in. Parameter cases count individually.
+    """
+    if runner == "node":
+        match = _NODE_SUMMARY.search(output)
+        return sum(int(n) for n in re.findall(r"^# (?:cancelled|skipped|todo) (\d+)$", match[0], re.M)) if match else None
+    if runner == "go":
+        return len(re.findall(r"^\s*--- SKIP:", output, re.M))
+    if runner == "unittest":
+        summaries = re.findall(r"^(?:OK|FAILED)(?: \(([^)]*)\))?\s*$", output, re.M)
+        return max((sum(int(n) for n in re.findall(
+            r"(?:skipped|expected failures|unexpected successes)=(\d+)", row)) for row in summaries), default=None)
+    if runner == "pytest":
+        summaries = re.findall(r"^\s*(?:=+\s*)?([^\n]+?)\s+in\s+[\d.]+s(?:\s*\([^)]*\))?(?:\s*=+)?\s*$", output, re.M)
+        summaries = [row for row in summaries if re.search(r"\d+\s+(?:passed|failed|skipped|xfailed|xpassed|deselected|errors?|warnings?)\b", row)]
+        return max((sum(int(n) for n in re.findall(r"(\d+)\s+(?:skipped|xfailed|xpassed|deselected)\b", row))
+                    for row in summaries), default=None)
+    if runner in ("jest", "vitest"):
+        summaries = re.findall(r"^\s*Tests\s*:?\s+([^\n]+)$", output, re.M)
+        return max((sum(int(n) for n in re.findall(r"(\d+)\s+(?:skipped|pending|todo)\b", row))
+                    for row in summaries), default=None)
+    if runner == "cargo":
+        summaries = re.findall(r"^test result: [^\n]+$", output, re.M)
+        return sum(int(n) for row in summaries for n in re.findall(r"(\d+) (?:ignored|filtered out)\b", row)) if summaries else None
+    return None
+
+
 def failed_ids(runner: str, output: str) -> set[str] | None:
     """Names of the tests (or test files that could not be loaded) a run reports as failed; None
     for a runner whose output does not name them."""
@@ -517,7 +549,8 @@ def sources(root: Path, language: str, limit: int = 40, about: str = "") -> list
     scored = []
     for position, rel in enumerate(files[:1500]):
         try:
-            text = (root / rel).read_bytes()[:200_000].decode("utf-8", errors="ignore").lower()
+            with (root / rel).open("rb") as source:
+                text = source.read(200_000).decode("utf-8", errors="ignore").lower()
         except OSError:
             continue
         name = rel.lower()

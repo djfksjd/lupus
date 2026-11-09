@@ -144,6 +144,45 @@ def fix_tests(k: Kernel, project: dict, actor: str, caps: dict | None = None, ch
 MAX_REQUEST = 2000
 
 
+def checked_verifier(root: Path, check: str, protect_paths: list[str] | None = None) -> tuple[dict, dict]:
+    """The explicit user command and the existing inputs it must not change."""
+    argv = check_argv(root, check)
+    try:
+        found = detect(root, need_tests=False, host=False)
+    except LupusError as exc:
+        if exc.code not in ("NO_TESTS_FOUND", "TEST_RUNNER_UNKNOWN"):
+            raise
+        found = {"protect": [], "inputs": []}
+    verifier = {"kind": "command", "argv": argv, "paths": ["."], "timeout_s": 600,
+                "protect": sorted(set(protect_paths or []) | set(found["protect"]))}
+    for field in ("env", "frozen_trees"):
+        if found.get(field):
+            verifier[field] = found[field]
+    return found, verifier
+
+
+def checked_request(k: Kernel, project: dict, request: str, check: str, actor: str,
+                    protect_paths: list[str] | None = None, caps: dict | None = None) -> dict:
+    """The user supplied the acceptance command: implement and check, without authoring a test.
+
+    No baseline run is needed: this does not claim fail-to-pass, or that the command fully
+    describes the request. Existing tests/configuration are frozen as for a custom fix-tests.
+    """
+    if actor != "user":
+        raise LupusError("USER_AUTHORITY_REQUIRED", "requests are submitted by the user")
+    request = " ".join(request.split())
+    if not request or len(request) > MAX_REQUEST or find_secret(request):
+        raise LupusError("REQUEST_INVALID", f"1..{MAX_REQUEST} characters, no credentials")
+    root = Path(project["canonical_root"])
+    found, verifier = checked_verifier(root, check, protect_paths)
+    with k.tx():
+        goal = goals.submit(k, project["project_id"], request, [
+            {"id": "c0", "text": f"사용자가 지정한 검사 통과: {check}", "verifier": verifier}], caps or DEFAULT_CAPS, actor="user")
+        goals.add_task(k, goal["goal_id"], "요청 구현", request + "\n검사 파일과 설정은 수정하지 마라.",
+                       ["c0"], inputs=found["inputs"])
+    return {"goal_id": goal["goal_id"], "route": "checked", "check": check}
+
+
 @timing.measured("baseline_red")
 def _baseline(k: Kernel, project: dict, verifier: dict) -> tuple[str, str]:
     root = Path(project["canonical_root"])
@@ -238,6 +277,11 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
             + ("기존 테스트 파일과 테스트 설정은 만들거나 수정하지 마라" if stage else "프로젝트의 기존 파일은 만들거나 수정하지 마라")
             + "(수정해도 되돌려진다).\n"
             "- 요청의 요구 동작을 구체적인 입력과 기대 결과로 검사하라. 경계 사례를 포함하라.\n"
+            "- 타임아웃 기반 성능·DoS 회귀 검사를 작성할 때만: 싼 기능 검사를 먼저 두고, 별도 프로세스 격리가 필요 없는 "
+            "관련 변형은 하나의 제한된 자식 프로세스와 공유 시간 제한으로 묶는 것을 고려하라. 각 사례의 입력·상태를 초기화하고 "
+            "모든 필수 변형·관찰 가능한 기대 결과·검사 개수를 그대로 검증하라. 전체 루프와 모든 단언이 끝난 뒤에만 성공해야 하며 "
+            "타임아웃·비정상 종료를 성공으로 삼키지 마라. 명시된 개별 시간 제한은 늘리지 말고 공유 제한은 같거나 더 엄격하게 하라. "
+            "콜드 스타트나 사례별 별도 프로세스 자체가 계약이면 격리를 유지하라.\n"
             + ("- 이 테스트는 원래 코드(네가 구현하기 전)에서는 실패하고 네 구현 뒤에는 통과해야 한다. 원래 코드에서 실패하는지는 "
                "Lupus가 원본을 따로 보관해 두었다가 직접 확인하므로, 네가 코드를 되돌리거나 구현을 미룰 필요가 없다. 원래 코드를 "
                "기준으로: " if stage else "- 요청이 아직 구현되지 않았으므로 이 테스트는 지금 실패해야 한다. ")
@@ -246,7 +290,10 @@ def draft_check(k: Kernel, project: dict, request: str, actor: str, caps: dict |
                "문서로 내지 마라: 소스 파일 자체가 바뀌어 있어야 하고, 그 상태에서 이 테스트와 기존 테스트가 모두 통과해야 한다.\n"
                if stage else "")
             + "프로젝트의 소스 파일: " + (", ".join(sources) or "(없음)"), ["c0"],
-            inputs=sources[:8], lean=lean)      # small ones are handed over in the prompt, so they need not be read one by one
+            inputs=sources[:8], lean=lean,      # small ones are handed over in the prompt, so they need not be read one by one
+            # with a shell the worker also runs the whole suite: the approved build is judged by it
+            check=[" ".join([*(f"{k}={shlex.quote(str(v))}" for k, v in found["env"].items()), shlex.join(found["argv"])])]
+            if stage and found["has_tests"] else None)
     if cross_check:
         crosscheck.capture_base(k, goal["goal_id"], root)
     return {"goal_id": goal["goal_id"], "test_path": test_path, "runner": found["runner"], "request": request,
@@ -302,8 +349,8 @@ def approve_check(k: Kernel, project: dict, draft_goal_id: str, request: str, te
     common = {"protect": protect_paths, "forbid_new": list(runners.CONFIG[found["language"]]),
               "require_tests": found["runner"], "paths": ["."], **({"env": found["env"]} if found["env"] else {}),
               **({"frozen_trees": found["frozen_trees"]} if found["frozen_trees"] else {})}
-    criteria = [{"id": "c0", "text": f"승인된 검사 {test_path} 의 테스트 {count}개가 모두 실행되어 통과한다",
-                 "verifier": {"kind": "command", "argv": red["argv"], "timeout_s": 300, **common,
+    criteria = [{"id": "c0", "text": f"승인된 검사 {test_path} 의 모든 사례가 생략 없이 실행되어 통과한다",
+                 "verifier": {"kind": "command", "argv": red["argv"], "timeout_s": 300, **common, "require_no_skips": True,
                               # a compiled language reports nothing per test when the run is filtered by name
                               **({"min_tests": count} if runners.passed(found["runner"], "") is not None else {})}},
                 {"id": "c1", "text": ("기존 테스트를 포함한 전체 테스트가 통과한다" if not red.get("baseline_failing") else

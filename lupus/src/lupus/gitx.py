@@ -436,3 +436,168 @@ def discard(k: Kernel, goal_id: str, actor: str) -> dict:
     run(found["origin_root"], "worktree", "prune", check=False)
     run(found["origin_root"], "branch", "-D", found["branch"], check=False)
     return {"discarded": True, "branch": found["branch"]}
+
+
+# ---------------------------------------------------------------- explicit accepted-result undo
+
+def _undo_writers(k: Kernel, found: dict) -> None:
+    """The origin and every sibling isolation share Git metadata, not a project ID."""
+    from . import runs
+    origin = os.path.realpath(found['origin_root'])
+    related = {found['origin_project']}
+    for row in k.q("SELECT project_id, canonical_root FROM project"):
+        isolated = info(k, row['project_id'])
+        if (os.path.realpath(row['canonical_root']) == origin or isolated and
+                os.path.realpath(isolated['origin_root']) == origin):
+            related.add(row['project_id'])
+    if any(row['project_id'] in related for row in k.q("SELECT project_id FROM run WHERE status <> 'STOPPED'")):
+        raise LupusError('UNDO_WRITER_ACTIVE', 'stop the origin and sibling isolated workers before undo')
+    if any(row['project_id'] in related for row in runs.aux_alive(k)):
+        raise LupusError('UNDO_WRITER_ACTIVE', 'an origin or sibling verifier/session is still active')
+
+
+def _undo_filters(origin: Path, paths: list[str], source: str | None = None, *, cached: bool = False) -> None:
+    # check-attr reads declarations without invoking clean/smudge/process programs.
+    for offset in range(0, len(paths), 128):
+        args = ['check-attr', '-z', *(['--source=' + source] if source else []), *(['--cached'] if cached else []), 'filter', '--', *paths[offset:offset + 128]]
+        try:
+            fields = run(origin, *args).split('\0')
+        except LupusError as exc:
+            raise LupusError('UNDO_UNSUPPORTED', 'Git cannot inspect the required checkout-filter attributes safely') from exc
+        if any(value not in ('unspecified', 'unset') for value in fields[2::3]):
+            raise LupusError('UNDO_UNSUPPORTED', 'files using checkout filters are unsupported; undo will not execute filter programs')
+
+
+def _undo_origin(origin: Path, restored_tree: str) -> tuple[str, str, str]:
+    if origin.is_symlink() or not (origin / '.git').is_dir() or (origin / '.git').is_symlink():
+        raise LupusError('UNDO_UNSUPPORTED', 'undo requires the original top-level repository and ordinary Git metadata')
+    if os.path.realpath(run(origin, 'rev-parse', '--show-toplevel').strip()) != str(origin.resolve()):
+        raise LupusError('UNDO_UNSUPPORTED', 'the recorded origin is no longer the repository root')
+    git_dir = run(origin, 'rev-parse', '--absolute-git-dir').strip()
+    branch = run(origin, 'symbolic-ref', '-q', 'HEAD', check=False).strip()
+    if not branch.startswith('refs/heads/'):
+        raise LupusError('UNDO_UNSUPPORTED', 'detached HEAD is unsupported; use the accepted named branch')
+    state = Path(git_dir)
+    if any((state / name).exists() for name in ('MERGE_HEAD', 'REBASE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD',
+                                               'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_LOG')):
+        raise LupusError('UNDO_IN_PROGRESS', 'finish the existing merge/rebase/cherry-pick/revert/bisect first')
+    if (state / 'index').is_symlink():
+        raise LupusError('UNDO_UNSUPPORTED', 'a linked index is unsupported')
+    if run(origin, 'config', '--bool', 'core.sparseCheckout', check=False).strip() == 'true':
+        raise LupusError('UNDO_UNSUPPORTED', 'sparse checkout is unsupported')
+    if run(origin, 'config', '--bool', 'submodule.recurse', check=False).strip() == 'true':
+        raise LupusError('UNDO_UNSUPPORTED', 'recursive submodule operations are unsupported')
+    if any(entry and not entry.startswith('H ') for entry in run(origin, 'ls-files', '-v', '-z').split('\0')):
+        raise LupusError('UNDO_UNSUPPORTED', 'skip-worktree/assume-unchanged or unusual index entries are unsupported')
+    if any(line.startswith('160000 ') for line in run(origin, 'ls-files', '--stage').splitlines()):
+        raise LupusError('UNDO_UNSUPPORTED', 'submodule index entries are unsupported')
+    tracked = [path for path in run(origin, 'ls-files', '-z').split('\0') if path]
+    _undo_filters(origin, tracked, cached=True)
+    _undo_filters(origin, tracked)
+    restored_paths = [path for path in run(origin, 'ls-tree', '-r', '--name-only', '-z', restored_tree).split('\0') if path]
+    _undo_filters(origin, restored_paths, source=restored_tree)
+    if run(origin, 'status', '--porcelain', '--untracked-files=all').strip():
+        raise LupusError('UNDO_DIRTY', 'commit or move your staged, unstaged and untracked changes before undo; nothing was discarded')
+    return branch, run(origin, 'rev-parse', '--verify', 'HEAD^{commit}').strip(), git_dir
+
+
+def _undo_ff(origin: Path, commit: str) -> None:
+    # Native Git locking/refusal is retained; this is not an atomic transaction
+    # against arbitrary external Git/editor operations between our checks.
+    try:
+        run(origin, 'merge', '--ff-only', '--no-overwrite-ignore', '-q', commit)
+    except LupusError as exc:
+        raise LupusError('UNDO_REFUSED_BY_GIT', exc.detail + '; prepared undo retained, no force/reset attempted') from exc
+
+
+def _undo_response(goal: dict, prepared: dict, *, already: bool) -> dict:
+    return {'undone': not already, 'already_undone': already, 'goal_id': goal['goal_id'],
+            'accepted_commit': prepared['accepted_commit'], 'undo_commit': prepared['undo_commit'],
+            'restored_tree': prepared['restored_tree'], 'origin_root': prepared['origin_root'],
+            'branch': prepared['branch'], 'historical_goal_status': goal['status'],
+            'current_goal_verified': False, 'tests_run': 0, 'model_calls': 0,
+            'result_scope': 'historical_undo_record' if already else 'undo_commit_recorded'}
+
+
+def undo(k: Kernel, goal_id: str, actor: str) -> dict:
+    """User-invoked, narrow inverse of a recorded acceptance at exact clean HEAD.
+
+    Creates a new commit restoring the accepted commit's sole parent's tree.
+    Historical DONE/evidence are retained; undo intentionally need not pass that
+    goal's checks. A durable prepared event binds crash retries to one commit SHA.
+    """
+    if actor != 'user':
+        raise LupusError('USER_AUTHORITY_REQUIRED', 'only the user can undo an accepted result')
+    with k.supervisor_lock():
+        goal = goals.get(k, goal_id)
+        found = info(k, goal['project_id'])
+        if found is None:
+            raise LupusError('UNDO_NOT_ACCEPTED', 'only a recorded isolated acceptance can be undone')
+        accepted = None
+        prepared = completed = None
+        for row in k.q("SELECT seq, type, payload FROM event WHERE aggregate_id = ? AND type IN "
+                       "('isolation.accepted','isolation.undo_prepared','isolation.undone') ORDER BY seq", goal['project_id']):
+            payload = json.loads(row['payload'])
+            if payload.get('goal') != goal_id:
+                continue
+            if row['type'] == 'isolation.accepted':
+                accepted = {**payload, 'event_seq': row['seq']}
+            elif row['type'] == 'isolation.undo_prepared':
+                prepared = payload
+            else:
+                completed = payload
+        if accepted is None or accepted.get('nothing_new'):
+            raise LupusError('UNDO_NOT_ACCEPTED', 'this acceptance added no new commit, or no acceptance was recorded')
+        if completed:
+            return _undo_response(goal, completed, already=True)
+        origin = Path(found['origin_root'])
+        _undo_writers(k, found)
+        accepted_sha = accepted['commit']
+        parents = run(origin, 'rev-list', '--parents', '-n', '1', accepted_sha).split()
+        expected_parent = accepted.get('combined_with', found['base'])
+        if len(parents) != 2 or parents[0] != accepted_sha or parents[1] != expected_parent:
+            raise LupusError('UNDO_LINEAGE_UNSUPPORTED', 'accepted ancestry is not one commit on its recorded integration base; nothing was changed')
+        tree = run(origin, 'rev-parse', expected_parent + '^{tree}').strip()
+        if any(line.startswith('160000 ') for line in run(origin, 'ls-tree', '-r', tree).splitlines()):
+            raise LupusError('UNDO_UNSUPPORTED', 'restoring submodule entries is unsupported')
+        branch, head, git_dir = _undo_origin(origin, tree)
+        identity = {name: [path.stat().st_dev, path.stat().st_ino]
+                    for name, path in (('origin', origin), ('git_dir', Path(git_dir)))}
+        if prepared:
+            if (prepared['accepted_event_seq'] != accepted['event_seq'] or prepared['accepted_commit'] != accepted_sha
+                    or prepared['branch'] != branch or prepared['origin_root'] != str(origin)
+                    or prepared['git_dir'] != git_dir or prepared['origin_identity'] != identity or prepared['restored_tree'] != tree
+                    or run(origin, 'rev-list', '--parents', '-n', '1', prepared['undo_commit']).split()
+                    != [prepared['undo_commit'], accepted_sha]
+                    or run(origin, 'rev-parse', prepared['undo_commit'] + '^{tree}').strip() != tree):
+                raise LupusError('UNDO_STATE_CHANGED', 'prepared undo no longer matches its recorded branch/lineage')
+        elif head != accepted_sha:
+            raise LupusError('UNDO_HEAD_MOVED', 'HEAD must be exactly the recorded accepted commit; later commits are never discarded')
+        else:
+            commit = run(origin, 'commit-tree', tree, '-p', accepted_sha, '-m',
+                         f'Undo LUPUS acceptance {goal_id}\n\nRestores tree of {expected_parent}. Historical goal evidence is unchanged.').strip()
+            prepared = {'operation_id': new_id('undo'), 'goal': goal_id, 'accepted_event_seq': accepted['event_seq'],
+                        'accepted_commit': accepted_sha, 'parent_commit': expected_parent, 'restored_tree': tree,
+                        'undo_commit': commit, 'origin_root': str(origin), 'origin_project': found['origin_project'],
+                        'git_dir': git_dir, 'branch': branch, 'origin_identity': identity}
+            with k.tx():
+                k.emit('user', 'isolation.undo_prepared', 'project', goal['project_id'], **prepared)
+        # Recheck after preparing; no database write transaction spans Git mutation.
+        _undo_writers(k, found)
+        final_branch, final_head, final_git_dir = _undo_origin(origin, tree)
+        if (final_branch != prepared['branch'] or final_git_dir != prepared['git_dir']
+                or {name: [path.stat().st_dev, path.stat().st_ino] for name, path in
+                    (('origin', origin), ('git_dir', Path(final_git_dir)))} != prepared['origin_identity']):
+            raise LupusError('UNDO_STATE_CHANGED', 'the repository or branch changed while undo was being prepared')
+        if final_head == accepted_sha:
+            _undo_ff(origin, prepared['undo_commit'])
+        elif final_head != prepared['undo_commit']:
+            raise LupusError('UNDO_HEAD_MOVED', 'HEAD moved outside this prepared undo; no additional commit was applied')
+        # A retry after merge reaches this same completion record without a second commit.
+        if (run(origin, 'rev-parse', 'HEAD').strip() != prepared['undo_commit']
+                or run(origin, 'symbolic-ref', '-q', 'HEAD', check=False).strip() != prepared['branch']
+                or run(origin, 'rev-parse', prepared['branch']).strip() != prepared['undo_commit']):
+            raise LupusError('UNDO_STATE_CHANGED', 'HEAD moved during undo; inspect the prepared operation before retrying')
+        with k.tx():
+            k.emit('user', 'isolation.undone', 'project', goal['project_id'], **prepared)
+        return _undo_response(goal, prepared, already=False)

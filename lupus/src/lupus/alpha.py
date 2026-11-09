@@ -18,15 +18,16 @@ explicitly promoted to global knowledge.
 from __future__ import annotations
 
 import json
+import math
 import queue
 import threading
 import time
 from typing import Any, Callable
 
-from . import budget, goals, projects, runs, supervisor
+from . import budget, goals, projects, release, runs, supervisor
 from .adapters import Adapter
 from .kernel import Kernel, Stop
-from .util import LupusError, container_stop, new_id, proc_start, stop_group
+from .util import LupusError, timeout_ms, container_stop, new_id, proc_start, stop_group
 
 DRIVERS = ("native_claude", "native_codex")
 RETRYABLE = ("quota", "rate_limit", "auth", "unavailable")
@@ -152,6 +153,7 @@ def _advance(k: Kernel, goal_id: str, drivers: list[str], make_adapter: Callable
              unavailable: dict[str, str]) -> dict[str, Any]:
     """One turn for one goal: at most one worker step, or only the completion check when no task
     is left. Returns what happened; `moved` is False when the goal is exactly where it was."""
+    supervisor._validate_goal_timeout(k, goal_id, timeout_s, resume_blocked=True)
     goal = goals.get(k, goal_id)
     driver, why = route(k, goal, drivers, unavailable)
     if driver is None:
@@ -178,23 +180,118 @@ def _advance(k: Kernel, goal_id: str, drivers: list[str], make_adapter: Callable
     return out
 
 
+def _auto_parallel_cap(k: Kernel, drivers: list[str], unavailable: dict[str, str],
+                       max_steps: int, timeout_s: float) -> int:
+    """Read-only run-start preview, never a reservation or permission to execute.
+
+    Count only predictable worker turns in distinct projects. The ordinary scheduler and
+    transactional execution gates still check every turn after this conservative snapshot.
+    """
+    if not math.isfinite(timeout_s) or timeout_s <= 0:
+        return 1
+    chosen: set[str] = set()
+    remaining: dict[str, dict] = {}
+    for row in k.q("SELECT goal_id FROM goal WHERE status IN ('ACTIVE','EXTERNAL_BLOCKED') "
+                   "ORDER BY priority DESC, created_at, rowid"):
+        if len(chosen) >= min(MAX_PARALLEL, max_steps):
+            break
+        goal = goals.get(k, row["goal_id"])
+        if goal["project_id"] in chosen:
+            continue
+        driver, _ = route(k, goal, drivers, unavailable)
+        if driver is None:
+            continue
+        task = goals.next_runnable(k, goal["goal_id"])
+        if goal["status"] == "EXTERNAL_BLOCKED":
+            # Predict _unblock's effect without resolving waits or changing task state.
+            candidates = []
+            changed = False
+            for candidate in goals.tasks(k, goal["goal_id"]):
+                ready = candidate["status"] == "PENDING"
+                if candidate["status"] == "EXTERNAL_BLOCKED":
+                    last = k.one("SELECT execution_driver FROM run WHERE task_id = ? "
+                                 "ORDER BY fencing_token DESC LIMIT 1", candidate["task_id"])
+                    ready = last is not None and last["execution_driver"] != driver
+                    changed = changed or ready
+                if ready and goals.deps_done(k, candidate["task_id"]):
+                    candidates.append(candidate)
+            task = candidates[0] if changed and candidates else None
+        if task is None:                 # completion-only is still left in the execution queue
+            continue
+        last = k.one("SELECT outcome FROM attempt WHERE task_id = ? ORDER BY rowid DESC LIMIT 1", task["task_id"])
+        if ((last is not None and last["outcome"] in ("ABANDONED", "ENV_BLOCKED")) or
+                (last is None and supervisor._was_batched(k, task["task_id"])) or
+                release.approved_since_last_attempt(k, task["task_id"], goal["goal_id"])):
+            continue                     # preverification may avoid the worker entirely
+        safety = supervisor._verify_reserve(supervisor._task_criteria(k, task))
+        if release.granted(k, goal["goal_id"]):
+            safety = {**safety, "active_ms": safety["active_ms"] * 2}
+        amounts = {"calls": 8 + safety["calls"], "attempts": 1,
+                   "active_ms": int(timeout_s * 1000) + safety["active_ms"]}
+        chain = budget._chain(k, goal["budget_id"])
+        fits = True
+        for bid in chain:
+            if bid not in remaining:
+                remaining[bid] = budget.snapshot(k, bid)
+            lines = remaining[bid]
+            if any(line["used"] > line["cap"] for line in lines.values()):
+                fits = False
+            for dimension, amount in amounts.items():
+                line = lines.get(dimension)
+                if (line is None and bid == goal["budget_id"]) or (line is not None and amount > line["available"]):
+                    fits = False
+        if not fits:
+            continue
+        for bid in chain:
+            for dimension, amount in amounts.items():
+                if dimension in remaining[bid]:
+                    remaining[bid][dimension]["available"] -= amount
+        chosen.add(goal["project_id"])
+    return max(1, len(chosen))
+
+
 def run(k: Kernel, drivers: list[str], make_adapter: Callable[[str], Adapter], *, max_steps: int = 30,
-        timeout_s: float = 600, unavailable: dict[str, str] | None = None, parallel: int = 1) -> dict[str, Any]:
+        timeout_s: float = 600, unavailable: dict[str, str] | None = None, parallel: int | str = 1,
+        prepare_unavailable: Callable[[], dict[str, str]] | None = None) -> dict[str, Any]:
     """Advance every unfinished goal, one step each in turn, until nothing can move or the step
     limit is reached. One supervisor. With `parallel` > 1, up to that many goals have their step
-    running at the same time, never two in the same project (see `_run_parallel`)."""
-    if not 1 <= parallel <= MAX_PARALLEL:
-        raise LupusError("PARALLEL_INVALID", f"1..{MAX_PARALLEL}")
+    running at the same time, never two in the same project (see `_run_parallel`).
+    Optional readiness preparation runs once under the recovered lock, before routing;
+    an empty queue or nonpositive step limit returns without preparing unused drivers."""
+    timeout_ms(timeout_s)
+    if max_steps > 0:
+        for pending in k.q("SELECT goal_id FROM goal WHERE status IN ('ACTIVE','EXTERNAL_BLOCKED')"):
+            supervisor._validate_goal_timeout(k, pending["goal_id"], timeout_s, resume_blocked=True)
+    automatic = parallel == "auto"
+    if not automatic and (isinstance(parallel, str) or not 1 <= parallel <= MAX_PARALLEL):
+        raise LupusError("PARALLEL_INVALID", f"auto or 1..{MAX_PARALLEL}")
+    def selection(cap: int) -> dict:
+        return {"parallel_requested": "auto", "parallel_effective": cap,
+                "parallel_decision": "run_start_snapshot"} if automatic else {}
+
     with k.supervisor_lock():
         recovered = supervisor._recover(k, False)
         steps: list[dict] = []
         unavailable = dict(unavailable or {})
         skipped: dict[str, str] = {}
         if recovered["writers_alive"]:
-            return {"steps": [], "stopped": "WRITER_NOT_STOPPED", "writers_alive": recovered["writers_alive"]}
+            return {"steps": [], "stopped": "WRITER_NOT_STOPPED", "writers_alive": recovered["writers_alive"], **selection(1)}
+        if prepare_unavailable is not None or automatic:
+            # Decide under the recovered supervisor lock. Return on no work: a
+            # later enqueue must not reach routing without this readiness check.
+            if max_steps <= 0 or k.one("SELECT 1 FROM goal WHERE status IN ('ACTIVE','EXTERNAL_BLOCKED') LIMIT 1") is None:
+                return {"steps": steps, "skipped": skipped, "unavailable": unavailable, "portfolio": portfolio(k),
+                        **({"parallel": parallel} if not automatic and parallel > 1 else {}), **selection(1)}
+            if prepare_unavailable is not None:
+                unavailable.update(prepare_unavailable())
+        if automatic:
+            try:
+                parallel = _auto_parallel_cap(k, drivers, unavailable, max_steps, timeout_s)
+            except (LupusError, KeyError, TypeError, ValueError):
+                parallel = 1             # uncertain preview never increases concurrency
         if parallel > 1:
             _run_parallel(k, drivers, make_adapter, max_steps, timeout_s, unavailable, parallel, steps, skipped)
-            return {"steps": steps, "skipped": skipped, "unavailable": unavailable, "portfolio": portfolio(k), "parallel": parallel}
+            return {"steps": steps, "skipped": skipped, "unavailable": unavailable, "portfolio": portfolio(k), "parallel": parallel, **selection(parallel)}
         while len(steps) < max_steps:
             moved = False
             queue = k.q("SELECT goal_id FROM goal WHERE status IN ('ACTIVE','EXTERNAL_BLOCKED') "
@@ -207,7 +304,7 @@ def run(k: Kernel, drivers: list[str], make_adapter: Callable[[str], Adapter], *
                 moved = moved or out["moved"]
             if not moved:
                 break
-        return {"steps": steps, "skipped": skipped, "unavailable": unavailable, "portfolio": portfolio(k)}
+        return {"steps": steps, "skipped": skipped, "unavailable": unavailable, "portfolio": portfolio(k), **selection(parallel)}
 
 
 def _note(out: dict, goal_id: str, steps: list[dict], skipped: dict[str, str], unavailable: dict[str, str]) -> None:

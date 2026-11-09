@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -12,6 +13,8 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,15 @@ GATE = str(Path(__file__).resolve().with_name("gate.py"))
 GATE_EXEC_FAILED = 127
 
 
+def gate_argv(command: list[str]) -> list[str]:
+    """Start only the trusted gate before authority/confinement is established.
+
+    The target keeps its environment after exec. The gate itself must not import a
+    project's PYTHONPATH/sitecustomize or a virtualenv's executable .pth files.
+    """
+    return [sys.executable, "-I", "-S", GATE, *command]
+
+
 class LupusError(Exception):
     """A refused command. `code` is the stable machine-readable reason."""
 
@@ -29,6 +41,42 @@ class LupusError(Exception):
         super().__init__(f"{code}: {detail}" if detail else code)
         self.code = code
         self.detail = detail
+
+
+# SQLite INTEGER is signed 64-bit. Do not clamp user durations or derived lease totals.
+MAX_ACCOUNTING_MS = (1 << 63) - 1
+# CPython socket/lock waits share a finite platform timeout representation.
+MAX_TIMEOUT_S = min(threading.TIMEOUT_MAX, MAX_ACCOUNTING_MS / 1000)
+
+
+def checked_ms_sum(*values: int) -> int:
+    if any(type(value) is not int or value < 0 for value in values):
+        raise LupusError("TIMEOUT_INVALID", "duration accounting must use nonnegative integer milliseconds")
+    total = sum(values)
+    if total > MAX_ACCOUNTING_MS:
+        raise LupusError("TIMEOUT_INVALID", "duration accounting exceeds signed 64-bit milliseconds")
+    return total
+
+
+def timeout_ms(seconds: float, *, extra_ms: int = 0, clock_ms: int = 0) -> int:
+    """Validate finite positive seconds and exact existing millisecond accounting."""
+    if (type(seconds) not in (int, float) or seconds <= 0 or
+            seconds > MAX_TIMEOUT_S or not math.isfinite(seconds)):
+        raise LupusError("TIMEOUT_INVALID", "timeout must be finite, positive and representable in milliseconds")
+    milliseconds = int(seconds * 1000)
+    total = checked_ms_sum(milliseconds, extra_ms)
+    checked_ms_sum(clock_ms, total)
+    return total
+
+
+def language() -> str:
+    """The language people read Lupus in: "ko" when LUPUS_LANG, LC_ALL, LC_MESSAGES or LANG (the
+    first one set) is Korean, otherwise "en"."""
+    for name in ("LUPUS_LANG", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(name, "")
+        if value:
+            return "ko" if value.lower().startswith("ko") else "en"
+    return "en"
 
 
 def canonical_json(obj: Any) -> str:
@@ -180,7 +228,8 @@ _HOME_TOOLCHAINS = (".pyenv", ".local/lib", ".local/share/uv", "Library/Python",
                     ".rustup", ".asdf", "go/pkg", ".gradle/caches", ".gradle/wrapper", ".m2/repository")
 # Directories no verifier may read or write, whatever else the profile allows: Lupus's own state
 # (database, recovery objects, frozen copies). Kernel registers its home here.
-PROTECTED_STATE: set[str] = set()
+CONTAINER_CONTROL_ROOT = str(Path.home() / ".lupus-container-lifetimes")
+PROTECTED_STATE: set[str] = {CONTAINER_CONTROL_ROOT}
 _sandbox_ok = False
 
 
@@ -200,6 +249,39 @@ def sandbox_available() -> bool:
 
 def _sb(path: str) -> str:
     return '"' + path.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def active_python_env() -> str | None:
+    """The controller's selected virtualenv, never a worker-created environment.
+
+    An explicit virtualenv interpreter wins over an inherited VIRTUAL_ENV. A global
+    entrypoint can still honour the user's activated environment. Whole home/root grants
+    are never inferred from either signal.
+    """
+    candidates = ([sys.prefix] if sys.prefix != sys.base_prefix else []) + [os.environ.get("VIRTUAL_ENV", "")]
+    if not any(candidates):
+        return None
+    shared = {os.path.realpath(p) for p in ("/tmp", "/private/tmp", "/private/var/folders", tempfile.gettempdir())}
+    for candidate in filter(None, candidates):
+        prefix = os.path.realpath(candidate)
+        python = os.path.join(prefix, "bin", "python")
+        if (not Path.home().resolve().is_relative_to(prefix) and prefix not in shared
+                and os.path.isabs(candidate) and os.path.isfile(os.path.join(prefix, "pyvenv.cfg"))
+                and os.path.isfile(python) and os.access(python, os.X_OK)):
+            return prefix
+    return None
+
+
+def active_python_read_roots() -> list[str]:
+    prefix = active_python_env()
+    if not prefix:
+        return []
+    base = os.path.realpath(sys.base_prefix)
+    shared = {os.path.realpath(p) for p in ("/tmp", "/private/tmp", "/private/var/folders", tempfile.gettempdir())}
+    roots = [prefix]
+    if not Path.home().resolve().is_relative_to(base) and base not in shared and os.path.isdir(base):
+        roots.append(base)
+    return sorted(set(roots))
 
 
 def _python_prefix(executable: str | None, home: str) -> list[str]:
@@ -234,6 +316,9 @@ def sandbox_profile(project: Path, executable: str | None = None, extra_read: tu
     state = sorted(os.path.realpath(p) for p in PROTECTED_STATE)
     return "\n".join([
         "(version 1)", "(allow default)",
+        # Descendants inherit this sandbox instance; independent peers and the unsandboxed
+        # controller/lifetime anchors must not receive signals from untrusted code.
+        "(deny signal)", "(allow signal (target same-sandbox))",
         "(deny network*)",
         # Loopback only. (A combined `network*` rule with a local filter also matches outbound
         # connections to anywhere; these three do not — checked by a test.)
@@ -256,30 +341,28 @@ def _docker() -> str | None:
 def container_alive(name: str) -> bool:
     """Whether a container Lupus started still exists. If Docker cannot be asked, the answer is
     "yes": a writer that cannot be shown to be gone keeps the project's slot."""
-    docker = _docker()
-    if docker is None:
-        return True
-    try:
-        proc = subprocess.run([docker, "ps", "-aq", "--filter", f"name=^{name}$"], capture_output=True, text=True,
-                              timeout=20, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired):
-        return True
-    return proc.returncode != 0 or bool(proc.stdout.strip())
+    if name.startswith('v2.'):
+        from .container_lifetime import state
+        return state(name)!='gone'
+    # A historical name carries neither daemon identity nor immutable CID/nonce.
+    # Querying today's default daemon cannot prove the old resource absent.
+    return True
 
 
 def container_stop(name: str) -> bool:
-    """Kill and remove the container; True once it is confirmed gone."""
-    docker = _docker()
-    if docker is not None:
-        try:
-            subprocess.run([docker, "rm", "-f", name], capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+    """Remove only bound CID/nonce ownership; legacy names remain unknown."""
+    if name.startswith('v2.'):
+        from .container_lifetime import cleanup
+        return cleanup(name)
+    # Historical random names alone are not durable destructive ownership.
+    # Keep their conservative observation/fence; never remove a reused name.
     return not container_alive(name)
 
 
 # What each CLI itself must reach in the home directory to run and to use its own login.
 _WORKER_HOME = {
+    "codex": {"read": (".codex", ".agents/skills", ".local/bin"), "write": (),
+              "never_write": (".codex", ".agents/skills")},
     "claude": {"read": (".claude", ".claude.json", ".local/bin", ".local/share/claude", ".local/state/claude", ".nvm",
                         ".npm-global", "Library/Keychains", "Library/Preferences", "Library/Application Support/Claude",
                         ".config/claude", ".cache/claude", "Library/Caches/claude-cli-nodejs"),
@@ -292,7 +375,8 @@ _WORKER_HOME = {
 }
 
 
-def sandbox_profile_worker(project: Path, cli: str, read_exclude: tuple[str, ...] = (), shared_tmp: bool = True) -> str:
+def sandbox_profile_worker(project: Path, cli: str, read_exclude: tuple[str, ...] = (), shared_tmp: bool = True,
+                           readonly: bool = False, private_tmp: Path | None = None) -> str:
     """Seatbelt profile for a headless worker CLI. The network stays open (the CLI talks to its
     provider), everything else follows the verifier profile: writes only in the project, the
     temp directories and the CLI's own state; of the home directory only the project, the CLI's
@@ -310,7 +394,14 @@ def sandbox_profile_worker(project: Path, cli: str, read_exclude: tuple[str, ...
         writable = [root, "/dev"] + [literal(r) for r in own["write"]]
         if cli == "claude":
             writable += [f"/tmp/claude-{os.getuid()}", f"/private/tmp/claude-{os.getuid()}"]
+    if private_tmp is not None:
+        writable.append(os.path.realpath(private_tmp))
     readable = [root] + [literal(r) for r in own["read"]] + [literal(t) for t in _HOME_TOOLCHAINS if os.path.isdir(literal(t))]
+    if private_tmp is not None:
+        readable.append(os.path.realpath(private_tmp))
+    python_env = active_python_env()
+    if python_env:
+        readable += active_python_read_roots()
     if not shared_tmp and cli == "claude":
         readable += [f"/tmp/claude-{os.getuid()}", f"/private/tmp/claude-{os.getuid()}"]
     state = sorted(os.path.realpath(p) for p in PROTECTED_STATE | set(read_exclude))
@@ -323,6 +414,9 @@ def sandbox_profile_worker(project: Path, cli: str, read_exclude: tuple[str, ...
         temp_rules.append('(allow file-read-metadata (literal "/tmp") (literal "/private/tmp") (literal "/private"))')
     return "\n".join([
         "(version 1)", "(allow default)",
+        # Descendants inherit this sandbox instance; independent peers and the unsandboxed
+        # controller/lifetime anchors must not receive signals from untrusted code.
+        "(deny signal)", "(allow signal (target same-sandbox))",
         "(deny file-write*)",
         f"(deny file-read* (subpath {_sb(home)}))",
         f"(allow file-read-metadata (subpath {_sb(home)}))",
@@ -330,8 +424,10 @@ def sandbox_profile_worker(project: Path, cli: str, read_exclude: tuple[str, ...
         # Exceptions follow the temp deny, including workspaces inside the system temp tree.
         f"(allow file-write* {rule(writable)})",
         f"(allow file-read* (literal {_sb(home)}) {rule(readable)})",
+        *([f"(deny file-write* (subpath {_sb(python_env)}))"] if python_env else []),
         f"(deny file-write* {rule([literal(r) for r in own['never_write']] + [os.path.join(root, '.git')])})",
         *[f"(deny file-read* file-write* (subpath {_sb(p)}))" for p in state],
+        *([f"(deny file-write* (subpath {_sb(root)}))"] if readonly else []),
     ])
 
 
@@ -390,7 +486,7 @@ _DIAGNOSTIC_SECRET = re.compile(
     r"(?:password|secret|token|api[_-]?key)\s*[\"']?\s*[:=]\s*\S+)")
 
 
-def diagnostic_tail(text: str) -> str:
+def diagnostic_tail(text: str, *, limit: int = MAX_DIAGNOSTIC_TAIL, multiline: bool = False) -> str:
     """Bounded inert stderr for durable records; credential screening is heuristic.
 
     Screen before truncating so a recognised credential cannot be cut into an unrecognised
@@ -399,4 +495,4 @@ def diagnostic_tail(text: str) -> str:
     if find_secret(text) or _DIAGNOSTIC_SECRET.search(text):
         return "[failure text withheld: credential pattern]"
     safe = _DIAGNOSTIC_CONTROLS.sub(lambda m: f"<U+{ord(m.group()):04X}>", text)
-    return safe.replace("\n", " ").replace("\t", " ")[-MAX_DIAGNOSTIC_TAIL:]
+    return (safe if multiline else safe.replace("\n", " ").replace("\t", " "))[-limit:]
