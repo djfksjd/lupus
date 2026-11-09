@@ -8,7 +8,7 @@
 
 LUPUS is a local, terminal-first workspace for AI coding on macOS. Choose your provider, model and working mode, carry useful knowledge between tasks, and run bounded work with explicit checks and budgets.
 
-[한국어](README.ko.md) · [Quick start](#quick-start) · [Current UI](#current-ui) · [CLI guide](lupus/README.md)
+[한국어](README.ko.md) · [Quick start](#quick-start) · [Terminal CLI](#terminal-cli) · [Current UI](#current-ui) · [CLI guide](lupus/README.md)
 
 ![Stage: alpha](https://img.shields.io/badge/stage-alpha-3d5fc9?style=flat-square)
 ![Platform: macOS](https://img.shields.io/badge/platform-macOS-0f1b2d?style=flat-square)
@@ -99,7 +99,15 @@ Catalog presence describes a connection path, not confirmed compatibility with e
 
 ## Current UI
 
-Actual LUPUS screens captured on **2026-11-09** using **public example data**. Counts, trust labels and goals in these images are demo state, not measured development or performance results.
+Actual LUPUS screens using **public example data**: the terminal was captured on **2026-11-10**, and the web viewer on **2026-11-09**. Counts, trust labels and goals in these images are demo state, not measured development or performance results.
+
+### Terminal CLI
+
+The home screen and `/mode` picker show a live LUPUS process displayed in a local xterm.js terminal emulator. No AI requests were sent during capture.
+
+[![LUPUS CLI home screen in a public demo workspace](asset/screenshots/cli-home-20261110.png)](asset/screenshots/cli-home-20261110.png)
+
+[![LUPUS CLI slash menu showing the working mode choices](asset/screenshots/cli-slash-20261110.png)](asset/screenshots/cli-slash-20261110.png)
 
 ### Dashboard
 
@@ -118,7 +126,7 @@ lupus graph --open                 # generate and open the viewer
 lupus graph --serve --open         # local viewer server with knowledge chat
 ```
 
-Knowledge chat can invoke Codex or Claude Code, selected in the viewer. The screenshots were captured without model calls. The moon-and-stones banner is generated concept art; the two screens above are actual UI captures.
+Knowledge chat can invoke Codex or Claude Code, selected in the viewer. The screenshots were captured without model calls. The moon-and-stones banner is generated concept art; the screens above are actual UI captures.
 
 ## Boundaries and current status
 
