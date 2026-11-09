@@ -19,11 +19,22 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import time
+import tempfile
 from pathlib import Path
 
-from . import adapters, alpha, author, budget, contract, crosscheck, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, recovery, release, review, session, supervisor, vault
+from . import supervision, auto_learning, skills, adapters, adaptive, alpha, author, budget, contract, crosscheck, gitx, goals, graph, jobs, judging, learn, memory, probe, projects, protect, quick, textedit, recovery, release, review, runners, session, shell, supervisor, vault, providers, runs
 from .kernel import Kernel
-from .util import LupusError
+from .util import LupusError, diagnostic_tail, timeout_ms
+
+
+def _parallel_value(value: str) -> int | str:
+    if value == "auto":
+        return value
+    try:
+        return int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("choose 'auto' or an integer from 1 to 4") from None
 
 
 def _home(args: argparse.Namespace) -> Path:
@@ -35,15 +46,23 @@ JSON_OUTPUT = False
 
 def _out(data) -> None:
     """A person at a terminal gets a few lines; a pipe, a log file or `--json` gets everything."""
+    auto_learning.finish(data)
     if isinstance(data, dict) and "steps" in data and sys.stdout.isatty() and not JSON_OUTPUT:
         print(_summary(data))
         return
+    if isinstance(data, dict) and sys.stdout.isatty() and not JSON_OUTPUT:
+        from . import presentation
+        rendered = presentation.answer(data)
+        if rendered is not None:
+            print(rendered)
+            return
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
 def _summary(report: dict) -> str:
     done = report.get("done")
-    lines = ["✔ 완료: 모든 완료 조건을 Lupus가 직접 검증했습니다" if done else
+    lines = ["완료 이력 · 이번 실행은 상태 조회이며 새로 검증하지 않았습니다" if report.get("already_completed") else
+             "✔ 완료: 모든 완료 조건을 Lupus가 직접 검증했습니다" if done else
              f"✘ 미완료 (목표 상태: {report.get('goal_status', '?')})"]
     for key, label in (("result", ""), ("check", "승인한 검사"), ("implementation", "구현"), ("review", "리뷰"), ("out", "결과물"), ("tests", "테스트")):
         if report.get(key):
@@ -61,13 +80,22 @@ def _summary(report: dict) -> str:
         lines.append(f"  단계 {i}: {step.get('outcome') or step.get('status')}"
                      + (f" · {step['variant']}" if step.get("variant") else "") + (f" · {verdicts}" if verdicts else "")
                      + (f" · {why}" if why else ""))
+        advisory=step.get("supervision")
+        if advisory:
+            lines.append("    "+diagnostic_tail(f"감독 / Supervisor: {advisory.get('requested_provider','?')} / {advisory.get('requested_model','?')} · {advisory.get('status','unknown')}"+(f" · {advisory['reason']}" if advisory.get('reason') else "")))
     used = (report.get("budget") or {})
     totals = ((report.get("usage") or {}).get("totals") or {}) if isinstance(report.get("usage"), dict) else {}
     tokens = sum(totals.get(key, 0) for key in ("tokens_in", "tokens_cached", "tokens_out"))
     parts = []
     if "attempts" in used:
         parts.append(f"시도 {used['attempts']['used']}/{used['attempts']['cap']}")
-    if tokens:
+    usage_report = report.get('usage') if isinstance(report.get('usage'), dict) else {}
+    levels = usage_report.get('events_by_observation') or {}
+    if (levels.get('unknown', 0) or levels.get('estimated', 0) or
+            usage_report.get('token_totals_complete') is False and (used.get('calls') or {}).get('used', 0) > 0):
+        lower = usage_report.get('known_token_lower_bound', tokens)
+        parts.append(f"토큰 ≥{lower:,} (총량 미관측)")
+    elif tokens:
         parts.append(f"토큰 {tokens:,}")
     elif isinstance(report.get("usage"), str):
         parts.append(f"사용량: {report['usage']}")
@@ -114,10 +142,22 @@ def _confirm_user(what: str) -> None:
         raise LupusError("USER_DECLINED", what)
 
 
-def _adapter(name: str, model: str | None, shell: bool = False) -> adapters.Adapter:
+def _adapter(name: str, model: str | None, shell: bool = False, effort: str | None = None, *, home=None) -> adapters.Adapter:
+    selected = {"effort": effort} if effort is not None else {}
+    if name.startswith("native_"): name = name[7:]
     if name == "claude" and shell:
-        return adapters.ClaudeAdapter(model, shell=True)
-    return adapters.native({"claude": "native_claude", "codex": "native_codex"}[name], model)
+        return adapters.claude_worker(model, shell=True, **selected)
+    if name in ("codex", "claude"):
+        return adapters.native({"claude": "native_claude", "codex": "native_codex"}[name], model, **selected)
+    return adapters.APIAdapter(name, model, effort, home=home, shell=shell)
+
+
+def _api_skill_access(args: argparse.Namespace, home: Path) -> dict | None:
+    """Only CLI primary workers get this capability; creating it never scans a library."""
+    mode=getattr(args,"skills",None) or "auto"
+    explicit=[args.skill_binding] if getattr(args,"skill_binding",None) else []
+    if mode=="off" and not explicit:return None
+    return {"mode":mode,"home":str(home.resolve()),"user_home":str(Path.home().resolve()),"explicit":explicit}
 
 
 def _isolate(k: Kernel, project: dict, args: argparse.Namespace) -> dict:
@@ -131,25 +171,34 @@ def _isolate(k: Kernel, project: dict, args: argparse.Namespace) -> dict:
 
 def _reviewed(k: Kernel, args: argparse.Namespace, report: dict, draft: dict, build: dict) -> dict:
     """`lupus do --review`: the independent read, one round of answers, and what is left."""
-    reviewer = args.review if args.review != "other" else ("codex" if args.driver == "claude" else "claude")
+    selected=getattr(args,"review_selection",None)
+    reviewer = selected["provider"] if selected else (args.review if args.review != "other" else ("codex" if args.driver == "claude" else "claude"))
+    review_driver=selected["driver"] if selected else providers.resolve(reviewer,k.home).driver
+    review_options={name:selected[name] for name in ("model","effort") if selected and selected[name] is not None}
+    review_label=reviewer+(" · model "+review_options["model"] if review_options.get("model") else "")+(" · effort "+review_options["effort"] if review_options.get("effort") else "")
     if "review_base" not in build:
         report["review"] = f"리뷰하지 못했습니다: {build.get('review_unavailable', '기준 상태를 보관하지 못함')}"
         return report
-    print(f"검사가 통과했습니다. 구현을 쓰지 않은 AI({reviewer})가 요청과 변경을 대조합니다…", file=sys.stderr)
+    print(f"검사가 통과했습니다. 별도 리뷰({review_label})가 요청과 변경을 대조합니다…", file=sys.stderr)
 
     def run(goal_id: str) -> dict:
         args.goal_id = goal_id
         return _run(k, args)
 
-    outcome = review.cycle(k, report["goal_id"], draft["request"], DRIVER[reviewer], Path(build["review_base"]), run,
-                           quick.DEFAULT_CAPS, skip={draft["test_path"]})
+    outcome = review.cycle(k, report["goal_id"], draft["request"], review_driver, Path(build["review_base"]), run,
+                           quick.DEFAULT_CAPS, skip={draft["test_path"]},**review_options)
     said = lambda items: "; ".join(f"「{o['request_quote'][:60]}」 {o['problem'][:160]}" for o in items)
-    if "skipped" in outcome:
-        report["review"] = f"리뷰하지 못했습니다({reviewer}): {outcome['skipped']}"
+    if outcome.get("recovery_required"):
+        report.update(done=False,goal_id=outcome["goal_id"],goal_status=outcome["goal_status"])
+        report["review"]=f"별도 리뷰({review_label}): 종료·권한 또는 복원 상태를 확인하지 못했습니다. 복구가 필요합니다. 사본: {outcome['backup_kept_in']}"
+        if outcome.get("revision_report"):
+            report["checks"]=outcome["revision_report"].get("checks",[])
+    elif "skipped" in outcome:
+        report["review"] = f"리뷰하지 못했습니다({review_label}): {outcome['skipped']}"
     elif not outcome.get("objections"):
-        report["review"] = f"독립 리뷰({reviewer}): 요청과 어긋나는 점을 찾지 못했습니다 (의견이며 증명이 아닙니다)"
+        report["review"] = f"별도 리뷰({review_label}): 요청과 어긋나는 점을 찾지 못했습니다 (의견이며 증명이 아닙니다)"
     elif not outcome["revised"]:
-        report["review"] = (f"독립 리뷰({reviewer}): 이의 {len(outcome['objections'])}건. 되돌아갈 백업을 만들 수 없어 worker에게 "
+        report["review"] = (f"별도 리뷰({review_label}): 이의 {len(outcome['objections'])}건. 되돌아갈 백업을 만들 수 없어 worker에게 "
                             f"돌려보내지 않았습니다({outcome.get('not_revised')}). 이의: {said(outcome['objections'])}")
     else:
         revised = outcome["revision_report"]
@@ -160,12 +209,12 @@ def _reviewed(k: Kernel, args: argparse.Namespace, report: dict, draft: dict, bu
             report.update(goal_id=outcome["goal_id"], checks=revised["checks"])
             report["steps"] = report["steps"] + revised["steps"]
             left = outcome["remaining"]
-            report["review"] = (f"독립 리뷰({reviewer}): 이의 {len(outcome['objections'])}건을 worker에게 돌려보냈고 검사는 다시 통과했습니다. "
+            report["review"] = (f"별도 리뷰({review_label}): 이의 {len(outcome['objections'])}건을 worker에게 돌려보냈고 검사는 다시 통과했습니다. "
                                 + (f"다시 리뷰하지는 못했습니다({outcome['second_review_skipped']}): 이의가 해소됐는지는 확인되지 않았습니다"
                                    if left is None else
                                    f"리뷰어가 여전히 지적하는 것 {len(left)}건: {said(left)}" if left else "남은 이의 없음"))
         else:
-            report["review"] = (f"독립 리뷰({reviewer}): 이의 {len(outcome['objections'])}건을 반영하려던 수정이 승인된 검사를 통과하지 못해 "
+            report["review"] = (f"별도 리뷰({review_label}): 이의 {len(outcome['objections'])}건을 반영하려던 수정이 승인된 검사를 통과하지 못해 "
                                 f"통과했던 상태로 되돌렸습니다(밀려난 파일은 {outcome['displaced_kept_in']} 에 보관). "
                                 f"반영되지 않은 이의: {said(outcome['objections'])}")
             if outcome["not_put_back"]:
@@ -175,7 +224,12 @@ def _reviewed(k: Kernel, args: argparse.Namespace, report: dict, draft: dict, bu
                                      f"통과했던 상태의 사본: {outcome['backup_kept_in']} (확인이 끝날 때까지 지워지지 않습니다. 지우려면 `lupus prune --kept`)")
     report["review_detail"] = {key: outcome[key] for key in (
         "reviewer", "objections", "remaining", "dropped", "revised", "revision_done", "skipped", "files",
-        "second_review_skipped", "not_revised", "not_put_back", "displaced_kept_in", "backup_kept_in") if key in outcome}
+        "second_review_skipped", "not_revised", "not_put_back", "displaced_kept_in", "backup_kept_in",
+        "requested_driver","requested_model","requested_effort","independence_confirmed","recovery_required","recovery_reason","goal_status","budget_overcommitted","review_phases") if key in outcome}
+    current=goals.get(k,report["goal_id"])
+    report["budget"]=budget.snapshot(k,current["budget_id"])
+    report["review_usage"]={"phases":outcome.get("review_phases",[]),"scope":"separate recorded review calls; not added again to primary observations"}
+    report["model_calls_scope"]="primary worker invocations; reviewer host/internal calls are reported separately"
     return report
 
 
@@ -186,13 +240,88 @@ def _after_isolated(k: Kernel, report: dict) -> None:
                           f"lupus discard {goal_id}   (버리기)")
 
 
+GLOBAL_FLAGS = ("--json",)
+GLOBAL_OPTIONS = ("--home",)
+def _global_part(argv: list[str]) -> list[str] | None:
+    """`argv` when it holds nothing but the global options (so no command was named), else None."""
+    i = 0
+    while i < len(argv):
+        if argv[i] in GLOBAL_FLAGS or any(argv[i].startswith(o + "=") for o in GLOBAL_OPTIONS):
+            i += 1
+        elif argv[i] in GLOBAL_OPTIONS and i + 1 < len(argv):
+            i += 2
+        else:
+            return None
+    return argv
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _start(options: list[str]) -> int:
+    """`lupus` on its own: the Lupus shell in the folder the user stands in (see shell.py). The
+    runtime is created on first use; the driver is $LUPUS_DRIVER (default claude). Without a
+    terminal there is no prompt: the home screen is printed once."""
+    parser = argparse.ArgumentParser(prog="lupus", add_help=False)
+    parser.add_argument("--home")
+    parser.add_argument("--json", action="store_true")
+    home = _home(parser.parse_args(options))
+    driver = os.environ.get("LUPUS_DRIVER", "codex")
+    if driver not in {spec["id"] for spec in providers.catalog(home)}:
+        print(json.dumps({"error": "DRIVER_UNKNOWN", "detail": f"LUPUS_DRIVER={driver}", "next": "LUPUS_DRIVER=claude 또는 codex"},
+                         ensure_ascii=False), file=sys.stderr)
+        return 2
+    if not (home / "runtime" / "lupus.db").exists():
+        Kernel.init(home).close()
+        print(f"처음 실행: Lupus 작업 공간을 만들었습니다 ({home})", file=sys.stderr)
+    if not _interactive():
+        print("\n".join(shell.home_screen(shell.facts(home, os.getcwd(), driver), shell.Paint(), shell.language(), 80)))
+        return 0
+    return shell.run(options, home, driver, main)
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lupus", description="Lupus supervisor")
+    actual=list(sys.argv[1:] if argv is None else argv)
+    if _global_part(actual) is not None or auto_learning._CURRENT.get() is not None:
+        return _main(actual)
+    controller=auto_learning.Session();token=auto_learning._CURRENT.set(controller)
+    try:return _main(actual)
+    finally:
+        try:controller.finish(False)
+        finally:auto_learning._CURRENT.reset(token)
+
+
+def _main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    options = _global_part(argv)
+    if options is not None:
+        return _start(options)
+    parser = argparse.ArgumentParser(prog="lupus", description="Lupus supervisor. `lupus` alone, in a project folder with tests, "
+                                     "opens your usual claude (or $LUPUS_DRIVER) session under Lupus.")
     parser.add_argument("--home", help="runtime directory (default: $LUPUS_HOME or ~/.lupus)")
     parser.add_argument("--json", action="store_true", help="print full reports as JSON even at a terminal")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init", help="create the runtime directory and database")
+    sub.add_parser("providers", help="configured providers and credential references; no network")
+    p = sub.add_parser("provider-allow", help="approve a provider endpoint for an existing project; no network")
+    p.add_argument("provider")
+    p.add_argument("--project")
+    p = sub.add_parser("models", help="configured model IDs; discovery only when requested")
+    p.add_argument("--driver", required=True)
+    p.add_argument("--discover", action="store_true")
+    for command in ("ask", "agent"):
+        p = sub.add_parser(command, help="read-only answer" if command == "ask" else "bounded coding without test authoring or completion certification")
+        p.add_argument("request")
+        p.add_argument("--driver", default=os.environ.get("LUPUS_DRIVER", "codex"))
+        p.add_argument("--model")
+        p.add_argument("--effort")
+        p.add_argument("--timeout", type=float, default=300)
+        if command == "agent":
+            p.add_argument("--shell", action="store_true")
+            p.add_argument("--native-config", choices=("lean","user"), default="lean", help="user: Codex configuration/rules/tools inside the required OS sandbox; backend/auth/billing not confirmed")
+            p.add_argument("--native-env", action="append", default=[], metavar="NAME", help="explicitly pass one environment variable by name to user-configured Codex; LUPUS records selected names only")
 
     p = sub.add_parser("project-add", help="register an existing project folder")
     p.add_argument("root")
@@ -212,9 +341,14 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_parser(name).add_argument("goal_id")
 
     p = sub.add_parser("run", help="advance a goal in the foreground")
+    p.add_argument("--supervisor", metavar="PROVIDER", help="optional on-failure advice; off by default, explicit model required")
+    p.add_argument("--supervisor-model", metavar="MODEL")
+    p.add_argument("--supervisor-effort", metavar="EFFORT")
     p.add_argument("goal_id")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--driver", required=True)
     p.add_argument("--model")
+    p.add_argument("--effort", choices=adapters.CODEX_EFFORTS,
+                   help="requested primary-worker effort; available levels depend on the model/client")
     p.add_argument("--max-steps", type=int, default=10)
     p.add_argument("--timeout", type=float, default=600)
     p.add_argument("--stop-stale-writer", action="store_true",
@@ -224,17 +358,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--background", action="store_true", help="keep running after this terminal closes; see `lupus jobs`")
     p.add_argument("--shell", action="store_true", help="let the worker run commands to check its own work (inside the sandbox)")
     for name, text in (("diff", "what a goal changed"), ("accept", "bring an isolated goal's verified result into your repository as one commit"),
-                       ("discard", "drop an isolated goal's checkout and branch")):
+                       ("discard", "drop an isolated goal's checkout and branch"),
+                       ("undo", "undo a recorded accepted commit at clean exact HEAD, adding a new commit")):
         sub.add_parser(name, help=text).add_argument("goal_id")
 
     sub.add_parser("alpha-status", help="every project at a glance: open goals, what they wait for, shared budgets")
     p = sub.add_parser("alpha-run", help="advance every unfinished goal in turn; switch AI when one is out of quota")
-    p.add_argument("--drivers", default="claude,codex", help="comma list, in order of preference")
+    p.add_argument("--drivers", default=os.environ.get("LUPUS_DRIVER", "codex"), help="comma list, in order of preference")
     p.add_argument("--max-steps", type=int, default=30)
     p.add_argument("--timeout", type=float, default=600)
     p.add_argument("--background", action="store_true")
-    p.add_argument("--parallel", type=int, default=1, choices=range(1, alpha.MAX_PARALLEL + 1), metavar=f"1..{alpha.MAX_PARALLEL}",
-                   help="goals worked on at the same time, each in a different project or isolated checkout (default 1)")
+    p.add_argument("--model", help="explicit worker model for every selected provider")
+    p.add_argument("--effort", help="explicit effort; unsupported API mappings refuse")
+    p.add_argument("--parallel", type=_parallel_value, default=1,
+                   choices=["auto", *range(1, alpha.MAX_PARALLEL + 1)], metavar=f"auto|1..{alpha.MAX_PARALLEL}",
+                   help="goals worked on at the same time, each in a different project or isolated checkout; auto chooses a conservative run-start cap (default 1)")
     p = sub.add_parser("alpha-budget", help="a cap shared by all goals of a project, or of everything (omit --project)")
     p.add_argument("--project")
     p.add_argument("--calls", type=int, required=True)
@@ -250,7 +388,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("job_id")
     p.add_argument("--lines", type=int, default=40)
     sub.add_parser("stop", help="stop a background job (its worker is stopped with it)").add_argument("job_id")
-    sub.add_parser("job-run", help=argparse.SUPPRESS).add_argument("job_id")
+    p=sub.add_parser("job-run", help=argparse.SUPPRESS)
+    p.add_argument("job_id")
+    p.add_argument("--guardian",action="store_true",help=argparse.SUPPRESS)
     p = sub.add_parser("learn", help="turn recorded failures of a project into candidate procedures (one small model call)")
     p.add_argument("--project", help="project id (default: this folder's project)")
     p.add_argument("--driver", choices=("claude", "codex"))
@@ -258,8 +398,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="take back what a learning pass added (default: the latest one); no model call")
 
     p = sub.add_parser("fix-tests", help="one command, no goal file: make this folder's failing tests pass")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--supervisor", metavar="PROVIDER", help="optional on-failure advice; off by default, explicit model required")
+    p.add_argument("--supervisor-model", metavar="MODEL")
+    p.add_argument("--supervisor-effort", metavar="EFFORT")
+    p.add_argument("--driver", required=True)
     p.add_argument("--model")
+    p.add_argument("--effort", choices=adapters.CODEX_EFFORTS,
+                   help="requested primary-worker effort; available levels depend on the model/client")
+    p.add_argument("--max-attempts", type=int, choices=(1, 2, 3),
+                   help="persist a worker-attempt cap for this request (default: existing bounded retry policy)")
     p.add_argument("--timeout", type=float, default=600)
     p.add_argument("--isolated", action="store_true",
                    help="work in a separate checkout of the committed HEAD; your files are untouched until `lupus accept`")
@@ -276,8 +423,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("write", help="a document (plan, research, report): a rubric you approve, a judge that must quote, your sign-off")
     p.add_argument("request")
     p.add_argument("--out", required=True, help="file to write, relative to this folder")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
-    p.add_argument("--judge", choices=("claude", "codex"), help="default: the other AI when it is approved and measured")
+    p.add_argument("--driver", required=True)
+    p.add_argument("--judge", help="default: the other AI when it is approved and measured")
     p.add_argument("--must", action="append", default=[], help="a criterion the document must meet (repeatable)")
     p.add_argument("--no-draft", action="store_true", help="use only --must criteria; do not ask a model to propose any")
     p.add_argument("--web", action="store_true", help="let the writer search and read the web (claude only)")
@@ -287,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(goal_id=None, max_steps=4, stop_stale_writer=False, cheap_first=False)
 
     p = sub.add_parser("session", help="your usual interactive claude/codex, with the tests frozen and verified by Lupus at the end")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--driver", required=True)
     p.add_argument("--check", help="your own test command; its exit status decides")
     p.add_argument("--protect", action="append", default=[], help="with --check: a file or folder that may not change")
     p.add_argument("--container", metavar="IMAGE", help="run the tests in a Docker container of this image (no network)")
@@ -296,7 +443,29 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("cli_args", nargs=argparse.REMAINDER, help="after --: passed to the CLI as they are")
     p.set_defaults(goal_id=None, max_steps=1, stop_stale_writer=False, cheap_first=False, model=None)
 
+    p = sub.add_parser("auto", help="read-only questions use one worker invocation (API: up to 8 HTTP requests); changes use supplied checks or approved tests")
+    p.add_argument("--supervisor", metavar="PROVIDER", help="optional on-failure advice; off by default, explicit model required")
+    p.add_argument("--supervisor-model", metavar="MODEL")
+    p.add_argument("--supervisor-effort", metavar="EFFORT")
+    p.add_argument("request")
+    p.add_argument("--driver", default=os.environ.get("LUPUS_DRIVER", "codex"))
+    p.add_argument("--mode", choices=("auto", "answer", "verified"), default="auto")
+    p.add_argument("--max-attempts", type=int, choices=(1, 2, 3),
+                   help="persist a worker-attempt cap for checked or failing-test repair requests")
+    p.add_argument("--check", help="acceptance command supplied by you: skip drafting a new test")
+    p.add_argument("--protect", action="append", default=[])
+    p.add_argument("--isolated", action="store_true")
+    p.add_argument("--shell", action="store_true")
+    p.add_argument("--model")
+    p.add_argument("--effort", choices=adapters.CODEX_EFFORTS,
+                   help="requested primary-worker effort; available levels depend on the model/client")
+    p.add_argument("--timeout", type=float, default=600)
+    p.set_defaults(goal_id=None, max_steps=6, stop_stale_writer=False, cheap_first=False)
+
     p = sub.add_parser("do", help="one line, any request: draft a failing test, you approve it, then implement")
+    p.add_argument("--supervisor", metavar="PROVIDER", help="optional on-failure advice; off by default, explicit model required")
+    p.add_argument("--supervisor-model", metavar="MODEL")
+    p.add_argument("--supervisor-effort", metavar="EFFORT")
     p.add_argument("request")
     p.add_argument("--isolated", action="store_true",
                    help="work in a separate checkout of the committed HEAD; your files are untouched until `lupus accept`")
@@ -306,15 +475,19 @@ def main(argv: list[str] | None = None) -> int:
                         "(adapted from Ponytail; off by default, it can cost more on some models)")
     p.add_argument("--allow-failing", action="store_true",
                    help="start even though some existing tests fail now; those same tests may keep failing, no others")
-    p.add_argument("--review", nargs="?", const="other", choices=("other", "claude", "codex"),
-                   help="when the checks pass, have an AI that did not write the change compare it with the request; "
-                        "objections go back to the worker once (default reviewer: the other AI)")
-    p.add_argument("--cross-check", choices=("claude", "codex"), help="independently author behaviour tests after DONE (experimental)")
+    p.add_argument("--review", nargs="?", const="other", metavar="PROVIDER",
+                   help="separate read-only opinion after checks pass; one bounded revision, not independent-quality proof")
+    p.add_argument("--review-model", help="requested reviewer model, separate from primary/supervisor/cross-check")
+    p.add_argument("--review-effort", help="requested reviewer effort; unsupported API mappings refuse")
+    p.add_argument("--cross-check", help="independently author behaviour tests after DONE (experimental)")
+    p.add_argument("--cross-check-model", help="requested cross-check author model, separate from the primary worker")
     p.add_argument("--two-step", action="store_true",
                    help="write the implementation in a separate call after you approved the test (default: proposed "
                         "in the same call, kept aside until you approve)")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--driver", required=True)
     p.add_argument("--model")
+    p.add_argument("--effort", choices=adapters.CODEX_EFFORTS,
+                   help="requested primary-worker effort; available levels depend on the model/client")
     p.add_argument("--timeout", type=float, default=600)
     p.set_defaults(goal_id=None, max_steps=6, stop_stale_writer=False, cheap_first=False)
 
@@ -323,7 +496,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("revise", help="send the document of a `write` goal back with your feedback")
     p.add_argument("goal_id")
     p.add_argument("feedback")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--driver", required=True)
     p.add_argument("--model")
     p.add_argument("--timeout", type=float, default=900)
     p.set_defaults(max_steps=4, stop_stale_writer=False, cheap_first=False)
@@ -366,6 +539,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("vault", nargs="?")
     p = sub.add_parser("graph", help="write the graph viewer page and print its path")
     p.add_argument("--open", action="store_true", help="open it in the default browser")
+    p.add_argument("--serve", action="store_true", help="serve the viewer with local knowledge chat")
+    p.add_argument("--port", type=int, default=8767)
 
     p = sub.add_parser("note-add", help="record knowledge as a graph node")
     p.add_argument("--project", help="project id; omit for global knowledge")
@@ -391,16 +566,22 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("probe", help="measure what the installed CLIs support (P0.5)")
     p.add_argument("--live", action="store_true", help="make one small subscription call per CLI")
 
+    p.add_argument("--driver", help="probe only this native provider")
     p = sub.add_parser("cross-check", help="independently check a DONE do goal")
     p.add_argument("goal")
-    p.add_argument("--driver", choices=("claude", "codex"), required=True)
+    p.add_argument("--driver", required=True)
+    p.add_argument("--model", help="requested independent author model")
 
+    for command in ("ask", "agent", "auto", "do", "fix-tests"):
+        sub.choices[command].add_argument("--skill", help="apply a selected local skill to the primary worker; routing and acceptance keep the original request")
+    for command in ("ask", "agent", "auto", "do", "fix-tests", "run", "write", "alpha-run"):
+        sub.choices[command].add_argument("--skills", choices=("auto","off"), help="API primary workers only: discover/read local skills on demand or disable discovery; explicit --skill remains selected")
     args = parser.parse_args(argv)
     global JSON_OUTPUT
     JSON_OUTPUT = args.json
     try:
         if args.cmd == "job-run":
-            return _job_run(_home(args), args.job_id)
+            return _job_run(_home(args), args.job_id, args.guardian)
         return _dispatch(args)
     except LupusError as exc:
         _forget_fresh(args)
@@ -434,7 +615,7 @@ NEXT_STEP = {
     "BASELINE_RED": "lupus fix-tests --driver <claude|codex>   or repeat the command with --allow-failing",
     "PROJECT_ROOT_OVERLAP": "lupus project-list, then `lupus project-remove <id>` for a registration made by mistake",
     "UNCONFINED_READS_NOT_ALLOWED": "lupus probe --live, or `lupus project-allow-unconfined <project_id>`",
-    "PROVIDER_NOT_APPROVED": "register the project with that provider: lupus project-add <root> --name <n> --providers anthropic,openai",
+    "PROVIDER_NOT_APPROVED": "approve the selected endpoint: lupus provider-allow <provider-id> [--project <id>]",
     "CHECK_EXISTS": "remove the leftover file or folder named in the detail",
     "VERIFIER_SANDBOX_UNAVAILABLE": "run the checks in a container: --container <image>",
 }
@@ -456,37 +637,39 @@ def _forget_fresh(args: argparse.Namespace) -> None:
         pass
 
 
-def _job_run(home: Path, job_id: str) -> int:
-    """Body of a background job: the same command, in this detached process."""
-    if not jobs.released():
-        return 111              # started by hand, or the starter died before recording this process
-    k = Kernel(home)
-    command = jobs.command_of(k, job_id)
-    k.close()
-
-    def terminate(*_):          # `lupus stop`: unwind normally so the worker's process group is emptied
-        raise SystemExit(143)
-
-    signal.signal(signal.SIGTERM, terminate)
-    code: int | None = None
-    try:
-        code = main(["--home", str(home), *command])
-        return code
-    finally:
-        k = Kernel(home)
-        jobs.finished(k, job_id, code)
-        k.close()
-        jobs.notify("Lupus", f"{' '.join(command[:2])} 종료 (코드 {code})")
+def _job_run(home: Path, job_id: str, guardian: bool = False) -> int:
+    """Trusted gated job controller; model tasks never enter the lifecycle protocol."""
+    from . import job_guardian
+    return job_guardian.run(home,job_id) if guardian else job_guardian.inner(home,job_id,main)
 
 
 def _stale(k: Kernel, cli: str, driver: str) -> str | None:
-    installed = probe._version(cli, adapters.worker_env())
+    if driver not in ("native_codex", "native_claude"):
+        return None
     measured = {r["cli_version"] for r in k.q(
         "SELECT cli_version FROM capability WHERE adapter = ? AND status = 'verified'", driver)}
-    if measured and measured != {installed}:
+    if not measured:
+        return None
+    installed = probe._version(cli, adapters.worker_env())
+    if measured != {installed}:
         # Capabilities are measurements of one CLI version, not promises about the next.
         return f"measured {sorted(measured)}, installed {installed}: run `lupus probe --live`"
     return None
+
+
+
+def _worker_preflight(args: argparse.Namespace, home: Path):
+    """Validate selected worker settings only when a worker path is required."""
+    spec = providers.resolve(args.driver, home)
+    if getattr(args,"skills",None) is not None and spec.protocol == "native":
+        raise LupusError("SKILL_POLICY_UNSUPPORTED", "--skills controls API primary workers only; native skills follow the native profile")
+    if spec.protocol != "native":
+        if getattr(args,"model",None) is not None:providers.validate_model(args.model)
+        if not getattr(args,"model",None) and not spec.default_model:
+            raise LupusError("MODEL_REQUIRED", "select --model <id> or configure default_model")
+        if spec.api_key_env and not os.environ.get(spec.api_key_env):
+            raise LupusError("API_AUTH_MISSING", "set the selected provider API key environment variable")
+    return spec
 
 
 def _run(k: Kernel, args: argparse.Namespace) -> dict:
@@ -494,13 +677,41 @@ def _run(k: Kernel, args: argparse.Namespace) -> dict:
         report = supervisor.recover(k, args.stop_stale_writer)
         if report["writers_alive"]:
             raise LupusError("WRITER_NOT_STOPPED", json.dumps(report["writers_alive"]))
-        adapter = getattr(args, "adapter", None) or _adapter(args.driver, args.model, getattr(args, "shell", False))
+        if goals.get(k, args.goal_id)["status"] == "DONE":
+            return supervisor.completed_report(k, args.goal_id)
+        if getattr(args,"cmd",None) == "run":
+            _worker_preflight(args,k.home)
+        auto_learning.prepare(k,mutating=True)
+        selected = {"effort": args.effort} if getattr(args, "effort", None) is not None else {}
+        if args.driver not in ("claude", "codex"): selected["home"] = k.home
+        adapter = getattr(args, "adapter", None) or _adapter(args.driver, args.model, getattr(args, "shell", False), **selected)
+        if getattr(args, "primary_instructions", None):
+            adapter.primary_instructions = args.primary_instructions
+        if isinstance(adapter,adapters.APIAdapter):adapter.skill_access=_api_skill_access(args,k.home)
         stale = _stale(k, args.driver, adapter.driver)
         if stale:
             raise LupusError("CAPABILITY_STALE", stale)
+        if args.cheap_first and adapter.driver.startswith("api:"): raise LupusError("TIERS_UNSUPPORTED", "API profiles require an explicit model; no silent fallback")
         tiers = adapters.cheap_first(adapter.driver) if args.cheap_first and not args.model else None
-        return supervisor.run_goal(k, args.goal_id, adapter, max_steps=args.max_steps, timeout_s=args.timeout,
-                                   tiers=tiers)
+        if tiers and getattr(args, "primary_instructions", None):
+            for tier in tiers:
+                tier.primary_instructions = args.primary_instructions
+        report = supervisor.run_goal(k, args.goal_id, adapter, max_steps=args.max_steps, timeout_s=args.timeout,
+                                     tiers=tiers, **({"supervision":args.supervisor_role} if getattr(args,"supervisor_role",None) else {}))
+        if getattr(args,"supervisor_role",None):report['requested_supervisor']={**args.supervisor_role,'scope':'verified retry only','effective_backend_confirmed':False}
+        if isinstance(adapter,adapters.APIAdapter):
+            report['api_skill_mode']=getattr(args,'skills',None) or 'auto'
+            if getattr(adapter,'last_skill_reads',None):report['last_worker_skill_reads']=adapter.last_skill_reads
+        if getattr(args, "skill_info", None):
+            report["selected_skill"] = args.skill_info
+        if getattr(args, "effort", None) is not None:
+            report["requested_worker_effort"] = args.effort
+        if getattr(args, "max_attempts", None) is not None:
+            report["attempt_limit"] = report["budget"]["attempts"]["cap"]
+            blocked_attempts = any("BUDGET_EXHAUSTED:attempts" in step.get("blockers", []) for step in report["steps"])
+            if not report["done"] and blocked_attempts:
+                report["stop_reason"] = "attempt_limit_reached"
+        return report
 
 
 DRIVER = {"claude": "native_claude", "codex": "native_codex"}
@@ -521,8 +732,10 @@ def _project_here(k: Kernel, what: str, args: argparse.Namespace | None = None) 
     project = projects.resolve(k, cwd)
     if project is None:
         root = _repo_root(cwd)
-        _confirm_user(f"이 폴더를 프로젝트로 등록합니다: {root} ({what})")
-        project = projects.register(k, root, os.path.basename(root), ["anthropic", "openai"])
+        selected_spec = providers.resolve(args.driver, k.home) if args is not None and getattr(args, "driver", None) else None
+        endpoint = f" · {selected_spec.name} {selected_spec.base_url}" if selected_spec and selected_spec.protocol != "native" else ""
+        _confirm_user(f"이 폴더를 프로젝트로 등록합니다: {root} ({what}){endpoint}")
+        project = projects.register(k, root, os.path.basename(root), ["anthropic", "openai"] + ([providers.resolve(args.driver, k.home).provider] if args is not None and getattr(args, "driver", None) not in (None, "claude", "codex") else []))
         if args is not None:
             args.fresh_project = project["project_id"]
     return project
@@ -600,8 +813,8 @@ def _write(k: Kernel, args: argparse.Namespace) -> int:
     if not target_abs.startswith(root_real + os.sep):
         raise LupusError("PATH_ESCAPES_PROJECT", f"{target_abs} is outside the project {root_real}")
     args.out = os.path.relpath(target_abs, root_real)
-    writer = DRIVER[args.driver]
-    judge = DRIVER[args.judge] if args.judge else author.pick_judge(k, project, writer)
+    writer = providers.resolve(args.driver, k.home).driver
+    judge = providers.resolve(args.judge, k.home).driver if args.judge else author.pick_judge(k, project, writer)
     if args.web and args.driver != "claude":
         raise LupusError("WEB_NOT_SUPPORTED", "--web works with --driver claude")
     _confirm_user(f"요청: {args.request}\n결과물: {target_abs}" + (" (이미 있는 파일을 덮어씁니다)" if os.path.exists(target_abs) else "")
@@ -620,7 +833,7 @@ def _write(k: Kernel, args: argparse.Namespace) -> int:
     _started(args)
     args.goal_id = made["goal_id"]
     if args.driver == "claude":
-        args.adapter = adapters.ClaudeAdapter(args.model, tools=("Read", "Write", "Edit", "Glob", "Grep"), web=args.web)
+        args.adapter = adapters.claude_worker(args.model, tools=("Read", "Write", "Edit", "Glob", "Grep"), web=args.web)
     target = Path(project["canonical_root"]) / made["out"]
     for _ in range(3):
         report = _run(k, args)
@@ -670,13 +883,16 @@ def _learn(k: Kernel, args: argparse.Namespace) -> int:
                   "작업 제목과 검증기 출력만 전달되며 프로젝트 파일은 전달되지 않습니다")
     with k.supervisor_lock():
         supervisor.recover(k)
-        _out(learn.refine(k, project, DRIVER[args.driver], "user"))
+        _out(learn.refine(k, project, providers.resolve(args.driver, k.home).driver, "user"))
     return 0
 
 
 def _session(k: Kernel, args: argparse.Namespace) -> int:
+    timeout_ms(args.max_minutes)
+    # A session creates one bounded verifier; this is range-only, not a larger reservation.
+    timeout_ms(args.max_minutes * 60, extra_ms=2 * 86_400_000 + 120_000, clock_ms=k.now())
     project = _project_here(k, "대화형 세션", args)
-    if {"claude": "anthropic", "codex": "openai"}[args.driver] not in project["approved_providers"]:
+    if providers.resolve(args.driver, k.home).provider not in project["approved_providers"]:
         raise LupusError("PROVIDER_NOT_APPROVED", args.driver)
     _confirm_user(f"대화형 세션을 시작합니다: {project['canonical_root']} ({args.driver}). 지금 있는 테스트와 테스트 설정은 "
                   "세션 동안 고정되고, 세션이 끝나면 Lupus가 직접 테스트를 실행해 판정합니다")
@@ -703,15 +919,243 @@ def _session(k: Kernel, args: argparse.Namespace) -> int:
     return 0 if report["done"] else 1
 
 
+
+def _agent(k: Kernel, args: argparse.Namespace) -> int:
+    timeout_ms(args.timeout)
+    timeout_ms(args.timeout, clock_ms=k.now())
+    spec = providers.resolve(args.driver, k.home)
+    adapter = None if args.native_config == "user" else _adapter(args.driver, args.model, args.shell, args.effort, **({'home':k.home} if spec.protocol!='native' else {}))
+    if adapter is not None and getattr(args, "primary_instructions", None):
+        adapter.primary_instructions = args.primary_instructions
+    if isinstance(adapter,adapters.APIAdapter):adapter.skill_access=_api_skill_access(args,k.home)
+    with k.supervisor_lock():
+        project = _project_here(k, 'agent edits · unverified', args)
+        if not projects.provider_allowed(project, adapter.driver if adapter is not None else spec.driver):
+            raise LupusError('PROVIDER_NOT_APPROVED', 'approve selected provider endpoint: ' + spec.provider)
+        if k.one("SELECT 1 FROM run WHERE project_id=? AND status<>'STOPPED'", project['project_id']) or runs.aux_alive(k, project['project_id']):
+            raise LupusError('WRITER_NOT_STOPPED', 'another operation owns this project')
+        auto_learning.prepare(k,mutating=True)
+        reference, context_info = memory.primary_context(k,project['project_id'],args.request)
+        primary_prompt = args.request + reference
+        operation = 'agent_' + os.urandom(8).hex()
+        native_runtime = None
+        if args.native_config == "user":
+            native_runtime = Path(tempfile.mkdtemp(prefix="lupus-native-agent-" )).resolve()
+            root = Path(project['canonical_root']).resolve()
+            if native_runtime.is_relative_to(root) or native_runtime.is_relative_to(k.home.resolve()):
+                shutil.rmtree(native_runtime)
+                raise LupusError("NATIVE_RUNTIME_LOCATION", "native scratch must be outside the project and Lupus state")
+            try:
+                for name in ("log","sqlite"):
+                    (native_runtime/name).mkdir(mode=0o700)
+                adapter = adapters.CodexUserConfigAdapter(args.model,args.effort,private_tmp=native_runtime,native_env=args.native_env,read_exclude=(str(k.home.resolve()),))
+                if getattr(args,"primary_instructions",None):adapter.primary_instructions=args.primary_instructions
+            except BaseException:
+                shutil.rmtree(native_runtime)
+                raise
+        try:
+            bid = budget.create(k, operation, {'calls':8,'attempts':1,'active_ms':int(args.timeout*1000),'tokens':200000}, parent_budget_id=alpha.parent_budget(k,project['project_id']))
+            reservation = budget.reserve(k, bid, 'work', 'unverified agent edit', {'calls':8,'attempts':1,'active_ms':int(args.timeout*1000)})
+            k.emit('user', 'agent.started', 'project', project['project_id'], operation_id=operation, budget_id=bid, provider=spec.id, requested_model=args.model or spec.default_model, verified=False,
+                   **({'requested_native_config':'user','requested_native_permission_profile':'lupus','effective_native_permissions_confirmed':False,'outer_auth_read_scope':'cli_and_descendants','requested_native_env':list(args.native_env),'native_runtime':str(native_runtime),'effective_backend_confirmed':False,'authentication_source':'user configuration; unconfirmed','billing_scope':'observed host usage only; configured tool/server costs unknown'} if native_runtime else {}))
+        except BaseException:
+            if native_runtime is not None:
+                shutil.rmtree(native_runtime)
+            raise
+        pids=[];result=None;started=time.monotonic();interrupted=False;cleanup_observed=False
+        def record(pid):
+            runs.register_aux(k, project['project_id'], pid, 'agent:'+operation);pids.append(pid)
+        try:
+            result=adapters.execute(adapter,primary_prompt,Path(project['canonical_root']),record,timeout_s=args.timeout)
+        except BaseException as exc:
+            observed=adapters.cleanup_result(exc)
+            if observed is not None:result=observed;cleanup_observed=True
+            interrupted=not isinstance(exc,Exception)
+            raise
+        finally:
+            info=adapters.usage_info(result.usage,result.raw) if result is not None else None
+            actual={'calls':max(1, (result.usage or {}).get('calls',1)) if info['fields']['calls'] and adapters.valid_counter((result.usage or {}).get('calls')) else max(8, (result.usage or {}).get('calls') if cleanup_observed and adapters.valid_counter((result.usage or {}).get('calls')) else 8), 'attempts':1,'active_ms':max(int(args.timeout*1000),int((time.monotonic()-started)*1000)) if cleanup_observed else int((time.monotonic()-started)*1000)} if result else None
+            if native_runtime is None:
+                budget.settle(k,reservation,actual,'measured' if info and info['complete'] else 'estimated')
+                if info:budget.charge_direct(k,bid,'tokens',info['known_token_lower_bound'])
+                for pid in pids:runs.clear_aux(k,pid)
+            else:
+                cleanup_error=None
+                try:
+                    budget.settle(k,reservation,actual,'measured' if info and info['complete'] else 'estimated')
+                    if info:budget.charge_direct(k,bid,'tokens',info['known_token_lower_bound'])
+                except Exception as exc:cleanup_error=exc
+                for pid in pids:
+                    try:runs.clear_aux(k,pid)
+                    except Exception as exc:cleanup_error=cleanup_error or exc
+                if cleanup_error is None:
+                    try:shutil.rmtree(native_runtime)
+                    except Exception as exc:cleanup_error=exc
+                # Any live fence is retained by clear_aux; a failed cleanup keeps
+                # private evidence, even if already-dead auxiliaries were cleared.
+                # Never replace a user cancellation with an ordinary cleanup diagnostic.
+                if cleanup_error is not None and not interrupted:raise cleanup_error
+        _started(args)
+        k.emit('supervisor','agent.finished','project',project['project_id'],operation_id=operation,error=result.error_class,verified=False,process_lifetime=adapters.lifetime_diagnostics(result))
+        _out({'status':'UNVERIFIED','verified':False,'memory_context':context_info,'result':result.text,'error':result.error_class,
+              'exit_code':result.exit_code,'operation_id':operation,'budget':budget.snapshot(k,bid),'process_lifetime':adapters.lifetime_diagnostics(result),
+              **({'tool_diagnostics':result.raw['tool_diagnostics']} if 'tool_diagnostics' in result.raw else {}),
+              'usage':result.usage,'usage_coverage':info['fields'],'known_token_lower_bound':info['known_token_lower_bound'],
+              'requested_provider':spec.id,'requested_model':getattr(adapter,'model',None),'effective_backend_confirmed':False,
+              **({'api_skill_mode':getattr(args,'skills',None) or 'auto'} if spec.protocol!='native' else {}),
+              **({'skill_reads':result.raw['skill_reads'],'skill_reads_limited':result.raw.get('skill_reads_limited',False)} if 'skill_reads' in result.raw else {}),
+              **({'selected_skill':args.skill_info} if getattr(args,'skill_info',None) else {}),
+              **({'requested_native_config':'user','requested_native_permission_profile':'lupus','effective_native_permissions_confirmed':False,'outer_auth_read_scope':'cli_and_descendants','requested_native_env':list(args.native_env),'effective_config_confirmed':False,'authentication_source':'user configuration; unconfirmed','billing_scope':'observed host usage only; configured tool/server costs unknown',
+                  'outer_os_sandbox':result.raw.get('os_sandbox'),
+                  'native_state_paths':{'log_dir':str(native_runtime/'log'),'sqlite_home':str(native_runtime/'sqlite'),'retained':native_runtime.exists()},
+                  **({'detail':diagnostic_tail(result.stderr_tail),'native_config_limits':'The outer OS sandbox makes home-directory configuration and authentication files read-only, with the read grant inherited by CLI descendants; inner tool permissions are unconfirmed. Custom config roots are unsupported. Hooks/MCP needing other writable locations may fail; no unconfined fallback.'} if result.error_class else {})} if native_runtime else {})})
+        return 1 if result.error_class or result.exit_code != 0 else 0
+
 def _dispatch(args: argparse.Namespace) -> int:
+    if hasattr(args, "timeout"):
+        timeout_ms(args.timeout)
+    if args.cmd == "session":
+        timeout_ms(args.max_minutes)
+        timeout_ms(args.max_minutes * 60)
+    if getattr(args, "effort", None) is not None:
+        for driver in (args.drivers.split(",") if args.cmd == "alpha-run" else (args.driver,)):
+            adapters.validate_effort(driver, args.effort)
+        if getattr(args, "cheap_first", False):
+            raise LupusError("EFFORT_CONFLICT", "--effort cannot be combined with --cheap-first")
     home = _home(args)
+    args.supervisor_role=supervision.resolve(getattr(args,"supervisor",None),getattr(args,"supervisor_model",None),getattr(args,"supervisor_effort",None),home=home)
+    if args.cmd in ("ask","agent","auto","do"):
+        auto_learning.bind(home,args.request)
+    if args.cmd == "agent":
+        args.native_env = list(adapters.validate_native_config(args.driver, args.native_config, args.native_env))
+    if getattr(args, "skill", None):
+        selected_skill = skills.discover(Path.cwd(), home, Path(_repo_root(os.getcwd()))).get(args.skill)
+        if selected_skill is None:
+            raise LupusError("SKILL_UNKNOWN", "Use /skills to see local IDs")
+        body = skills.load(selected_skill)
+        args.primary_instructions = (f"Skill: {selected_skill.id}\nSkill source: {selected_skill.path}\n"
+                                     f"Relative resources: {selected_skill.resolved_path.parent}\n"
+                                     "Resources remain subject to the worker's file/tool permissions.\n\n" + body)
+        args.skill_info = {"id":selected_skill.id,"source":selected_skill.source,"sha256":hashlib.sha256(body.encode()).hexdigest()}
+        args.skill_binding = skills.binding(selected_skill,args.skill_info['sha256'])
+    if getattr(args,"skills",None) is not None and args.cmd != "run":
+        choices=args.drivers.split(',') if args.cmd=='alpha-run' else [args.driver]
+        if not any(providers.resolve(driver,home).protocol!='native' for driver in choices):
+            raise LupusError('SKILL_POLICY_UNSUPPORTED','--skills controls API primary workers only; native skills follow the native profile')
+    if args.cmd == "providers":
+        _out(providers.catalog(home)); return 0
+    if args.cmd == "models":
+        _out(providers.models(args.driver, home, discover=args.discover)); return 0
+    if getattr(args, "driver", None) and args.cmd != "run":
+        providers.resolve(args.driver, home)
+    if getattr(args, 'cross_check_model', None) and not getattr(args, 'cross_check', None):
+        raise LupusError('MODEL_INVALID', '--cross-check-model requires --cross-check')
+    review_id=getattr(args,"review",None)
+    if not review_id and (getattr(args,"review_model",None) is not None or getattr(args,"review_effort",None) is not None):
+        raise LupusError("REVIEW_OPTIONS","--review-model/--review-effort requires --review")
+    if review_id:
+        primary=providers.resolve(args.driver,home)
+        if review_id=="other":
+            if primary.protocol!="native":raise LupusError("REVIEW_PROVIDER_REQUIRED","select --review PROVIDER explicitly for an API primary worker")
+            review_id="codex" if primary.id=="claude" else "claude"
+        reviewer=providers.resolve(review_id,home)
+        review_model=getattr(args,"review_model",None)
+        if review_model is not None:providers.validate_model(review_model)
+        elif reviewer.protocol!="native":review_model=reviewer.default_model
+        review_effort=getattr(args,"review_effort",None)
+        if reviewer.protocol!="native" and review_model is None:raise LupusError("MODEL_REQUIRED","reviewer needs --review-model or configured default_model")
+        if reviewer.protocol!="native" and review_effort is not None:raise LupusError("EFFORT_UNSUPPORTED","reviewer API effort has no validated mapping")
+        adapters.validate_effort(reviewer.driver,review_effort)
+        args.review_selection={"provider":reviewer.id,"driver":reviewer.driver,"model":review_model,"effort":review_effort}
+    author_id = args.driver if args.cmd == 'cross-check' else getattr(args, 'cross_check', None)
+    if author_id:
+        author_spec = providers.resolve(author_id, home)
+        author_model = args.model if args.cmd == 'cross-check' else args.cross_check_model
+        if author_model is not None:providers.validate_model(author_model)
+        if author_spec.protocol != 'native':
+            if not author_spec.base_url:raise LupusError('PROVIDER_CONFIG_REQUIRED', 'configure the cross-check author endpoint first')
+            if not author_model and not author_spec.default_model:raise LupusError('MODEL_REQUIRED', 'cross-check author needs --model or configured default_model')
+            if author_spec.api_key_env and not os.environ.get(author_spec.api_key_env):raise LupusError('API_AUTH_MISSING', 'set the selected author API key environment variable')
+    if getattr(args, 'driver', None) and args.cmd != "run":
+        spec = providers.resolve(args.driver, home)
+        if spec.protocol != 'native' and getattr(args, 'model', None) is not None:
+            providers.validate_model(args.model)
+        if spec.protocol != 'native' and args.cmd in ('agent','do','fix-tests','run','write'):
+            if not getattr(args, 'model', None) and not spec.default_model:
+                raise LupusError('MODEL_REQUIRED', 'select --model <id> or configure default_model')
+            if spec.api_key_env and not os.environ.get(spec.api_key_env):
+                raise LupusError('API_AUTH_MISSING', 'set the selected provider API key environment variable')
+    if args.cmd == 'alpha-run':
+        for selected in args.drivers.split(','):
+            spec = providers.resolve(selected, home)
+            if spec.protocol != 'native' and not args.model and not spec.default_model:
+                raise LupusError('MODEL_REQUIRED', 'parallel API workers need an explicit model or configured default')
+    if args.cmd == "session" and args.driver not in ("codex", "claude"):
+        raise LupusError("SESSION_NATIVE_ONLY", "interactive sessions require codex or claude; use agent for API providers")
+    if args.cmd == "ask":
+        selected = {"home": home}
+        if args.effort is not None: selected["effort"] = args.effort
+        if getattr(args, "primary_instructions", None):selected["primary_instructions"] = args.primary_instructions
+        if providers.resolve(args.driver,home).protocol!='native':selected['skill_access']=_api_skill_access(args,home)
+        result = adaptive.answer(args.request, Path.cwd(), args.driver, args.model, args.timeout, **selected)
+        if getattr(args,"skill_info",None):result["selected_skill"] = args.skill_info
+        _out(result); return 1 if result["error"] or result["exit_code"] != 0 else 0
+    if args.cmd == "auto":
+        mode = "verified" if args.mode == "auto" and args.isolated else args.mode
+        route = adaptive.plan(args.request, mode, args.check)
+        if args.max_attempts is not None and route["route"] not in ("checked", "fix-tests"):
+            raise LupusError("ROUTE_INVALID", "--max-attempts requires --check or an explicit failing-test repair request")
+        if route["route"] == "answer" and (args.isolated or args.protect):
+            raise LupusError("ROUTE_INVALID", "read-only answers do not use --isolated or --protect")
+        print(f"Lupus: {route['route']} · {route['reason']}", file=sys.stderr)
+        if route["route"] == "answer":
+            selected = {"effort": args.effort} if args.effort is not None else {}
+            selected["home"] = home
+            if getattr(args, "primary_instructions", None):selected["primary_instructions"] = args.primary_instructions
+            if providers.resolve(args.driver,home).protocol!='native':selected['skill_access']=_api_skill_access(args,home)
+            result = adaptive.answer(args.request, Path.cwd(), args.driver, args.model, args.timeout, **selected)
+            if getattr(args,"skill_info",None):result["selected_skill"] = args.skill_info
+            auto_learning.finish(result)
+            if sys.stdout.isatty() and not JSON_OUTPUT:
+                print(result["result"])
+                if result["error"]:
+                    print(f"{result['error']}: {result['detail']}", file=sys.stderr)
+            else:
+                _out(result)
+            return 1 if result["error"] or result["exit_code"] != 0 else 0
+        if route["route"] in ("verified", "fix-tests"):
+            forwarded = ["--home", str(home), *(["--json"] if JSON_OUTPUT else []), *(["do", args.request] if route["route"] == "verified" else ["fix-tests"]),
+                         "--driver", args.driver, "--timeout", str(args.timeout)]
+            if getattr(args,"skills",None) is not None:
+                forwarded += ["--skills",args.skills]
+            if getattr(args,"skill",None):
+                forwarded += ["--skill",args.skill]
+            if args.model:
+                forwarded += ["--model", args.model]
+            if args.effort is not None:
+                forwarded += ["--effort", args.effort]
+            if args.max_attempts is not None:
+                forwarded += ["--max-attempts", str(args.max_attempts)]
+            forwarded += supervision.flags(args.supervisor_role)
+            forwarded += [flag for flag in ("--isolated", "--shell") if getattr(args, flag[2:])]
+            if args.protect:
+                raise LupusError("ROUTE_INVALID", "--protect requires --check")
+            return main(forwarded)
     if args.cmd == "init":
         Kernel.init(home).close()
         _out({"home": str(home)})
         return 0
-    k = Kernel(home)
+    k = Kernel.init(home) if args.cmd == "agent" else Kernel(home)
     try:
-        if args.cmd == "project-add":
+        if args.cmd == "agent":
+            return _agent(k, args)
+        if args.cmd == "provider-allow":
+            spec=providers.resolve(args.provider,k.home)
+            project=projects.get(k,args.project) if args.project else projects.resolve(k,os.getcwd())
+            if project is None:raise LupusError('PROJECT_NOT_FOUND','register or select a project first')
+            _confirm_user(f"제공자 허용: {project['name']} · {spec.name} · {spec.base_url or 'native CLI'} · key reference {spec.api_key_env or 'none'}")
+            _out(projects.approve_provider(k,project['project_id'],spec.provider,'user'))
+        elif args.cmd == "project-add":
             _confirm_user(f"프로젝트 등록: {os.path.realpath(args.root)} (제공자: {args.providers or '없음'})")
             _out(projects.register(k, args.root, args.name, [p for p in args.providers.split(",") if p]))
         elif args.cmd == "project-allow-unconfined":
@@ -774,12 +1218,13 @@ def _dispatch(args: argparse.Namespace) -> int:
             _out(supervisor.recover(k, args.stop_stale_writer))
         elif args.cmd == "fix-tests":
             project = _project_here(k, f"실패하는 테스트 고치기, {args.driver}", args)
-            if {"claude": "anthropic", "codex": "openai"}[args.driver] not in project["approved_providers"]:
+            if providers.resolve(args.driver, k.home).provider not in project["approved_providers"]:
                 raise LupusError("PROVIDER_NOT_APPROVED", args.driver)
             if not getattr(args, "fresh_project", None):
                 _confirm_user(f"실패하는 테스트를 고칩니다: {project['canonical_root']} ({args.driver})")
             project = _isolate(k, project, args)
-            made = quick.fix_tests(k, project, "user", check=args.check, protect_paths=args.protect,
+            caps = {**quick.DEFAULT_CAPS, "attempts": args.max_attempts} if args.max_attempts is not None else None
+            made = quick.fix_tests(k, project, "user", caps=caps, check=args.check, protect_paths=args.protect,
                                    container=args.container, lean=args.lean)
             if "goal_id" not in made:
                 if gitx.info(k, project["project_id"]):      # nothing to do: the checkout made for it goes again
@@ -794,12 +1239,16 @@ def _dispatch(args: argparse.Namespace) -> int:
             report["vault"] = vault.sync(k)
             _after_isolated(k, report)
             _out(report)
+            if args.max_attempts is not None:
+                return 0 if report["done"] else 1
         elif args.cmd == "diff":
             print(gitx.diff(k, args.goal_id))
         elif args.cmd == "accept":
             goal = goals.get(k, args.goal_id)
             _confirm_user(f"검증된 결과를 내 저장소에 커밋 하나로 반영합니다(빨리 감기 병합만, 강제 없음): {goal['objective'][:80]}")
             _out(gitx.accept(k, args.goal_id, "user"))
+        elif args.cmd == "undo":
+            _out(gitx.undo(k, args.goal_id, "user"))
         elif args.cmd == "discard":
             _confirm_user(f"격리된 체크아웃과 브랜치를 버립니다(되돌릴 수 없음): {args.goal_id}")
             _out(gitx.discard(k, args.goal_id, "user"))
@@ -807,8 +1256,43 @@ def _dispatch(args: argparse.Namespace) -> int:
             return _write(k, args)
         elif args.cmd == "session":
             return _session(k, args)
+        elif args.cmd == "auto" and route["route"] == "text-edit":
+            if args.protect:
+                raise LupusError("ROUTE_INVALID", "--protect requires --check")
+            project = _project_here(k, "정확한 문서 치환", args)
+            _confirm_user(f"정확한 문서 치환: {args.request}")
+            report = textedit.apply(k, project, args.request, "user")
+            if args.effort is not None:
+                report["requested_worker_effort"] = args.effort
+            _started(args)
+            _out(report)
+            return 0 if report["done"] else 1
+        elif args.cmd == "auto":  # supplied acceptance command: no drafting, rubric or extra model call
+            project = _project_here(k, "지정 검사로 요청 구현", args)
+            _confirm_user(f"요청: {args.request}\n완료 조건: {args.check} ({args.driver})")
+            project = _isolate(k, project, args)
+            caps = {**quick.DEFAULT_CAPS, "attempts": args.max_attempts} if args.max_attempts is not None else None
+            if route.get("execution") == "literal-edit":
+                report = textedit.apply(k, project, args.request, "user", args.check, args.protect, caps)
+                if args.effort is not None:
+                    report["requested_worker_effort"] = args.effort
+                if args.max_attempts is not None:
+                    report["attempt_limit"] = report["budget"]["attempts"]["cap"]
+                _started(args)
+                _out(report)
+                return 0 if report["done"] else 1
+            checked = quick.checked_request(k, project, args.request, args.check, "user", args.protect, caps=caps)
+            _started(args)
+            args.goal_id = checked["goal_id"]
+            report = _run(k, args)
+            report.update(route="checked", check=args.check)
+            _after_isolated(k, report)
+            _out(report)
+            return 0 if report["done"] else 1
         elif args.cmd == "do":
             project = _project_here(k, "요청 구현", args)
+            if args.cross_check and not projects.provider_allowed(project, providers.resolve(args.cross_check, k.home).driver):
+                raise LupusError("PROVIDER_NOT_APPROVED", "approve the cross-check author provider for this project first")
             _confirm_user(f"요청: {args.request}\n먼저 이 요청을 판정할 테스트를 작성합니다 ({args.driver})")
             project = _isolate(k, project, args)
             draft = quick.draft_check(k, project, args.request, "user", stage=not args.two_step, allow_failing=args.allow_failing,
@@ -872,13 +1356,13 @@ def _dispatch(args: argparse.Namespace) -> int:
                                         if build["staged_applied"] else "승인 뒤 별도 호출로 작성")
             for key, value in first["usage"]["totals"].items():      # the request cost both steps
                 report["usage"]["totals"][key] = report["usage"]["totals"].get(key, 0) + value
-            report["model_calls"] = len(first["steps"]) + sum(s.get("outcome") != "ALREADY_SATISFIED" for s in report["steps"])
+            report["model_calls"] = len(first["steps"]) + sum(s.get("outcome") != "ALREADY_SATISFIED" for s in report["steps"]) + report.get("supervision_usage",{}).get("calls",0)
             if args.review and report["done"]:
                 report = _reviewed(k, args, report, draft, build)
             elif args.review:
                 report["review"] = "검사가 통과하지 않아 리뷰하지 않았습니다"
             if args.cross_check and report["done"]:
-                report["crosscheck"] = crosscheck.shadow(k, build["goal_id"], DRIVER[args.cross_check])
+                report["crosscheck"] = crosscheck.shadow(k, build["goal_id"], providers.resolve(args.cross_check, k.home).driver, **({"model":args.cross_check_model} if args.cross_check_model is not None else {}))
                 report["crosscheck_text"] = crosscheck.render(report["crosscheck"])
             if build.get("review_base"):      # the copy of the project kept for the reviewer
                 shutil.rmtree(build["review_base"], ignore_errors=True)
@@ -890,21 +1374,33 @@ def _dispatch(args: argparse.Namespace) -> int:
             goals.get(k, args.goal_id)
             _out(jobs.start(k, ["run", args.goal_id, "--driver", args.driver, "--max-steps", str(args.max_steps),
                                 "--timeout", str(args.timeout), *(["--model", args.model] if args.model else []),
+                                *(["--effort", args.effort] if args.effort is not None else []),
+                                *(["--skills",args.skills] if args.skills is not None else []),
+                                *supervision.flags(args.supervisor_role),
                                 *(["--cheap-first"] if args.cheap_first else []),
                                 *(["--stop-stale-writer"] if args.stop_stale_writer else [])]))
         elif args.cmd == "alpha-status":
             _out(alpha.portfolio(k))
         elif args.cmd == "alpha-run":
             names = [n for n in args.drivers.split(",") if n]
-            if not names or any(n not in DRIVER for n in names):
+            if not names:
                 raise LupusError("DRIVER_UNKNOWN", args.drivers)
             if args.background:
                 _out(jobs.start(k, ["alpha-run", "--drivers", ",".join(names), "--max-steps", str(args.max_steps),
-                                    "--timeout", str(args.timeout), "--parallel", str(args.parallel)]))
+                                    "--timeout", str(args.timeout), "--parallel", str(args.parallel),
+                                    *(["--model", args.model] if args.model else []), *(["--effort", args.effort] if args.effort else []),
+                                    *(["--skills",args.skills] if args.skills is not None else [])]))
             else:
-                stale = {DRIVER[n]: why for n in names if (why := _stale(k, n, DRIVER[n]))}
-                report = alpha.run(k, [DRIVER[n] for n in names], adapters.native, max_steps=args.max_steps,
-                                   timeout_s=args.timeout, unavailable=stale, parallel=args.parallel)
+                resolved = [providers.resolve(n, k.home).driver for n in names]
+                def prepare_stale():
+                    return {driver: why for n, driver in zip(names, resolved) if (why := _stale(k, n, driver))}
+                def make(driver):
+                    if args.model is None and args.effort is None and driver.startswith("native_"): return adapters.native(driver)
+                    worker=adapters.native(driver, args.model, args.effort, home=k.home)
+                    if isinstance(worker,adapters.APIAdapter):worker.skill_access=_api_skill_access(args,k.home)
+                    return worker
+                report = alpha.run(k, resolved, make, max_steps=args.max_steps,
+                                   timeout_s=args.timeout, prepare_unavailable=prepare_stale, parallel=args.parallel)
                 try:
                     report["vault"] = vault.sync(k)
                 except LupusError as exc:
@@ -970,9 +1466,20 @@ def _dispatch(args: argparse.Namespace) -> int:
         elif args.cmd == "graph":
             vault.sync(k)
             page = graph.write(k)
-            if args.open:
+            if args.serve:
+                from .viewer_server import serve
+                serve(page.parent, args.port, args.open)
+            elif args.open:
                 import webbrowser
-                webbrowser.open(page.as_uri())
+                try:
+                    opened = webbrowser.open(page.as_uri())
+                except Exception:
+                    opened = False
+                if sys.stdout.isatty() and not JSON_OUTPUT:
+                    from .util import diagnostic_tail, language
+                    label = ("브라우저에서 열었습니다: " if opened else "브라우저를 열지 못했습니다. 직접 열어주세요: ") if language() == "ko" else ("Opened in your browser: " if opened else "Browser unavailable; open this file: ")
+                    print(label + diagnostic_tail(str(page)))
+                    return 0
             _out({"viewer": str(page)})
         elif args.cmd == "note-add":
             _confirm_user(f"지식 기록({args.project or '전역'}): [{args.kind}] {args.title}")
@@ -1000,9 +1507,14 @@ def _dispatch(args: argparse.Namespace) -> int:
             _confirm_user(f"지식 삭제(되돌릴 수 없음): {args.node_id}")
             memory.forget(k, args.node_id, "user", args.reason or "deleted by user")
         elif args.cmd == "probe":
-            _out(probe.run(k, live=args.live))
+            if args.driver:
+                spec = providers.resolve(args.driver, k.home)
+                if spec.protocol != "native": raise LupusError("PROBE_NATIVE_ONLY", "API configuration is declared; use models --discover for an explicit endpoint request")
+                _out(probe.run(k, live=args.live, drivers=(spec.driver,)))
+            else:
+                _out(probe.run(k, live=args.live))
         elif args.cmd == "cross-check":
-            print(crosscheck.render(crosscheck.shadow(k, args.goal, "native_" + args.driver)))
+            print(crosscheck.render(crosscheck.shadow(k, args.goal, providers.resolve(args.driver, k.home).driver, **({"model":args.model} if args.model is not None else {}))))
         return 0
     finally:
         k.close()

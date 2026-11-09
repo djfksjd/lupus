@@ -1,8 +1,8 @@
 """Graph view of the memory graph.
 
-Writes a small static page (viewer/index.html + viewer.js + the vendored, unmodified
-vis-network bundle) next to the vault. It opens straight from disk, makes no network request
-and loads no code other than those two scripts (enforced by a Content-Security-Policy).
+Writes a static page with local viewer, vis-network and 3D space bundles next to the vault.
+It opens straight from disk, embeds its images and makes no network requests
+(enforced by a Content-Security-Policy).
 
 Besides knowledge nodes and their typed links, the graph shows where knowledge came from and
 where it was used: project -> goal, node -> goal it was recorded in, node -> goal it was
@@ -11,6 +11,7 @@ recalled in.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from datetime import datetime
@@ -22,6 +23,10 @@ from .kernel import Kernel
 from .util import LupusError, atomic_write
 
 
+def _short(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
 def export(k: Kernel) -> dict:
     nodes, edges, scopes = [], [], []
     seen: set[str] = set()
@@ -30,17 +35,17 @@ def export(k: Kernel) -> dict:
         scope = pid or ""
         if project:
             scopes.append([pid, project["name"]])
-            nodes.append({"id": pid, "kind": "project", "scope": scope, "label": project["name"][:30],
+            nodes.append({"id": pid, "kind": "project", "scope": scope, "label": _short(project["name"], 30),
                           "title": project["name"], "page": f"projects/{pid}/map.md"})
             for goal in k.q("SELECT goal_id, objective, status FROM goal WHERE project_id = ? ORDER BY created_at", pid):
-                nodes.append({"id": goal["goal_id"], "kind": "goal", "scope": scope, "label": goal["objective"][:24],
+                nodes.append({"id": goal["goal_id"], "kind": "goal", "scope": scope, "label": _short(goal["objective"], 24),
                               "title": goal["objective"], "state": goal["status"],
                               "page": vault.goal_page(pid, goal["goal_id"])})
                 edges.append({"from": pid, "to": goal["goal_id"], "type": "has_goal"})
         for node in memory.nodes(k, pid):
             seen.add(node["node_id"])
             nodes.append({
-                "id": node["node_id"], "kind": node["kind"], "scope": scope, "label": node["title"][:24],
+                "id": node["node_id"], "kind": node["kind"], "scope": scope, "label": _short(node["title"], 24),
                 "title": node["title"], "body": node["body"], "status": node["status"], "origin": node["origin"],
                 "recalled": node["recalled"], "helped": node["helped"], "unhelped": node["unhelped"],
                 "page": vault.node_page(node),
@@ -69,10 +74,14 @@ def write(k: Kernel, out_dir: str | Path | None = None, vault_root: str | Path |
     # Embedded as inert JSON. '<', '>' and '&' are escaped so node text can never close the
     # script element or be parsed as markup.
     payload = json.dumps(data, ensure_ascii=False).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
-    html = assets.joinpath("index.template.html").read_text(encoding="utf-8").replace("__DATA__", payload)
+    font = base64.b64encode(assets.joinpath("vendor/sora.woff2").read_bytes()).decode("ascii")
+    html = (assets.joinpath("index.template.html").read_text(encoding="utf-8")
+            .replace("__NEBULA_TEXTURE__", base64.b64encode(assets.joinpath("nebula.webp").read_bytes()).decode("ascii"))
+            .replace("__PLANET_TEXTURE__", base64.b64encode(assets.joinpath("planet-albedo.webp").read_bytes()).decode("ascii"))
+            .replace("__SORA_WOFF2__", font).replace("__DATA__", payload))
     atomic_write(out / "index.html", html.encode("utf-8"), mode=0o644)
     # Written to a temp file and renamed into place: an existing symlink at the destination is
     # replaced itself, never followed.
-    for name in ("viewer.js", "vendor/vis-network.min.js"):
+    for name in ("viewer.js", "vendor/vis-network.min.js", "vendor/space.min.js"):
         atomic_write(out / Path(name).name, assets.joinpath(name).read_bytes(), mode=0o644)
     return out / "index.html"

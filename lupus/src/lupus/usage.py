@@ -42,14 +42,26 @@ def record(
     reported: Mapping[str, int],
     observation: str,
     source: str,
+    token_lower_bound: int | None = None,
+    coverage: Mapping[str, bool] | None = None,
 ) -> dict:
     if mode not in ("delta", "cumulative"):
         raise LupusError("USAGE_MODE_INVALID", mode)
-    values = {f: max(0, int(reported.get(f, 0))) for f in FIELDS}
+    if token_lower_bound is not None and (coverage is None or mode != 'delta' or type(token_lower_bound) is not int or token_lower_bound < 0):
+        raise LupusError('USAGE_LOWER_BOUND_INVALID', 'extra lowerbounds apply only to valid native delta reports')
+    values = {f: reported[f] if type(reported.get(f)) is int and reported[f] >= 0 else 0 for f in FIELDS}
+    coverage = {f: type(reported.get(f)) is int and reported[f] >= 0 and
+                (coverage is None or coverage.get(f) is True) for f in ('tokens_in', 'tokens_cached', 'tokens_out', 'calls')}
+    if not all(coverage.get(f) is True for f in ('tokens_in', 'tokens_cached', 'tokens_out')):
+        observation = 'unknown'  # schema already distinguishes unknown; provenance event below retains partial detail
     with k.tx():
         existing = k.one("SELECT applied FROM usage_event WHERE event_id = ?", event_id)
         if existing is not None:
             return {"applied": json.loads(existing["applied"]), "replayed": True}
+        if mode == 'cumulative' and any(json.loads(row['payload']).get('provider_session_id') == provider_session_id
+                and json.loads(row['payload']).get('unclassified_token_charge', 0) > 0 for row in k.q(
+                    "SELECT payload FROM event WHERE type = 'usage.incomplete_report'")):
+            raise LupusError('USAGE_CUMULATIVE_LOWER_BOUND_UNSUPPORTED', 'native delta lowerbound needs reconciliation before cumulative reports')
         run = runs.get(k, run_id)
         goal = goals.get(k, run["goal_id"])
         mark = k.one("SELECT * FROM usage_watermark WHERE provider_session_id = ?", provider_session_id)
@@ -87,8 +99,15 @@ def record(
             event_id, run_id, goal["goal_id"], provider_session_id, mode, sequence,
             canonical_json(values), canonical_json(applied), observation, source, anomaly, k.now(),
         )
-        budget.charge_direct(k, goal["budget_id"], "tokens",
-                             applied["tokens_in"] + applied["tokens_cached"] + applied["tokens_out"])
+        k.emit('supervisor', 'usage.coverage_recorded', 'goal', goal['goal_id'], event_id=event_id,
+               fields=dict(coverage), provenance_version=1)
+        categorized = applied['tokens_in'] + applied['tokens_cached'] + applied['tokens_out']
+        extra = max(0, (token_lower_bound or 0) - categorized) if anomaly != 'stale_sequence' else 0
+        budget.charge_direct(k, goal['budget_id'], 'tokens', categorized + extra)
+        if coverage is not None and (observation != 'measured' or extra or not coverage.get('calls')):
+            k.emit('supervisor', 'usage.incomplete_report', 'goal', goal['goal_id'], event_id=event_id,
+                   coverage=dict(coverage), provider_session_id=provider_session_id, categorized_lower_bound=categorized, unclassified_token_charge=extra,
+                   known_token_lower_bound=categorized + extra, source=source)
         return {"applied": applied, "replayed": False, "anomaly": anomaly}
 
 
@@ -97,8 +116,17 @@ def totals(k: Kernel, goal_id: str) -> dict:
     number that looks measured."""
     out = {f: 0 for f in FIELDS}
     levels: dict[str, int] = {}
-    for row in k.q("SELECT applied, observation FROM usage_event WHERE goal_id = ?", goal_id):
+    provenance = {json.loads(r['payload'])['event_id']: json.loads(r['payload'])['fields'] for r in k.q(
+        "SELECT payload FROM event WHERE type = 'usage.coverage_recorded' AND aggregate_id = ?", goal_id)}
+    complete = True
+    for row in k.q("SELECT event_id, applied, reported, observation FROM usage_event WHERE goal_id = ?", goal_id):
         for f, v in json.loads(row["applied"]).items():
             out[f] += v
+        reported = json.loads(row['reported'])
+        complete = complete and row['observation'] == 'measured' and all(provenance.get(row['event_id'], {}).get(f) is True for f in ('tokens_in', 'tokens_cached', 'tokens_out'))
         levels[row["observation"]] = levels.get(row["observation"], 0) + 1
-    return {"totals": out, "events_by_observation": levels}
+    extra = sum(json.loads(r['payload']).get('unclassified_token_charge', 0) for r in k.q(
+        "SELECT payload FROM event WHERE type = 'usage.incomplete_report' AND aggregate_id = ?", goal_id))
+    lower = out['tokens_in'] + out['tokens_cached'] + out['tokens_out'] + extra
+    return {'totals': out, 'events_by_observation': levels, 'known_token_lower_bound': lower,
+            'token_totals_complete': bool(levels) and complete, 'complete_tokens': lower if levels and complete else None}

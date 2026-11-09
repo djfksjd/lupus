@@ -9,6 +9,8 @@ supervisor to stop; it empties its worker's process group on the way out.
 from __future__ import annotations
 
 import contextlib
+import fcntl
+import stat
 import json
 import os
 import shutil
@@ -39,21 +41,30 @@ def start(k: Kernel, command: list[str]) -> dict:
         k.run("INSERT INTO job(job_id, command, log_path, status, started_at) VALUES (?,?,?, 'STARTING', ?)",
               job_id, json.dumps(command), str(log_path), k.now())
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [PACKAGE_PARENT, os.environ.get("PYTHONPATH", "")]))}
-    read_fd, write_fd = os.pipe()
+    read_fd=write_fd=lifetime_fd=None
     try:
+        read_fd, write_fd = os.pipe()
+        lifetime_dir=k.runtime/'job-lifetimes';lifetime_dir.mkdir(mode=0o700,exist_ok=True)
+        lifetime_path=lifetime_dir/(job_id+'.lock')
+        lifetime_fd=os.open(lifetime_path,os.O_CREAT|os.O_EXCL|os.O_RDWR|os.O_NOFOLLOW,0o600)
+        fcntl.flock(lifetime_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        lifetime_info=os.fstat(lifetime_fd)
         with open(log_path, "ab", buffering=0) as log:
             os.chmod(log_path, 0o600)
-            proc = subprocess.Popen([sys.executable, "-m", "lupus", "--home", str(k.home), "job-run", job_id],
+            proc = subprocess.Popen([sys.executable, "-m", "lupus", "--home", str(k.home), "job-run", job_id, "--guardian"],
                                     stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                    env={**env, GATE_FD: str(read_fd)}, cwd=str(k.home), pass_fds=(read_fd,))
+                                    env={**env, GATE_FD: str(read_fd),'LUPUS_JOB_LIFETIME_FD':str(lifetime_fd)}, cwd=str(k.home), pass_fds=(read_fd,lifetime_fd))
         _STARTED.append(proc)
         with k.tx():
             k.run("UPDATE job SET pid = ?, proc_start = ?, status = 'RUNNING' WHERE job_id = ?",
                   proc.pid, proc_start(proc.pid), job_id)
+            k.emit('supervisor','job.guardian_started','job',job_id,protocol=1,pid=proc.pid,start=proc_start(proc.pid),nonce=new_id('owner'),lifetime_dev=lifetime_info.st_dev,lifetime_ino=lifetime_info.st_ino)
         os.write(write_fd, b"g")      # only now may it do anything; if we die first it reads EOF and exits
     finally:
-        os.close(read_fd)
-        os.close(write_fd)
+        for fd in (read_fd,write_fd,lifetime_fd):
+            if fd is not None:
+                try:os.close(fd)
+                except OSError:pass
     return {"job_id": job_id, "pid": proc.pid, "log": str(log_path)}
 
 
@@ -81,23 +92,68 @@ def finished(k: Kernel, job_id: str, exit_code: int | None) -> None:
               exit_code, k.now(), job_id)
 
 
+def _reap_owned() -> None:
+    # A child can publish EXITED before interpreter teardown. Reap it independently
+    # of that publication, without waiting on or signalling unrelated processes.
+    _STARTED[:] = [proc for proc in _STARTED if proc.poll() is None]
+
+
 def _alive(row) -> bool:
-    for proc in _STARTED:
-        proc.poll()      # a finished child of ours must not linger as a zombie that still "exists"
+    _reap_owned()
     return row["pid"] is not None and row["proc_start"] is not None and proc_start(row["pid"]) == row["proc_start"]
 
 
+def _group_present(pid):
+    if pid is None:return False
+    try:os.killpg(pid,0);return True
+    except ProcessLookupError:return False
+    except PermissionError:return True
+
+
+def _lifetime_gone(k,job_id,binding):
+    """Nonblocking birth-identity certificate; no ps, waits or reused-PGID adoption."""
+    fd=None
+    try:
+        path=k.runtime/'job-lifetimes'/(job_id+'.lock')
+        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+        info=os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or (info.st_dev,info.st_ino)!=(binding.get('lifetime_dev'),binding.get('lifetime_ino')):return None
+        try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:return False
+        return True
+    except OSError:return None
+    finally:
+        if fd is not None:os.close(fd)
+
+
+def _view(k,row):
+    from .job_guardian import latest
+    row=dict(row);binding=latest(k,row['job_id'],'job.guardian_started')
+    cleanup=latest(k,row['job_id'],'job.cleanup') if binding else None
+    result=latest(k,row['job_id'],'job.command_result') if binding else None
+    legacy_identity=type(row['pid']) is int and row['pid']>0 and isinstance(row['proc_start'],str) and bool(row['proc_start'])
+    present=_group_present(row['pid']) if not binding and legacy_identity else None
+    gone=_lifetime_gone(k,row['job_id'],binding) if binding else (not present if legacy_identity else None)
+    complete=bool(cleanup and cleanup.get('complete') and cleanup.get('nonce')==binding.get('nonce')) if binding else bool(legacy_identity and not present)
+    pending=not(complete and gone is True)
+    if binding:
+        state=('complete' if not pending else 'finishing' if complete and gone is False else
+               'cleanup_failed' if cleanup else 'guardian_lost' if gone is True else
+               'ownership_unknown' if gone is None else 'cleanup_pending' if result else 'running')
+    else:state='legacy_group_gone' if legacy_identity and not present else 'ownership_unknown'
+    return {**row,'status':('STARTING' if row['status']=='STARTING' else 'RUNNING') if pending else 'EXITED','cleanup_pending':pending,
+            'cleanup_complete':complete and gone is True,'cleanup_state':state,
+            **({'command_exit_code':result.get('exit_code')} if result else {})}
+
+
 def listing(k: Kernel) -> list[dict]:
-    """Jobs, newest first. A job whose process is gone without having reported is closed here
-    (it was killed); the run it left behind is closed by the usual recovery."""
-    out = []
-    for row in k.q("SELECT * FROM job ORDER BY started_at DESC, rowid DESC LIMIT 50"):
-        row = dict(row)
-        if row["status"] != "EXITED" and not _alive(row) and (row["status"] == "RUNNING" or k.now() - row["started_at"] > 30_000):
-            finished(k, row["job_id"], None)
-            row.update(status="EXITED", exit_code=None)
-        out.append({"job_id": row["job_id"], "status": row["status"], "exit_code": row["exit_code"],
-                    "command": " ".join(json.loads(row["command"])), "pid": row["pid"], "log": row["log_path"]})
+    """Nonblocking lifecycle projection. Never perform cleanup or signal a process here."""
+    _reap_owned();out=[]
+    for row in k.q("SELECT * FROM job ORDER BY started_at DESC,rowid DESC LIMIT 50"):
+        view=_view(k,row)
+        out.append({key:view[key] for key in ('job_id','status','exit_code','pid','cleanup_pending','cleanup_complete','cleanup_state')} |
+                   {'command':' '.join(json.loads(row['command'])),'log':row['log_path']} |
+                   ({'command_exit_code':view['command_exit_code']} if 'command_exit_code' in view else {}))
     return out
 
 
@@ -113,20 +169,30 @@ def log_tail(k: Kernel, job_id: str, lines: int = 40) -> str:
 
 
 def stop(k: Kernel, job_id: str, wait_s: float = 20.0) -> dict:
-    row = k.one("SELECT * FROM job WHERE job_id = ?", job_id)
-    if row is None:
-        raise LupusError("JOB_NOT_FOUND", job_id)
-    if row["status"] == "EXITED" or not _alive(row):
-        finished(k, job_id, row["exit_code"])
-        return {"job_id": job_id, "stopped": True, "was_running": False}
-    os.kill(row["pid"], signal.SIGTERM)       # only ever the pid whose start time we recorded
-    deadline = time.monotonic() + wait_s
-    while time.monotonic() < deadline and _alive(row):
-        time.sleep(0.2)
-    if _alive(row):
-        return {"job_id": job_id, "stopped": False, "was_running": True, "note": "still stopping its worker; check `lupus jobs`"}
-    finished(k, job_id, None)
-    return {"job_id": job_id, "stopped": True, "was_running": True}
+    from .job_guardian import latest,matching
+    row=k.one('SELECT * FROM job WHERE job_id=?',job_id)
+    if row is None:raise LupusError('JOB_NOT_FOUND',job_id)
+    _reap_owned();view=_view(k,row)
+    if view['cleanup_complete']:
+        if row['status']!='EXITED':finished(k,job_id,row['exit_code'])
+        return {'job_id':job_id,'stopped':True,'was_running':False,'cleanup_complete':True}
+    # No PID reuse or dead-leader group can authorize signals.
+    if not matching(row['pid'],row['proc_start']):
+        return {'job_id':job_id,'stopped':False,'was_running':False,'cleanup_complete':False,'reason':'ownership_unknown'}
+    os.kill(row['pid'],signal.SIGTERM)
+    deadline=time.monotonic()+wait_s
+    while time.monotonic()<deadline:
+        _reap_owned();view=_view(k,k.one('SELECT * FROM job WHERE job_id=?',job_id))
+        if view['cleanup_complete']:return {'job_id':job_id,'stopped':True,'was_running':True,'cleanup_complete':True}
+        if latest(k,job_id,'job.guardian_started') is None:
+            # Legacy jobs have no lifetime certificate. After an authenticated
+            # stop, an unreaped zombie is no writable process, not a live worker.
+            from .util import group_alive
+            if not group_alive(row['pid']):
+                finished(k,job_id,row['exit_code'])
+                return {'job_id':job_id,'stopped':True,'was_running':True,'cleanup_complete':True}
+        time.sleep(.05)
+    return {'job_id':job_id,'stopped':False,'was_running':True,'cleanup_complete':False,'reason':'cleanup_pending'}
 
 
 def prune(k: Kernel, days: float, kept: bool = False) -> dict:
@@ -166,10 +232,14 @@ def prune(k: Kernel, days: float, kept: bool = False) -> dict:
                     continue
                 shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
                 removed[key] += 1
-    listing(k)      # close records of jobs that are gone
+    listing(k)      # reap direct owned handles; cleanup projection below retains unknown rows
     with k.tx():
-        for row in k.q("SELECT job_id, log_path FROM job WHERE status = 'EXITED' AND coalesce(ended_at, started_at) < ?",
+        for row in k.q("SELECT job_id, log_path FROM job WHERE coalesce(ended_at, started_at) < ?",
                        int(cutoff * 1000)):
+            full=k.one('SELECT * FROM job WHERE job_id=?',row['job_id'])
+            if not _view(k,full)['cleanup_complete']:
+                continue
+            (k.runtime/'job-lifetimes'/(row['job_id']+'.lock')).unlink(missing_ok=True)
             Path(row["log_path"]).unlink(missing_ok=True)
             k.run("DELETE FROM job WHERE job_id = ?", row["job_id"])
             removed["jobs"] += 1

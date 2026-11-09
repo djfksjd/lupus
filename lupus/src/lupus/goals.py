@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import budget, projects, verify
+from . import budget, projects, runners, verify
 from .kernel import Kernel
 from .util import LupusError, canonical_json, find_secret, new_id, is_sha256
 
@@ -144,6 +144,11 @@ def _validate_criteria(items: list[dict]) -> list[dict]:
                     or any(not isinstance(r, str) or not r.strip() or len(r) > 300 for r in rubric)):
                 raise LupusError("CRITERION_INVALID", f"{cid}: judge needs a driver and a rubric of 1..12 short items")
         image = verifier.get("container")
+        if "require_no_skips" in verifier and (not isinstance(verifier["require_no_skips"], bool) or (
+                verifier["require_no_skips"] and (verifier["kind"] != "command"
+                    or not isinstance(verifier.get("require_tests"), str)
+                    or verifier["require_tests"] not in runners.LANGUAGE))):
+            raise LupusError("CRITERION_INVALID", f"{cid}: require_no_skips needs a boolean and a recognised test runner")
         if image is not None and (not isinstance(image, str) or not _IMAGE.fullmatch(image)):
             raise LupusError("CRITERION_INVALID", f"{cid}: container must be an image name")
         env = verifier.get("env", {})
@@ -215,6 +220,7 @@ def add_task(
     depends_on: list[str] | None = None,
     inputs: list[str] | None = None,
     lean: bool = False,
+    check: list[str] | None = None,
 ) -> dict:
     with k.tx():
         goal = get(k, goal_id)
@@ -231,7 +237,9 @@ def add_task(
             "INSERT INTO task(task_id, goal_id, title, spec, status, created_at, updated_at) "
             "VALUES (?,?,?,?, 'PENDING', ?,?)",
             task_id, goal_id, title, canonical_json({"prompt": prompt, "criteria": criterion_ids, "inputs": list(inputs or []),
-                                     **({"lean": True} if lean else {})}), now, now,      # (absent when off: older specs hash the same)
+                                     **({"lean": True} if lean else {}),
+                                     # commands a worker with a shell is shown besides its own criteria' (absent: same hash)
+                                     **({"check": list(check)} if check else {})}), now, now,      # (absent when off: older specs hash the same)
         )
         for dep in depends_on or []:
             dep_row = k.one("SELECT goal_id FROM task WHERE task_id = ?", dep)
@@ -539,12 +547,19 @@ def evidence_stale(k: Kernel, goal_id: str, criterion: dict, ev: dict) -> bool:
         was taken. A command can depend on files it did not declare, so its result is trusted
         only as long as no OTHER run has executed since.
     Not detected: a manual edit, outside the declared paths, with no run in between."""
+    if ev.get("verifier_version") != verify.VERSION:
+        return True
     if ev["artifact_hash"] != verify.artifact_hash(criterion["verifier"], project_root(k, goal_id)):
         return True
     if criterion["verifier"]["kind"] in EXECUTING_KINDS:
         # The run that produced the evidence verified AFTER its own worker exited, so its own
-        # closing does not count as "something executed since".
-        own = k.one("SELECT run_id FROM attempt WHERE attempt_id = ?", ev["attempt_id"])
+        # closing does not count as "something executed since". Evidence taken without an attempt
+        # (the task's checks already passed, no worker was started) belongs to the run of that task
+        # that never spawned a process and was open when the evidence was recorded.
+        own = k.one("SELECT run_id FROM attempt WHERE attempt_id = ?", ev["attempt_id"]) if ev.get("attempt_id") else (
+            k.one("SELECT run_id FROM run WHERE task_id = ? AND pid IS NULL AND started_at <= ? "
+                  "AND (ended_at IS NULL OR ended_at >= ?) ORDER BY started_at DESC LIMIT 1",
+                  ev["task_id"], ev["checked_at"], ev["checked_at"]) if ev.get("task_id") else None)
         later = k.one(
             "SELECT 1 FROM run r JOIN goal g ON g.goal_id = ? WHERE r.project_id = g.project_id "
             "AND r.run_id IS NOT ? AND (r.status <> 'STOPPED' OR r.closed_seq > ?)",
@@ -616,6 +631,7 @@ def complete(k: Kernel, goal_id: str) -> None:
 
 def view(k: Kernel, goal_id: str) -> dict[str, Any]:
     goal = get(k, goal_id)
+    evidence = latest_evidence(k, goal_id)
     return {
         **goal,
         "criteria": criteria(k, goal_id),
@@ -626,5 +642,7 @@ def view(k: Kernel, goal_id: str) -> dict[str, Any]:
         ],
         "waiting": wait_reasons(k, goal_id),
         "budget": budget.snapshot(k, goal["budget_id"]),
-        "evidence": {cid: (ev["result"] if ev else None) for cid, ev in latest_evidence(k, goal_id).items()},
+        "evidence": {cid: (ev["result"] if ev else None) for cid, ev in evidence.items()},
+        "verifier_version": verify.VERSION,
+        "evidence_versions": {cid: (ev["verifier_version"] if ev else None) for cid, ev in evidence.items()},
     }

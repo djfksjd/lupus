@@ -22,5 +22,23 @@
         "sha256": "1509904280a272780fd69c04b858f512cf216f8e3464a0dd98d8f34416feced9"
       }
     }
+  },
+  "sora": {
+    "upstream": "https://github.com/google/fonts/tree/main/ofl/sora",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/sora/Sora%5Bwght%5D.ttf",
+    "license": "OFL-1.1",
+    "retrieved": "2026-10-27",
+    "modified": true,
+    "note": "subset to Latin (U+0020-007E, U+00A0-00FF and a few punctuation marks) with tnum, case, kern, liga, ccmp, locl kept; variable wght axis kept; converted to woff2 with fontTools pyftsubset",
+    "files": {
+      "sora.woff2": {
+        "from": "Sora[wght].ttf",
+        "sha256": "131524c4d17a32b1d34a480363276e6b53f5dffde49768ebd4cc2ef1aa16214b"
+      },
+      "sora-OFL.txt": {
+        "from": "OFL.txt",
+        "sha256": "ba0b9729c9428ba79a0459ab8ec575791b51509dbec213e383d0316d37fec299"
+      }
+    }
   }
 }

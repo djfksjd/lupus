@@ -1,9 +1,12 @@
 """Exec gate for worker processes.
 
-The supervisor starts `python -m lupus.gate <argv…>`, durably records the gate's pid as the
+The supervisor starts `python -I -S gate.py <argv…>`, durably records the gate's pid as the
 run's process-group leader, and only then sends the go byte. If the supervisor dies first the
 gate reads EOF and exits without ever executing the worker, so there is never a writer the
 database does not know about.
+
+The isolated, site-free launcher prevents project startup hooks from running before that
+record or before the target's sandbox. The target still receives its requested environment.
 
 For an interactive session the go byte arrives on a separate descriptor (LUPUS_GATE_FD) and
 standard input stays the user's terminal.

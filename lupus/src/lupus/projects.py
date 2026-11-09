@@ -105,7 +105,21 @@ def remove(k: Kernel, project_id: str, actor: str) -> None:
 
 def provider_allowed(project: dict, driver: str) -> bool:
     provider = DRIVER_PROVIDER.get(driver)
+    if provider is None:
+        # API driver IDs contain an endpoint digest. Never approve a changed endpoint by alias alone.
+        provider = driver if isinstance(driver, str) and driver.startswith('api:') else None
     return provider is not None and provider in project["approved_providers"]
+
+
+def approve_provider(k: Kernel, project_id: str, provider: str, actor: str) -> dict:
+    """Explicit user grant; API provider identity includes the approved endpoint digest."""
+    if actor != 'user':raise LupusError('USER_AUTHORITY_REQUIRED','provider approval')
+    project=check_root(k,project_id)
+    with k.tx():
+        approved=sorted(set(project['approved_providers'])|{provider})
+        k.run('UPDATE project SET approved_providers=? WHERE project_id=?',canonical_json(approved),project_id)
+        k.emit(actor,'project.provider_allowed','project',project_id,provider=provider)
+    return get(k,project_id)
 
 
 # A native CLI may hold a lease only after `lupus probe --live` measured these on this machine.

@@ -9,9 +9,10 @@ value, a wording or a boundary; the worker picked one; nothing on the approval s
 The user approves the test, so the user has to be able to see what was picked.
 
 What it is: a small JSON block at the end of the drafting worker's reply (not a file in the
-project: it is not part of what ships). One entry per behavioural assertion, each saying where
-its rule comes from: the request (with the words quoted), something already in the repository,
-or the worker's own choice (with one alternative and an input on which the two differ).
+project: it is not part of what ships). One entry per assertion whose rule the request does not
+state: something already in the repository (with where), or the worker's own choice (with one
+alternative and an input on which the two differ); and the request's clauses with the tests that
+cover them. (Until 2026-10-26 every assertion was restated, request-quoted ones included.)
 
 What Lupus does with it, and does not:
   * It is a claim by a model and may be wrong or incomplete. It is shown as such, above the test
@@ -36,22 +37,22 @@ from .util import find_secret, sha256_json
 
 SOURCES = ("explicit_request", "existing_contract", "worker_choice")
 MAX_ASSERTIONS, MAX_CLAUSES, MAX_UNTESTED, MAX_TEXT = 20, 15, 10, 300
+# Only what the request does not state is asked for: what the worker decided, and what it took
+# from the repository. A restatement of every assertion (input, expected result, quoted request
+# words) was the largest part of the drafting call's output — about 5,000 characters against a
+# 2,000-character test on 2026-10-26 — and is what the test source already shows.
 REQUEST = (
     "마지막으로, 답의 끝에 네가 쓴 테스트를 설명하는 JSON 객체 하나를 출력하라(사용자가 테스트를 승인하기 전에 읽는다. "
-    "파일로 만들지 말고 답으로만 출력하라). 형식:\n"
-    '{"assertions": [{"test": "테스트 함수 이름", "input": "구체적인 입력", "expected": "기대 결과", "rule": "이 단언이 요구하는 규칙", '
-    '"source": "explicit_request | existing_contract | worker_choice", "quote": "…", "where": "…", "choice": "…", '
-    '"alternative": "…", "differs_on": "…"}], '
-    '"clauses": [{"clause": "요청의 한 구절(요청문 그대로)", "covered_by": ["테스트 함수 이름"]}], '
-    '"untested": [{"tested": "검사한 입력의 종류", "not_tested": "가장 가까운데 검사하지 않은 종류"}]}\n'
-    "- 동작을 단언하는 곳마다 assertions 항목 하나를 쓴다.\n"
-    "- source 는 그 규칙의 출처다. 요청에 적혀 있으면 explicit_request 이고 quote 에 요청의 해당 구절을 글자 그대로 옮긴다. "
-    "저장소의 기존 코드·문서·테스트가 이미 정한 것이면 existing_contract 이고 where 에 그 위치를 쓴다. "
-    "둘 다 아니면(값, 한계, 오류 문구, 경계에서의 동작 등을 네가 정했으면) worker_choice 이고, choice 에 네가 정한 것을, "
-    "alternative 에 그럴듯한 다른 선택 하나를, differs_on 에 두 선택의 결과가 갈리는 구체적인 입력을 쓴다.\n"
+    "파일로 만들지 말고 답으로만 출력하라). 요청에 글자 그대로 적힌 규칙은 적지 않는다. 형식:\n"
+    '{"assertions": [{"test": "테스트 함수 이름", "rule": "이 단언이 요구하는 규칙", "source": "worker_choice | existing_contract", '
+    '"where": "…", "choice": "…", "alternative": "…", "differs_on": "…"}], '
+    '"clauses": [{"clause": "요청의 한 구절(요청문 그대로)", "covered_by": ["테스트 함수 이름"]}]}\n'
+    "- assertions 에는 요청에 적혀 있지 않은 규칙을 단언하는 곳만 쓴다. 값, 한계, 오류 문구, 경계에서의 동작 등을 네가 정했으면 "
+    "worker_choice 이고, choice 에 네가 정한 것을, alternative 에 그럴듯한 다른 선택 하나를, differs_on 에 두 선택의 결과가 갈리는 "
+    "구체적인 입력을 쓴다. 저장소의 기존 코드·문서·테스트가 이미 정한 것을 따랐으면 existing_contract 이고 where 에 그 위치를 쓴다. "
+    "그런 것이 없으면 빈 배열로 둔다.\n"
     "- clauses 에는 요청의 각 구절을 요청문 그대로 옮기고, 그것을 확인하는 테스트를 covered_by 에 쓴다. 확인하는 테스트가 없으면 빈 배열로 둔다.\n"
-    "- untested 에는 검사한 입력 종류마다 가장 가까운데 검사하지 않은 종류를 쓴다(없으면 생략).\n"
-    "모르는 것을 아는 것처럼 쓰지 마라. 요청에 없는 것을 요청에 있다고 쓰면 인용 확인에서 드러난다."
+    "모르는 것을 아는 것처럼 쓰지 마라."
 )
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]+")
 
@@ -105,7 +106,9 @@ def parse(reply: str, request: str, test_source: str) -> dict | None:
                 for i in (found.get("untested") if isinstance(found.get("untested"), list) else [])[:MAX_UNTESTED]
                 if isinstance(i, dict) and _text(i.get("not_tested"))]
     packet = {"assertions": assertions, "clauses": clauses, "untested": untested, "clauses_not_in_request": not_in_request}
-    if not assertions or find_secret(json.dumps(packet, ensure_ascii=False)):
+    # Nothing chosen is a statement too, but only next to the request's clauses: an empty list on
+    # its own cannot be told apart from a reply that disclosed nothing.
+    if not (assertions or clauses) or find_secret(json.dumps(packet, ensure_ascii=False)):
         return None
     return packet
 
@@ -141,11 +144,12 @@ def render(packet: dict | None) -> str:
     if packet is None:
         return ("[가정 공개 없음] worker가 이 검사에서 무엇을 스스로 정했는지 밝히지 않았습니다(또는 검사를 고쳐서 설명이 더 이상 "
                 "맞지 않습니다). 정한 것이 없다는 뜻이 아닙니다. 아래 테스트를 직접 읽어 판단하세요.")
-    lines = ["이 검사가 확인하는 것 (worker가 밝힌 내용이며 틀리거나 빠질 수 있습니다. 아래 테스트 원문이 기준입니다)"]
+    lines = ["worker가 이 검사에 대해 밝힌 것 (틀리거나 빠질 수 있습니다. 아래 테스트 원문이 기준입니다)"]
     chosen = []
     for i, a in enumerate(packet["assertions"], 1):
         mark = "" if a["test_in_file"] else "  (이 이름을 테스트 원문에서 찾지 못함)"
-        lines.append(f"  {i}. [{a['test'] or '?'}] {a['input'] or '-'} → {a['expected'] or '-'}{mark}")
+        said = f"{a['input']} → {a['expected']}" if a["input"] or a["expected"] else (a["rule"] or "-")
+        lines.append(f"  {i}. [{a['test'] or '?'}] {said}{mark}")
         if a["source"] == "worker_choice":
             chosen.append(f"  - ({i}번) 정한 것: {a['choice'] or a['rule'] or a['expected']}"
                           + (f" / 다른 선택지: {a['alternative']}" if a["alternative"] else "")

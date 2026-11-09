@@ -12,15 +12,18 @@ from __future__ import annotations
 import json
 import math
 import os
+import shlex
 import shutil
 import time
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
 from . import adapters, budget, contract, economy, gitx, goals, handoff, judging, memory, projects, protect, recovery, release, review, runs, service, timing, usage, verify
+from . import supervision as advisory
 from .adapters import Adapter
 from .kernel import Kernel
-from .util import LupusError, container_stop, crash_point, find_secret, find_secret_bytes, proc_start, sha256_json
+from .util import LupusError, timeout_ms, checked_ms_sum, container_stop, crash_point, find_secret, find_secret_bytes, proc_start, sha256_json
 
 MAX_SNAPSHOT_BYTES = 256 * 1024
 
@@ -30,6 +33,38 @@ def _verify_reserve(criteria: list[dict]) -> dict[str, int]:
     judge among them, plus one call held back for a safe shutdown/rollback step."""
     return {"calls": 1 + sum(c["verifier"]["kind"] == "judge" for c in criteria),
             "active_ms": math.ceil(sum(verify.timeout_s(c["verifier"]) for c in criteria) * 1000)}
+
+
+def _lease_timeout_ms(k: Kernel, seconds: float, safety_ms: int) -> int:
+    now = k.now()
+    ttl = timeout_ms(seconds, extra_ms=checked_ms_sum(safety_ms, 120_000), clock_ms=now)
+    return ttl
+
+
+def _validate_goal_timeout(k: Kernel, goal_id: str, seconds: float, *, resume_blocked: bool = False) -> None:
+    """Read-only upper bound before recovery/unblocking/claim; no task preparation on no work."""
+    timeout_ms(seconds)
+    goal = goals.get(k, goal_id)
+    if goal["status"] not in ("ACTIVE", "EXTERNAL_BLOCKED"):
+        return
+    runnable = goals.next_runnable(k, goal_id)
+    if runnable is None and not (resume_blocked and any(t["status"] == "EXTERNAL_BLOCKED" for t in goals.tasks(k, goal_id))):
+        return
+    # One read of the current contract; only local accounting, no tier/adapter preparation.
+    criteria = goals.criteria(k, goal_id)
+    candidates = [task for task in goals.tasks(k, goal_id)
+                  if task["status"] == "PENDING" or resume_blocked and task["status"] == "EXTERNAL_BLOCKED"]
+    safety_ms = 0
+    for task in candidates:
+        wanted = set(task["spec"]["criteria"])
+        safety_ms = max(safety_ms, _verify_reserve([c for c in criteria if c["id"] in wanted])["active_ms"])
+    if release.granted(k, goal_id):
+        safety_ms *= 2
+    _lease_timeout_ms(k, seconds, safety_ms)
+    # The goal loop can claim a default lease or prepare a driver handoff before run_task.
+    now = k.now()
+    checked_ms_sum(now, k.policy["lease_ttl_ms"])
+    checked_ms_sum(now, k.policy["handoff_ttl_ms"])
 
 
 def _timed_verify(k: Kernel, goal: dict, criteria: list[dict], root: Path) -> tuple[list[tuple], int, int]:
@@ -61,9 +96,28 @@ def _run_checks(k: Kernel, goal: dict, criteria: list[dict], root: Path, checked
             verdict, digest, detail, n = judging.run(k, goal, c, root)
             calls += n
         else:
-            verdict, digest, detail = verify.run(
-                c["verifier"], root, on_spawn=runs.aux_recorder(k, goal["project_id"], "verifier"),
-                on_exit=lambda pid: runs.clear_aux(k, pid))
+            verifier = c["verifier"]
+            # Version-1 do goals did not store the strict marker. Their immutable approval
+            # event identifies the same "all approved tests run" contract. Enforce it under
+            # verifier v2 without rewriting the user's acceptance revision or its hash.
+            if (c["id"] == "c0" and verifier["kind"] == "command" and goal["acceptance_revision"] == 1
+                    and "require_no_skips" not in verifier and k.one(
+                        "SELECT 1 FROM event WHERE type = 'check.approved' AND aggregate_id = ?", goal["goal_id"])):
+                verifier = {**verifier, "require_no_skips": True}
+            observer=verify.OBSERVATION.get()
+            translated=None
+            if observer is not None and verifier!=c["verifier"]:
+                # Legacy approved checks gain the strict execution marker above;
+                # proof still binds the immutable declared verifier, not a new criterion.
+                declared_hash=sha256_json(c["verifier"])
+                translated=verify.OBSERVATION.set(lambda observation,callback=observer,digest=declared_hash:
+                    callback({**observation,"verifier_hash":digest}))
+            try:
+                verdict, digest, detail = verify.run(
+                    verifier, root, on_spawn=runs.aux_recorder(k, goal["project_id"], "verifier"),
+                    on_exit=lambda pid: runs.clear_aux(k, pid))
+            finally:
+                if translated is not None:verify.OBSERVATION.reset(translated)
         checked.append((c, verdict, digest, detail))
     return checked, int((time.monotonic() - started) * 1000), calls
 
@@ -91,7 +145,7 @@ def _recover(k: Kernel, stop_stale_writer: bool) -> dict[str, Any]:
         if stop_stale_writer and ours:
             adapters.stop_group(aux["pid"])
         if stop_stale_writer and runs.container_of(aux["purpose"]):
-            container_stop(runs.container_of(aux["purpose"]))      # the name is random and ours alone
+            container_stop(runs.container_of(aux["purpose"]))      # only exact endpoint/CID/nonce ownership permits removal; legacy names remain fenced
     alive += [{"aux_pid": a["pid"], "purpose": a["purpose"]} for a in runs.aux_alive(k)]
     for run in runs.unstopped(k):
         if run["pid"] is None:
@@ -152,6 +206,24 @@ EXPLORE = (
     "검증은 이 작업 밖에서 따로 수행된다. 끝나면 'done' 한 단어로 답하라."
 )
 SELF_CHECK = "셸을 쓸 수 있으면 관련 테스트를 직접 실행해 확인해도 된다."
+SINGLE_PASS_SHELL = "필요한 파일을 한 번에 최종 형태로 쓰고, 다음 명령으로 확인한 뒤 'done' 한 단어로 답하라."
+NO_SETUP = ("패키지를 설치하거나 가상환경·임시 스크립트를 만들지 마라(검사에 필요한 것은 이미 갖춰져 있다). "
+            "네 확인과 별개로 Lupus가 같은 검사를 직접 실행해 판정한다.")
+
+
+def self_check(task: dict, criteria: list[dict]) -> str:
+    """For a worker with a shell: the exact commands the supervisor will judge by, so that it can
+    see a regression in the same session instead of in a new, paid attempt. Measured 2026-10-26
+    (sqlparse 8f978caa): without a shell the first proposal broke two existing tests and two
+    further attempts followed, 386 s against 176 s for plain `claude`, which ran the tests itself."""
+    commands = [(c["verifier"].get("env") or {}, c["verifier"]["argv"]) for c in criteria
+                if c["verifier"].get("argv") and (c["verifier"].get("kind") == "command" or (
+                    c["verifier"].get("kind") == "red_test" and c["verifier"].get("proposal")))]   # a test-only draft must stay red
+    shown = [" ".join([*(f"{k}={shlex.quote(str(v))}" for k, v in env.items()), shlex.join(argv)]) for env, argv in commands]
+    shown = list(dict.fromkeys(shown + list(task["spec"].get("check", []))))[:3]
+    if not shown:
+        return SELF_CHECK + " " + NO_SETUP
+    return "셸로 다음 명령을 직접 실행해 확인하고, 실패하면 고쳐라: " + " / ".join(f"`{c}`" for c in shown) + ". " + NO_SETUP
 MAX_INLINE_FILE = 6_000
 
 
@@ -214,8 +286,52 @@ def _was_batched(k: Kernel, task_id: str) -> bool:
     return k.one("SELECT 1 FROM event WHERE type = 'batch.planned' AND aggregate_id = ?", task_id) is not None
 
 
+def _worker_identity(adapter):
+    # Declarative requested configuration only; never dynamic prompt/RAG/runtime state.
+    config={name:getattr(adapter,name,None) for name in (
+        "driver","variant","model","effort","shell","tools","web","readonly",
+        "configured_native","shared_tmp","write_paths","max_rounds")}
+    config["primary_instructions_hash"]=sha256_json(getattr(adapter,"primary_instructions",None))
+    access=getattr(adapter,"skill_access",None)
+    if access:config["skill_policy_hash"]=sha256_json(access)
+    spec=getattr(adapter,"spec",None)
+    if spec is not None:config["endpoint_hash"]=sha256_json(getattr(spec,"base_url",None))
+    return sha256_json(config)
+
+
+def _proof_binding(k,task):
+    goal=goals.get(k,task["goal_id"])
+    return {"revision":goal["acceptance_revision"],"verifier_version":verify.VERSION,
+            "intent_hash":sha256_json([goal["objective"],task["title"],task["spec"],goals.resolutions(k,task["task_id"])]),
+            "criteria_hash":sha256_json([[c["id"],sha256_json(c["verifier"])] for c in _task_criteria(k,task)])}
+
+
+def _failure_proofs(k,task,workers=None):
+    binding=_proof_binding(k,task);out=[]
+    rows=k.q("SELECT e.payload FROM event e JOIN attempt a ON a.attempt_id=json_extract(e.payload,'$.attempt_id') "
+             "JOIN run r ON r.run_id=a.run_id JOIN reservation w ON w.reservation_id=a.work_reservation_id "
+             "JOIN reservation s ON s.reservation_id=a.safety_reservation_id "
+             "WHERE e.type='task.failure_proof' AND e.aggregate_id=? AND a.task_id=? "
+             "AND a.outcome IN ('PROGRESS','NO_PROGRESS') AND a.ended_at IS NOT NULL "
+             "AND r.status='STOPPED' AND r.result=lower(a.outcome) "
+             "AND w.status='SETTLED' AND s.status='SETTLED' ORDER BY e.seq DESC LIMIT 512",task["task_id"],task["task_id"])
+    for row in rows:
+        proof=json.loads(row["payload"])
+        if proof.get("binding")==binding and (workers is None or proof.get("worker") in workers):out.append(proof)
+    return out
+
+
+def _select_tier(k,task,tiers):
+    workers=[_worker_identity(t) for t in tiers]
+    failed={p["worker"] for p in _failure_proofs(k,task,workers)}
+    index=0
+    while index<len(tiers)-1 and _worker_identity(tiers[index]) in failed:index+=1
+    return tiers[index],workers
+
+
 def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recalled: str = "",
-                 root: Path | None = None, followers: list[dict] | None = None, shell: bool = False) -> str:
+                 root: Path | None = None, followers: list[dict] | None = None, shell: bool = False,
+                 proof_chain: str | None = None) -> str:
     """Minimal worker context, assembled from structured state. No model writes or summarises
     it, and no transcript of an earlier CLI session is carried over (§6.7, §11.1)."""
     goal = goals.get(k, task["goal_id"])
@@ -250,7 +366,12 @@ def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recall
         # Everything needed is in front of the worker: write once. Otherwise it has to look first,
         # and writing blind in one pass would only produce a confident wrong answer.
         whole = root is None or all((root / p).is_file() and f"--- 현재 파일 {p} ---" in inlined for p in task["spec"].get("inputs", []))
-        lines.append(SINGLE_PASS if whole else EXPLORE + (" " + SELF_CHECK if shell else ""))
+        if shell:
+            lines.append((SINGLE_PASS_SHELL if whole else EXPLORE) + " " + self_check(task, criteria))
+        else:
+            lines.append(SINGLE_PASS if whole else EXPLORE)
+    elif shell:
+        lines.append(self_check(task, criteria))
     if task["spec"].get("lean") and economy.applies(criteria):
         lines.append(economy.guidance())      # fixed per task by the supervisor; a document task never gets it
     lines += inlined
@@ -275,7 +396,7 @@ def build_prompt(k: Kernel, task: dict, continuation: dict | None = None, recall
         # above asked for one word; say which of the two holds, so the worker is not left to guess.
         lines = [line.replace("'done' 한 단어로 답하라", "설명 없이, 아래에 정한 JSON 만 답으로 출력하라") for line in lines]
         lines.append(contract.REQUEST)
-    if k.policy["memory_recall_tokens"] > 0 and task["attempt_count"] >= 1:
+    if k.policy["memory_recall_tokens"] > 0 and _failure_proofs(k,task,proof_chain):
         # Asked only after a failure: that is when there is something worth recording, and a
         # first-try success should not pay output tokens for it.
         lines.append(LESSON_REQUEST)
@@ -417,28 +538,31 @@ def run_task(
     claimed: dict | None = None,
     continuation: dict | None = None,
     tiers: list[Adapter] | None = None,
+    supervision: dict | None = None,
 ) -> dict[str, Any]:
     """Execute the next runnable task once. Returns a small status record; never raises for an
     expected refusal (budget, repetition, stale lease): those become recorded task states.
 
-    `tiers` are variants of the SAME driver (lighter first). The n-th attempt of a task uses the
-    n-th tier, so a lighter model is tried once and the default one only after verification
-    failed. Escalation is an ordinary second attempt: same budget, same attempt limits."""
+    `tiers` are variants of the SAME driver (lighter first). A tier advances only after its
+    healthy settled attempt has fresh applicable verification-failure proof. Escalation
+    remains an ordinary attempt: same cumulative budget and attempt limits."""
+    timeout_ms(timeout_s)
     if claimed is None:
         task = goals.next_runnable(k, goal_id)
         if task is None:
             return {"status": "NO_RUNNABLE_TASK"}
     else:
         task = goals.get_task(k, claimed["task_id"])
-    if tiers:
-        adapter = tiers[min(task["attempt_count"], len(tiers) - 1)]
+    if tiers and any(t.driver!=adapter.driver for t in tiers):
+        raise LupusError("TIERS_INVALID","tiers must be variants of the same driver")
+    adapter,proof_chain=_select_tier(k,task,tiers or [adapter])
     criteria = _task_criteria(k, task)
     safety = _verify_reserve(criteria)
     if release.granted(k, goal_id):
         # A proposed change to released files is also tried out once (for the approval screen).
         safety = {**safety, "active_ms": safety["active_ms"] * 2}
     # The lease has to outlive the worker AND its verification.
-    ttl_ms = int(timeout_s * 1000) + safety["active_ms"] + 120_000
+    ttl_ms = _lease_timeout_ms(k, timeout_s, safety["active_ms"])
     if claimed is None:
         run = runs.claim(k, task["task_id"], adapter.driver, adapter.auth_mode, ttl_ms=ttl_ms)
         run_id, token = run["run_id"], run["fencing_token"]
@@ -527,6 +651,20 @@ def run_task(
     attempt_id = attempt["attempt_id"]
 
     # 2. checkpoint the intent, then run the worker behind the exec gate
+    advice="";advice_report=None
+    primary_dispatch_started=False
+    def record_cleanup_usage(observed, *, retain_hold=False):
+        info=adapters.usage_info(observed.usage,observed.raw)
+        with k.tx():
+            applied=usage.record(k,event_id=f"{run_id}:{attempt_id}",run_id=run_id,
+                provider_session_id=observed.session_id or run_id,mode='delta',sequence=1,
+                reported=observed.usage or {},observation='unknown',source=adapter.driver,
+                coverage=info['fields'],token_lower_bound=info['known_token_lower_bound'])
+            reported=(observed.usage or {}).get('calls')
+            if retain_hold and not applied.get('replayed') and adapters.valid_counter(reported) and reported>work_calls:
+                held=k.one('SELECT amounts FROM reservation WHERE reservation_id=?',attempt['work_reservation_id'])
+                amounts=json.loads(held['amounts'])
+                budget.settle(k,attempt['work_reservation_id'],{**amounts,'calls':max(amounts.get('calls',0),reported)},'estimated')
     try:
         _checkpoint(k, goal_id, f"run task {task_id}", paths, root, run_id, token)
         # Memory: a local lookup scoped to this project (+ global), recorded against the attempt.
@@ -538,29 +676,57 @@ def run_task(
         recalled = memory.recall(
             k, project_id=goal["project_id"], goal_id=goal_id, attempt_id=attempt_id,
             query="\n".join([task["title"], task["spec"]["prompt"], *[c["text"] for c in criteria]]))
+        advice,advice_report=advisory.advise(k,task,attempt,token,supervision,_failure_proofs(k,task,proof_chain)) if supervision else ("",None)
         crash_point("supervisor.before_worker")
         taken = gitx.guard(root)
+        primary_dispatch_started=True
         result = adapters.execute(
             adapter, build_prompt(k, task, continuation, memory.render(recalled), root, followers,
-                                  shell=getattr(adapter, "shell", False)), root,
+                                  shell=getattr(adapter, "shell", False),proof_chain=proof_chain)+advice, root,
             on_spawn=lambda pid: runs.attach_process(k, run_id, token, pid), timeout_s=timeout_s,
         )
     except LupusError as exc:
+        if isinstance(exc,advisory.PrimaryNotStarted):
+            zero={'calls':0,'active_ms':0}
+            runs.finish_attempt(k,run_id,token,attempt_id,'ABANDONED',exc.detail,zero,zero,'measured')
+            memory.feedback(k,attempt_id,'ABANDONED')
+            runs.finish(k,run_id,token,'BUDGET_EXHAUSTED','supervisor_budget_overrun',exc.detail)
+            return {'status':'BUDGET_EXHAUSTED','task_id':task_id,'reason':exc.code,'detail':exc.detail,'supervision':exc.report}
+        observed = adapters.cleanup_result(exc)
+        if observed is not None:
+            if not primary_dispatch_started:
+                return _abandon(k,run_id,token,attempt_id,task_id,exc,{'calls':0,'active_ms':0},'measured')
+            record_cleanup_usage(observed)
+            reported = (observed.usage or {}).get('calls')
+            work = {'calls':max(work_calls,reported if adapters.valid_counter(reported) else work_calls),
+                    'active_ms':max(int(timeout_s*1000),observed.duration_ms)}
+            return _abandon(k,run_id,token,attempt_id,task_id,exc,work,'estimated')
         return _abandon(k, run_id, token, attempt_id, task_id, exc)
+    except BaseException as exc:
+        observed=adapters.cleanup_result(exc)
+        if observed is not None and primary_dispatch_started:
+            try:record_cleanup_usage(observed,retain_hold=True)
+            except BaseException as storage_error:
+                exc.add_note('Cleanup usage persistence failed: '+type(storage_error).__name__)
+        raise
     crash_point("supervisor.after_worker")
 
     # 3. usage is recorded whatever happens next: spend that occurred is never dropped
-    if result.usage is not None:
+    info = adapters.usage_info(result.usage, result.raw)
+    if result.usage is not None or 'usage_coverage' in result.raw:
         usage.record(
             k, event_id=f"{run_id}:{attempt_id}", run_id=run_id,
-            provider_session_id=result.session_id or run_id, mode="delta", sequence=1,
-            reported=result.usage, observation="measured", source=adapter.driver,
+            provider_session_id=result.session_id or run_id, mode='delta', sequence=1,
+            reported=result.usage or {}, observation='measured' if info['complete'] else 'unknown',
+            source=adapter.driver, coverage=info['fields'], token_lower_bound=info['known_token_lower_bound'],
         )
-    work_actual = {"calls": result.usage["calls"] if result.usage and "calls" in result.usage else work_calls,
-                   "active_ms": result.duration_ms}
-    observation = "measured" if result.usage is not None else "estimated"
+    reported_calls = (result.usage or {}).get('calls')
+    work_actual = {'calls': max(1, reported_calls if adapters.valid_counter(reported_calls) else work_calls),
+                   'active_ms': result.duration_ms}
+    observation = 'measured' if info['complete'] and info['fields']['calls'] else 'estimated'
 
     # 4. verify (outside any transaction), then integrate under the fencing guard
+    observations=[];fresh_verification=False
     try:
         # What the worker did to files the user released is taken aside first: it is a proposal for
         # the user, and it is not what gets verified.
@@ -604,7 +770,10 @@ def run_task(
             with k.tx():                         # recorded as a fact of its own, not read back out of evidence text
                 k.emit("supervisor", "verify.reused", "task", task_id, attempt=attempt_id)
         else:
-            checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
+            observation_token=verify.OBSERVATION.set(observations.append)
+            try:checked, verify_ms, judge_calls = _timed_verify(k, goal, criteria, root)
+            finally:verify.OBSERVATION.reset(observation_token)
+            fresh_verification=True
             if unchanged:      # still worth telling the user and the next worker: nothing was changed
                 checked = [(c, v, digest, (STILL + detail) if v != "PASS" else detail) for c, v, digest, detail in checked]
             # Running the checks can itself write into protected paths (a test with side effects):
@@ -670,6 +839,19 @@ def run_task(
                                       acceptance_revision=attempt["acceptance_revision"], verifier=c["verifier"])
             closed = runs.finish_attempt(k, run_id, token, attempt_id, outcome, note, work_actual,
                                          safety_actual, observation)
+            genuine={o["verifier_hash"] for o in observations if o["genuine"]}
+            failed=[[c["id"],sha256_json(c["verifier"])] for c,v,_,_ in checked
+                    if v=="FAIL" and sha256_json(c["verifier"]) in genuine]
+            eligible=(closed["outcome"] in ("PROGRESS","NO_PROGRESS") and fresh_verification
+                      and result.exit_code==0 and result.error_class is None and not result.leftover_processes
+                      and not undone["unrestorable"] and not undone["restored"] and not refused and proposed is None)
+            if eligible and failed:
+                k.emit("supervisor","task.failure_proof","task",task_id,attempt_id=attempt_id,
+                       binding=_proof_binding(k,task),worker=_worker_identity(adapter),chain_hash=sha256_json(proof_chain),failed=failed)
+            else:
+                k.emit("supervisor","task.failure_proof_skipped","task",task_id,attempt_id=attempt_id,
+                       reason="ineligible_attempt" if not eligible else "no_genuine_failure",
+                       observations=observations[:32])
             _remember_failure(k, task_id, criteria, attempt["acceptance_revision"], mark, checked)
             memory.feedback(k, attempt_id, outcome)
             if outcome == "PROGRESS" and k.policy["memory_recall_tokens"] > 0:
@@ -709,7 +891,9 @@ def run_task(
     return {"status": task_status, "task_id": task_id, "outcome": outcome, "verdicts": verdicts,
             "variant": adapter.variant, "batched_with": [f["task_id"] for f in followers],
             "error_class": result.error_class, "usage_observed": result.usage is not None,
-            "os_sandbox": bool(result.raw.get("os_sandbox")), "leftover_processes": result.leftover_processes}
+            "process_lifetime": adapters.lifetime_diagnostics(result),
+            "os_sandbox": bool(result.raw.get("os_sandbox")), "leftover_processes": result.leftover_processes,
+            **({"supervision":advice_report} if advice_report is not None else {})}
 
 
 def _abandon(k: Kernel, run_id: str, token: int, attempt_id: str, task_id: str, exc: LupusError,
@@ -816,24 +1000,42 @@ def finish(k: Kernel, goal_id: str) -> dict[str, Any]:
                     goals.completion_blockers(k, goal_id) + _final_blockers(k, goal_id)))}
 
 
+def _validated_goal_timeout(fn):
+    @wraps(fn)
+    def validated(k, goal_id, adapter, *, max_steps=20, timeout_s=600, **kwargs):
+        # Refused input must not emit even the outer timing operation event.
+        timeout_ms(timeout_s)
+        if max_steps > 0:
+            _validate_goal_timeout(k, goal_id, timeout_s, resume_blocked=True)
+        return fn(k, goal_id, adapter, max_steps=max_steps, timeout_s=timeout_s, **kwargs)
+    return validated
+
+
+@_validated_goal_timeout
 @timing.operation("supervisor_bookkeeping")
 def run_goal(k: Kernel, goal_id: str, adapter: Adapter, *, max_steps: int = 20,
-             timeout_s: float = 600, work_calls: int = 8, tiers: list[Adapter] | None = None) -> dict[str, Any]:
+             timeout_s: float = 600, work_calls: int = 8, tiers: list[Adapter] | None = None, supervision: dict | None = None) -> dict[str, Any]:
+    timeout_ms(timeout_s)
     if tiers and any(t.driver != adapter.driver for t in tiers):
         raise LupusError("TIERS_INVALID", "tiers must be variants of the same driver")
     with k.supervisor_lock():
+        if max_steps > 0:
+            _validate_goal_timeout(k, goal_id, timeout_s, resume_blocked=True)
         # The user is running this goal now, with this AI: branches that stopped because a provider
         # was out of quota or logged out get their bounded retry (attempt limits still apply).
         for task in goals.tasks(k, goal_id):
             if task["status"] == "EXTERNAL_BLOCKED" and goals.get(k, goal_id)["status"] not in goals.GOAL_STICKY:
                 goals.resolve_wait(k, task["task_id"], "supervisor", f"retry with {adapter.driver}")
-        return _run_goal(k, goal_id, adapter, max_steps, timeout_s, work_calls, tiers)
+        return _run_goal(k, goal_id, adapter, max_steps, timeout_s, work_calls, tiers, supervision)
 
 
 def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout_s: float,
-              work_calls: int, tiers: list[Adapter] | None = None) -> dict[str, Any]:
+              work_calls: int, tiers: list[Adapter] | None = None, supervision: dict | None = None) -> dict[str, Any]:
     """Advance a goal until it is DONE or has to wait. Switching to a different driver than the
     one that last worked on the goal goes through a validated handoff, never a bare restart."""
+    timeout_ms(timeout_s)
+    if max_steps > 0:
+        _validate_goal_timeout(k, goal_id, timeout_s)
     steps: list[dict] = []
     goal = goals.get(k, goal_id)
     root = Path(projects.get(k, goal["project_id"])["canonical_root"])
@@ -851,6 +1053,7 @@ def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout
         if previous is None or previous == adapter.driver:
             try:
                 with k.tx():
+                    _validate_goal_timeout(k, goal_id, timeout_s)
                     ready = recovery.readiness(k, goal_id, adapter.driver)
                     nxt = goals.next_runnable(k, goal_id)
                     if (ready["blockers"] == ["BUDGET_EXHAUSTED:attempts"] and nxt is not None
@@ -871,6 +1074,7 @@ def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout
                 break
         else:
             try:
+                _validate_goal_timeout(k, goal_id, timeout_s)
                 continuation = handoff.prepare(k, goal_id, adapter.driver)
                 claimed = handoff.accept(
                     k, f"{continuation['handoff_id']}:accept", continuation,
@@ -883,27 +1087,45 @@ def _run_goal(k: Kernel, goal_id: str, adapter: Adapter, max_steps: int, timeout
                 break
         try:
             step = run_task(k, goal_id, adapter, timeout_s=timeout_s, work_calls=work_calls,
-                            claimed=claimed, continuation=continuation, tiers=tiers)
+                            claimed=claimed, continuation=continuation, tiers=tiers, supervision=supervision)
         except LupusError as exc:
             steps.append({"status": "REFUSED", "reason": exc.code, "detail": exc.detail})
             break
         steps.append(step)
-        if step["status"] in ("NO_RUNNABLE_TASK", "REJECTED"):
+        if step["status"] in ("NO_RUNNABLE_TASK", "REJECTED") or step.get("outcome") == "ENV_BLOCKED":
             break
     done, unverified = False, None
-    if goals.get(k, goal_id)["status"] == "ACTIVE":
+    cleanup_required=any(step.get("reason")=="WORKER_CLEANUP_FAILED" for step in steps)
+    if goals.get(k, goal_id)["status"] == "ACTIVE" and not cleanup_required:
         unverified = _final_verification(k, goal_id, root)
         # Completion needs the same standing as verification (authority, nobody else alive,
         # protected files as frozen), not only passing evidence.
         if not _final_blockers(k, goal_id) and not goals.completion_blockers(k, goal_id):
             goals.complete(k, goal_id)
             done = True
+    report=_goal_report(k, goal_id, steps, done, unverified)
+    if cleanup_required:report.update(recovery_required=True,completion_skipped="WORKER_CLEANUP_FAILED")
+    return report
+
+
+def completed_report(k: Kernel, goal_id: str) -> dict[str, Any]:
+    """Read completion history and current blockers; never certify a new completion."""
+    if goals.get(k, goal_id)["status"] != "DONE":
+        raise LupusError("GOAL_NOT_DONE", "historical completion report requires DONE")
+    return {**_goal_report(k, goal_id, [], False), "already_completed": True,
+            "new_verification": False}
+
+
+def _goal_report(k: Kernel, goal_id: str, steps: list[dict], done: bool,
+                 unverified: str | None = None) -> dict[str, Any]:
+    goal = goals.get(k, goal_id)
     view = goals.view(k, goal_id)
     return {
         "goal_id": goal_id, "done": done, "goal_status": view["status"], "steps": steps,
         "waiting": view["waiting"], "budget": budget.snapshot(k, goal["budget_id"]),
         "usage": usage.totals(k, goal_id),
         "judge_usage": service.totals(k, goal_id),
+        **({"supervision_usage":service.totals(k,goal_id,purpose="supervisor")} if k.one("SELECT 1 FROM service_call WHERE goal_id=? AND purpose='supervisor'",goal_id) else {}),
         "memory": memory.summary(k, goal_id),
         "completion_blockers": [] if done else list(dict.fromkeys(
             goals.completion_blockers(k, goal_id) + _final_blockers(k, goal_id))),
