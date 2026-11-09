@@ -19,6 +19,8 @@ The initial provider is Codex unless a saved preference or `LUPUS_DRIVER` choose
 
 ## Terminal controls
 
+See the [CLI home screen and slash picker](../README.md#terminal-cli), captured from a live LUPUS process in a local terminal emulator with a public demo workspace.
+
 | Command | Purpose |
 |---|---|
 | `/provider` | List providers, then choose one with `/provider ID`. |

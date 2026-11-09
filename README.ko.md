@@ -8,7 +8,7 @@
 
 LUPUS는 macOS에서 쓰는 터미널 중심 AI 코딩 도구입니다. 제공자·모델·작업 모드를 직접 고르고 다음 작업에 필요한 지식을 이어 쓰며 검사 조건과 예산을 정해 작업을 진행합니다.
 
-[English](README.md) · [빠른 시작](#빠른-시작) · [최신 화면](#최신-화면) · [CLI 가이드](lupus/README.md)
+[English](README.md) · [빠른 시작](#빠른-시작) · [CLI 화면](#터미널-cli) · [최신 화면](#최신-화면) · [CLI 가이드](lupus/README.md)
 
 ![개발 단계: alpha](https://img.shields.io/badge/stage-alpha-3d5fc9?style=flat-square)
 ![지원 환경: macOS](https://img.shields.io/badge/platform-macOS-0f1b2d?style=flat-square)
@@ -99,7 +99,15 @@ lupus auto "페이지 계산 오류를 수정해줘"   --check "python3 -m unitt
 
 ## 최신 화면
 
-**2026-11-09**에 **공개 예시 데이터**로 캡처한 실제 LUPUS 화면입니다. 이미지의 개수·신뢰 상태·목표는 데모 값이며 개발 실적이나 성능 측정 결과가 아닙니다.
+터미널은 **2026-11-10**, 웹 뷰어는 **2026-11-09**에 **공개 예시 데이터**로 캡처한 실제 LUPUS 화면입니다. 이미지의 개수·신뢰 상태·목표는 데모 값이며 개발 실적이나 성능 측정 결과가 아닙니다.
+
+### 터미널 CLI
+
+실행 중인 LUPUS를 로컬 xterm.js 터미널 에뮬레이터로 표시한 시작 화면과 `/mode` 선택창입니다. 캡처 중 AI 요청은 보내지 않았습니다.
+
+[![공개 예시 작업 공간에서 실행한 LUPUS CLI 시작 화면](asset/screenshots/cli-home-20261110.png)](asset/screenshots/cli-home-20261110.png)
+
+[![작업 모드를 고르는 슬래시 선택창을 연 LUPUS CLI](asset/screenshots/cli-slash-20261110.png)](asset/screenshots/cli-slash-20261110.png)
 
 ### 대시보드
 
@@ -118,7 +126,7 @@ lupus graph --open                 # 뷰어를 생성하고 브라우저에서 �
 lupus graph --serve --open         # 지식 대화를 포함한 로컬 뷰어 서버
 ```
 
-지식 대화는 뷰어에서 고른 Codex나 Claude Code를 호출할 수 있습니다. 이번 캡처에서는 모델을 호출하지 않았습니다. 상단의 달·돌 이미지는 생성한 콘셉트 아트이고 위 두 화면은 실제 UI 캡처입니다.
+지식 대화는 뷰어에서 고른 Codex나 Claude Code를 호출할 수 있습니다. 이번 캡처에서는 모델을 호출하지 않았습니다. 상단의 달·돌 이미지는 생성한 콘셉트 아트이고 위 화면은 실제 UI 캡처입니다.
 
 ## 현재 상태와 한계
 
